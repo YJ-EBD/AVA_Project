@@ -115,6 +115,12 @@ Check local setup:
 .\tooling\flutterflow\check-environment.ps1
 ```
 
+If PowerShell execution policy blocks scripts, use the `.cmd` wrapper:
+
+```powershell
+.\tooling\flutterflow\check-environment.cmd
+```
+
 Pull generated FlutterFlow branch:
 
 ```powershell
