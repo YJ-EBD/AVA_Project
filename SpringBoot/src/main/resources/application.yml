@@ -1,0 +1,72 @@
+spring:
+  application:
+    name: ava-backend
+  docker:
+    compose:
+      enabled: false
+  servlet:
+    multipart:
+      max-file-size: ${AVA_MAX_FILE_SIZE:200MB}
+      max-request-size: ${AVA_MAX_REQUEST_SIZE:250MB}
+  datasource:
+    url: ${AVA_POSTGRES_URL:jdbc:postgresql://localhost:5432/ava}
+    username: ${AVA_POSTGRES_USER:ava}
+    password: ${AVA_POSTGRES_PASSWORD:ava_password}
+  data:
+    mongodb:
+      uri: ${AVA_MONGODB_URI:mongodb://ava:ava_password@localhost:27017/ava?authSource=admin}
+    redis:
+      host: ${AVA_REDIS_HOST:localhost}
+      port: ${AVA_REDIS_PORT:6379}
+  jpa:
+    hibernate:
+      ddl-auto: update
+    open-in-view: false
+    properties:
+      hibernate:
+        format_sql: true
+
+server:
+  address: ${AVA_BACKEND_HOST:0.0.0.0}
+  port: ${AVA_BACKEND_PORT:8080}
+
+ava:
+  web:
+    allowed-origins: ${AVA_ALLOWED_ORIGINS:*}
+  chat:
+    backup-directory: ${AVA_CHAT_BACKUP_DIR:ChatBackUp}
+    attachment-directory: ${AVA_CHAT_ATTACHMENT_DIR:ChatUploads}
+    mongo-enabled: ${AVA_CHAT_MONGO_ENABLED:true}
+  app-update:
+    directory: ${AVA_APP_UPDATE_DIR:AppUpdates}
+    windows:
+      latest-version: ${AVA_APP_WINDOWS_LATEST_VERSION:0.1.2}
+      file-name: ${AVA_APP_WINDOWS_FILE_NAME:ava-windows-${AVA_APP_WINDOWS_LATEST_VERSION:0.1.2}.zip}
+      required: ${AVA_APP_WINDOWS_REQUIRED:false}
+      release-notes: ${AVA_APP_WINDOWS_RELEASE_NOTES:AVA desktop update}
+  ai:
+    llm-base-url: ${AVA_AI_LLM_BASE_URL:http://127.0.0.1:8088/v1}
+    model: ${AVA_AI_MODEL:ava-qwen3.5-27b-q4km}
+    timeout-seconds: ${AVA_AI_TIMEOUT_SECONDS:180}
+    max-tokens: ${AVA_AI_MAX_TOKENS:1024}
+    temperature: ${AVA_AI_TEMPERATURE:0.2}
+    history-limit: ${AVA_AI_HISTORY_LIMIT:24}
+    shared-reference-limit: ${AVA_AI_SHARED_REFERENCE_LIMIT:5}
+    web-search-enabled: ${AVA_AI_WEB_SEARCH_ENABLED:true}
+    web-search-max-results: ${AVA_AI_WEB_SEARCH_MAX_RESULTS:5}
+    web-search-fallback-min-results: ${AVA_AI_WEB_SEARCH_FALLBACK_MIN_RESULTS:3}
+    web-search-timeout-seconds: ${AVA_AI_WEB_SEARCH_TIMEOUT_SECONDS:12}
+    google-search-api-key: ${AVA_AI_GOOGLE_SEARCH_API_KEY:}
+    google-search-engine-id: ${AVA_AI_GOOGLE_SEARCH_ENGINE_ID:}
+  auth:
+    jwt-secret: ${AVA_JWT_SECRET:ava-local-development-secret-change-me-please-2026}
+    access-token-minutes: ${AVA_ACCESS_TOKEN_MINUTES:30}
+    refresh-token-days: ${AVA_REFRESH_TOKEN_DAYS:30}
+    session-hours: ${AVA_SESSION_HOURS:12}
+    session-remember-days: ${AVA_SESSION_REMEMBER_DAYS:30}
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info

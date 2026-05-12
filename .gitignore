@@ -1,0 +1,80 @@
+# AVA workspace
+.tools/
+DataBase/
+
+# OS/editor
+.DS_Store
+Thumbs.db
+*.swp
+*.tmp
+.idea/
+.vscode/
+
+# Logs and local runtime data
+*.log
+*.pid
+*.tmp
+*.bak
+*.local
+.env
+.env.*
+!.env.example
+
+# Flutter/Dart
+Flutter/.dart_tool/
+Flutter/.pub-cache/
+Flutter/.pub/
+Flutter/build/
+Flutter/coverage/
+Flutter/android/app/debug/
+Flutter/android/app/profile/
+Flutter/android/app/release/
+Flutter/dist/
+Flutter/**/*.iml
+Flutter/.flutter-plugins-dependencies
+Flutter/**/Generated.xcconfig
+Flutter/**/Flutter/ephemeral/
+
+# Spring Boot / Gradle
+SpringBoot/.gradle/
+SpringBoot/build/
+SpringBoot/logs/
+SpringBoot/out/
+SpringBoot/bin/
+SpringBoot/.classpath
+SpringBoot/.project
+SpringBoot/.settings/
+!SpringBoot/gradle/wrapper/gradle-wrapper.jar
+
+# AVA runtime storage
+SpringBoot/ChatBackUp/
+SpringBoot/ChatUploads/
+SpringBoot/AppUpdates/*.zip
+!SpringBoot/AppUpdates/README.md
+SpringBoot/ava-backend*.log
+SpringBoot/bootRun*.log
+
+# Local LLM runtime and model artifacts
+LLM_Server/bin/
+LLM_Server/models/
+LLM_Server/logs/
+LLM_Server/*.log
+LLM_Server/*.gguf
+LLM_Server/*.dll
+LLM_Server/*.exe
+
+# FlutterFlow generated/export worktrees
+.flutterflow-worktree/
+FlutterFlow/export/
+FlutterFlow/generated/
+
+# Archives/installers
+*.zip
+*.7z
+*.rar
+*.msi
+*.dmg
+*.pkg
+*.exe
+!LLM_Server/*.cmd
+!Flutter/*.cmd

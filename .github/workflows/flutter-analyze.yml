@@ -1,0 +1,24 @@
+name: Flutter Analyze
+
+on:
+  pull_request:
+    paths:
+      - "Flutter/**"
+  push:
+    branches: [main, develop]
+    paths:
+      - "Flutter/**"
+
+jobs:
+  analyze:
+    runs-on: windows-latest
+    defaults:
+      run:
+        working-directory: Flutter
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+      - run: flutter pub get
+      - run: flutter analyze
