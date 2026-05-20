@@ -1,6 +1,7 @@
 package com.ava.backend.chat.repository;
 
 import java.time.Instant;
+import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -25,4 +26,6 @@ public interface ChatMessageJpaRepository extends JpaRepository<ChatMessageEntit
 	Optional<ChatMessageEntity> findByRoomCodeAndAttachmentId(String roomCode, String attachmentId);
 
 	long deleteByRoomCode(String roomCode);
+
+	long countByRoomCodeIn(Collection<String> roomCodes);
 }

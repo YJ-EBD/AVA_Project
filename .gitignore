@@ -49,16 +49,22 @@ SpringBoot/.settings/
 # AVA runtime storage
 SpringBoot/ChatBackUp/
 SpringBoot/ChatUploads/
+SpringBoot/LiveKit/
 SpringBoot/AppUpdates/*.zip
+SpringBoot/AppUpdates/*.apk
 !SpringBoot/AppUpdates/README.md
+SpringBoot/NotivaAudio/
 SpringBoot/ava-backend*.log
 SpringBoot/bootRun*.log
 
 # Local LLM runtime and model artifacts
 LLM_Server/bin/
+LLM_Server/.venv-notiva/
+LLM_Server/__pycache__/
 LLM_Server/models/
 LLM_Server/logs/
 LLM_Server/*.log
+LLM_Server/*.wav
 LLM_Server/*.gguf
 LLM_Server/*.dll
 LLM_Server/*.exe

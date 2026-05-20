@@ -38,6 +38,12 @@ public class UserProfile {
 	@Column(length = 40)
 	private String phoneNumber;
 
+	@Column(length = 120)
+	private String contactEmail;
+
+	@Column(length = 20)
+	private String gender;
+
 	private LocalDate birthDate;
 
 	@Column(nullable = false, length = 32)
@@ -116,6 +122,14 @@ public class UserProfile {
 		return phoneNumber;
 	}
 
+	public String getContactEmail() {
+		return contactEmail;
+	}
+
+	public String getGender() {
+		return gender;
+	}
+
 	public LocalDate getBirthDate() {
 		return birthDate;
 	}
@@ -166,6 +180,14 @@ public class UserProfile {
 
 	public void setPhoneNumber(String phoneNumber) {
 		this.phoneNumber = phoneNumber;
+	}
+
+	public void setContactEmail(String contactEmail) {
+		this.contactEmail = contactEmail;
+	}
+
+	public void setGender(String gender) {
+		this.gender = gender;
 	}
 
 	public void setBirthDate(LocalDate birthDate) {

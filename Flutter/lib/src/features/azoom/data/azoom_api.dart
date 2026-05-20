@@ -1,0 +1,883 @@
+import 'dart:async';
+import 'dart:convert';
+
+import 'package:dio/dio.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:stomp_dart_client/stomp_dart_client.dart';
+
+import '../../auth/application/company_scope.dart';
+import '../../auth/data/auth_api.dart';
+import '../../messenger/data/chat_api.dart';
+
+final azoomApiProvider = Provider<AzoomApi>((ref) {
+  return AzoomApi(ref.watch(dioProvider), ref.watch(activeCompanyProvider));
+});
+
+class AzoomApi {
+  const AzoomApi(this._dio, this._activeCompany);
+
+  final Dio _dio;
+  final String? _activeCompany;
+
+  Future<AzoomChannelsDto> channels(String accessToken) async {
+    final response = await _dio.get<Map<String, dynamic>>(
+      '/api/azoom/channels',
+      options: _authOptions(accessToken),
+    );
+    return AzoomChannelsDto.fromJson(response.data ?? const {});
+  }
+
+  Future<List<ChatMessageDto>> textMessages({
+    required String accessToken,
+    required String channelId,
+  }) async {
+    final response = await _dio.get<List<dynamic>>(
+      '/api/azoom/text-channels/$channelId/messages',
+      options: _authOptions(accessToken),
+    );
+    return [
+      for (final item in response.data ?? const [])
+        ChatMessageDto.fromJson((item as Map).cast<String, dynamic>()),
+    ];
+  }
+
+  Future<ChatMessageDto> sendTextMessage({
+    required String accessToken,
+    required String channelId,
+    required String content,
+  }) async {
+    final response = await _dio.post<Map<String, dynamic>>(
+      '/api/azoom/text-channels/$channelId/messages',
+      data: {'content': content, 'silent': false, 'spoiler': false},
+      options: _authOptions(accessToken),
+    );
+    return ChatMessageDto.fromJson(response.data ?? const {});
+  }
+
+  Future<AzoomVoiceJoinDto> joinVoice({
+    required String accessToken,
+    required String channelId,
+  }) async {
+    final response = await _dio.post<Map<String, dynamic>>(
+      '/api/azoom/voice-channels/$channelId/join',
+      options: _authOptions(accessToken),
+    );
+    return AzoomVoiceJoinDto.fromJson(response.data ?? const {});
+  }
+
+  Future<AzoomVoiceChannelDto> leaveVoice({
+    required String accessToken,
+    required String channelId,
+  }) async {
+    final response = await _dio.post<Map<String, dynamic>>(
+      '/api/azoom/voice-channels/$channelId/leave',
+      options: _authOptions(accessToken),
+    );
+    return AzoomVoiceChannelDto.fromJson(response.data ?? const {});
+  }
+
+  Future<AzoomVoiceChannelDto> updateVoiceStatus({
+    required String accessToken,
+    required String channelId,
+    bool? muted,
+    bool? deafened,
+    bool? cameraEnabled,
+    bool? screenSharing,
+  }) async {
+    final data = <String, dynamic>{};
+    void addFlag(String key, bool? value) {
+      if (value != null) {
+        data[key] = value;
+      }
+    }
+
+    addFlag('muted', muted);
+    addFlag('deafened', deafened);
+    addFlag('cameraEnabled', cameraEnabled);
+    addFlag('screenSharing', screenSharing);
+
+    final response = await _dio.put<Map<String, dynamic>>(
+      '/api/azoom/voice-channels/$channelId/status',
+      data: data,
+      options: _authOptions(accessToken),
+    );
+    return AzoomVoiceChannelDto.fromJson(response.data ?? const {});
+  }
+
+  Future<List<AzoomMeetingTranscriptSummaryDto>> meetingTranscripts({
+    required String accessToken,
+  }) async {
+    final response = await _dio.get<List<dynamic>>(
+      '/api/azoom/meeting-transcripts',
+      options: _authOptions(accessToken),
+    );
+    return [
+      for (final item in response.data ?? const [])
+        AzoomMeetingTranscriptSummaryDto.fromJson(
+          (item as Map).cast<String, dynamic>(),
+        ),
+    ];
+  }
+
+  Future<AzoomMeetingTranscriptDto> meetingTranscript({
+    required String accessToken,
+    required String transcriptId,
+  }) async {
+    final response = await _dio.get<Map<String, dynamic>>(
+      '/api/azoom/meeting-transcripts/$transcriptId',
+      options: _authOptions(accessToken),
+    );
+    return AzoomMeetingTranscriptDto.fromJson(response.data ?? const {});
+  }
+
+  Future<AzoomNotivaSessionDto> startNotiva({
+    required String accessToken,
+    required String channelId,
+  }) async {
+    final response = await _dio.post<Map<String, dynamic>>(
+      '/api/azoom/voice-channels/$channelId/notiva/start',
+      options: _authOptions(accessToken),
+    );
+    return AzoomNotivaSessionDto.fromJson(response.data ?? const {});
+  }
+
+  Future<AzoomMeetingTranscriptDto> finishNotiva({
+    required String accessToken,
+    required String channelId,
+  }) async {
+    final response = await _dio.post<Map<String, dynamic>>(
+      '/api/azoom/voice-channels/$channelId/notiva/finish',
+      options: _authOptions(accessToken),
+    );
+    return AzoomMeetingTranscriptDto.fromJson(response.data ?? const {});
+  }
+
+  Future<AzoomNotivaAudioDto> uploadNotivaRealtimeAudio({
+    required String accessToken,
+    required String channelId,
+    required String filePath,
+    String? speakerUserId,
+    String? speakerName,
+    String? speakerEmail,
+  }) {
+    return _uploadNotivaAudio(
+      accessToken: accessToken,
+      channelId: channelId,
+      filePath: filePath,
+      endpoint: 'realtime-audio',
+      speakerUserId: speakerUserId,
+      speakerName: speakerName,
+      speakerEmail: speakerEmail,
+    );
+  }
+
+  Future<AzoomNotivaAudioDto> uploadNotivaBatchAudio({
+    required String accessToken,
+    required String channelId,
+    required String filePath,
+    String? speakerUserId,
+    String? speakerName,
+    String? speakerEmail,
+  }) {
+    return _uploadNotivaAudio(
+      accessToken: accessToken,
+      channelId: channelId,
+      filePath: filePath,
+      endpoint: 'batch-audio',
+      speakerUserId: speakerUserId,
+      speakerName: speakerName,
+      speakerEmail: speakerEmail,
+    );
+  }
+
+  Future<AzoomNotivaAudioDto> _uploadNotivaAudio({
+    required String accessToken,
+    required String channelId,
+    required String filePath,
+    required String endpoint,
+    String? speakerUserId,
+    String? speakerName,
+    String? speakerEmail,
+  }) async {
+    final formData = FormData.fromMap({
+      'file': await MultipartFile.fromFile(filePath),
+      if (speakerUserId != null && speakerUserId.isNotEmpty)
+        'speakerUserId': speakerUserId,
+      if (speakerName != null && speakerName.isNotEmpty)
+        'speakerName': speakerName,
+      if (speakerEmail != null && speakerEmail.isNotEmpty)
+        'speakerEmail': speakerEmail,
+    });
+    final response = await _dio.post<Map<String, dynamic>>(
+      '/api/azoom/voice-channels/$channelId/notiva/$endpoint',
+      data: formData,
+      options: _authOptions(
+        accessToken,
+        sendTimeout: const Duration(minutes: 2),
+        receiveTimeout: endpoint == 'batch-audio'
+            ? const Duration(minutes: 20)
+            : const Duration(minutes: 10),
+      ),
+    );
+    return AzoomNotivaAudioDto.fromJson(response.data ?? const {});
+  }
+
+  Options _authOptions(
+    String accessToken, {
+    Duration? sendTimeout,
+    Duration? receiveTimeout,
+  }) {
+    return Options(
+      headers: {
+        'Authorization': 'Bearer $accessToken',
+        if (_activeCompany != null && _activeCompany.isNotEmpty)
+          avaCompanyHeader: _activeCompany,
+      },
+      sendTimeout: sendTimeout,
+      receiveTimeout: receiveTimeout,
+    );
+  }
+}
+
+class AzoomTextRealtimeClient {
+  AzoomTextRealtimeClient({
+    required this.websocketUrl,
+    required this.accessToken,
+    required this.roomCode,
+  });
+
+  final String websocketUrl;
+  final String accessToken;
+  final String roomCode;
+
+  final _messages = StreamController<ChatMessageDto>.broadcast();
+  StompClient? _client;
+  StompUnsubscribe? _unsubscribe;
+
+  Stream<ChatMessageDto> get messages => _messages.stream;
+
+  void connect() {
+    final headers = {'Authorization': 'Bearer $accessToken'};
+    _client = StompClient(
+      config: StompConfig(
+        url: websocketUrl,
+        stompConnectHeaders: headers,
+        webSocketConnectHeaders: headers,
+        reconnectDelay: const Duration(seconds: 3),
+        connectionTimeout: const Duration(seconds: 8),
+        onConnect: (_) {
+          _unsubscribe = _client?.subscribe(
+            destination: '/topic/azoom/text/$roomCode',
+            callback: (frame) {
+              final body = frame.body;
+              if (body == null || body.isEmpty) {
+                return;
+              }
+              final json = jsonDecode(body);
+              if (json is Map) {
+                _messages.add(
+                  ChatMessageDto.fromJson(json.cast<String, dynamic>()),
+                );
+              }
+            },
+          );
+        },
+        onWebSocketError: (error) {
+          _messages.addError(error);
+        },
+        onStompError: (frame) {
+          _messages.addError(frame.body ?? 'STOMP error');
+        },
+      ),
+    )..activate();
+  }
+
+  void dispose() {
+    _unsubscribe?.call();
+    _unsubscribe = null;
+    _client?.deactivate();
+    _client = null;
+    _messages.close();
+  }
+}
+
+class AzoomVoiceRealtimeClient {
+  AzoomVoiceRealtimeClient({
+    required this.websocketUrl,
+    required this.accessToken,
+    required this.roomNames,
+  });
+
+  final String websocketUrl;
+  final String accessToken;
+  final List<String> roomNames;
+
+  final _states = StreamController<AzoomVoiceChannelDto>.broadcast();
+  StompClient? _client;
+  final List<StompUnsubscribe> _unsubscribes = [];
+
+  Stream<AzoomVoiceChannelDto> get states => _states.stream;
+
+  void connect() {
+    final headers = {'Authorization': 'Bearer $accessToken'};
+    _client = StompClient(
+      config: StompConfig(
+        url: websocketUrl,
+        stompConnectHeaders: headers,
+        webSocketConnectHeaders: headers,
+        reconnectDelay: const Duration(seconds: 3),
+        connectionTimeout: const Duration(seconds: 8),
+        onConnect: (_) {
+          _unsubscribes
+            ..forEach((unsubscribe) => unsubscribe())
+            ..clear();
+          for (final roomName in roomNames.toSet()) {
+            final topic = roomName.trim();
+            if (topic.isEmpty) {
+              continue;
+            }
+            final unsubscribe = _client?.subscribe(
+              destination: '/topic/azoom/voice/$topic',
+              callback: (frame) {
+                final body = frame.body;
+                if (body == null || body.isEmpty) {
+                  return;
+                }
+                final json = jsonDecode(body);
+                if (json is Map) {
+                  _states.add(
+                    AzoomVoiceChannelDto.fromJson(json.cast<String, dynamic>()),
+                  );
+                }
+              },
+            );
+            if (unsubscribe != null) {
+              _unsubscribes.add(unsubscribe);
+            }
+          }
+        },
+        onWebSocketError: (error) {
+          _states.addError(error);
+        },
+        onStompError: (frame) {
+          _states.addError(frame.body ?? 'STOMP error');
+        },
+      ),
+    )..activate();
+  }
+
+  void dispose() {
+    for (final unsubscribe in _unsubscribes) {
+      unsubscribe();
+    }
+    _unsubscribes.clear();
+    _client?.deactivate();
+    _client = null;
+    _states.close();
+  }
+}
+
+class AzoomNotivaRealtimeClient {
+  AzoomNotivaRealtimeClient({
+    required this.websocketUrl,
+    required this.accessToken,
+    required this.roomName,
+  });
+
+  final String websocketUrl;
+  final String accessToken;
+  final String roomName;
+
+  final _events = StreamController<AzoomNotivaEventDto>.broadcast();
+  StompClient? _client;
+  StompUnsubscribe? _unsubscribe;
+
+  Stream<AzoomNotivaEventDto> get events => _events.stream;
+
+  void connect() {
+    final headers = {'Authorization': 'Bearer $accessToken'};
+    _client = StompClient(
+      config: StompConfig(
+        url: websocketUrl,
+        stompConnectHeaders: headers,
+        webSocketConnectHeaders: headers,
+        reconnectDelay: const Duration(seconds: 3),
+        connectionTimeout: const Duration(seconds: 8),
+        onConnect: (_) {
+          _unsubscribe = _client?.subscribe(
+            destination: '/topic/azoom/notiva/$roomName',
+            callback: (frame) {
+              final body = frame.body;
+              if (body == null || body.isEmpty) {
+                return;
+              }
+              final json = jsonDecode(body);
+              if (json is Map) {
+                _events.add(
+                  AzoomNotivaEventDto.fromJson(json.cast<String, dynamic>()),
+                );
+              }
+            },
+          );
+        },
+        onWebSocketError: (error) {
+          _events.addError(error);
+        },
+        onStompError: (frame) {
+          _events.addError(frame.body ?? 'STOMP error');
+        },
+      ),
+    )..activate();
+  }
+
+  void dispose() {
+    _unsubscribe?.call();
+    _unsubscribe = null;
+    _client?.deactivate();
+    _client = null;
+    _events.close();
+  }
+}
+
+class AzoomChannelsDto {
+  const AzoomChannelsDto({
+    required this.companyName,
+    required this.liveKitEnabled,
+    required this.liveKitUrl,
+    required this.textChannels,
+    required this.voiceChannels,
+  });
+
+  factory AzoomChannelsDto.fromJson(Map<String, dynamic> json) {
+    return AzoomChannelsDto(
+      companyName: json['companyName'] as String? ?? 'ABBA-S',
+      liveKitEnabled: json['liveKitEnabled'] as bool? ?? false,
+      liveKitUrl: json['liveKitUrl'] as String? ?? '',
+      textChannels: [
+        for (final item in json['textChannels'] as List<dynamic>? ?? const [])
+          AzoomTextChannelDto.fromJson((item as Map).cast<String, dynamic>()),
+      ],
+      voiceChannels: [
+        for (final item in json['voiceChannels'] as List<dynamic>? ?? const [])
+          AzoomVoiceChannelDto.fromJson((item as Map).cast<String, dynamic>()),
+      ],
+    );
+  }
+
+  final String companyName;
+  final bool liveKitEnabled;
+  final String liveKitUrl;
+  final List<AzoomTextChannelDto> textChannels;
+  final List<AzoomVoiceChannelDto> voiceChannels;
+}
+
+class AzoomTextChannelDto {
+  const AzoomTextChannelDto({
+    required this.id,
+    required this.name,
+    required this.roomCode,
+  });
+
+  factory AzoomTextChannelDto.fromJson(Map<String, dynamic> json) {
+    return AzoomTextChannelDto(
+      id: json['id'] as String? ?? '',
+      name: json['name'] as String? ?? '',
+      roomCode: json['roomCode'] as String? ?? '',
+    );
+  }
+
+  final String id;
+  final String name;
+  final String roomCode;
+}
+
+class AzoomVoiceChannelDto {
+  const AzoomVoiceChannelDto({
+    required this.id,
+    required this.name,
+    required this.roomName,
+    required this.startedAt,
+    required this.serverNow,
+    required this.receivedAt,
+    required this.participants,
+  });
+
+  factory AzoomVoiceChannelDto.fromJson(Map<String, dynamic> json) {
+    final receivedAt = DateTime.now();
+    return AzoomVoiceChannelDto(
+      id: json['id'] as String? ?? '',
+      name: json['name'] as String? ?? '',
+      roomName: json['roomName'] as String? ?? '',
+      startedAt: DateTime.tryParse(json['startedAt'] as String? ?? ''),
+      serverNow: DateTime.tryParse(json['serverNow'] as String? ?? ''),
+      receivedAt: receivedAt,
+      participants: [
+        for (final item in json['participants'] as List<dynamic>? ?? const [])
+          AzoomVoiceParticipantDto.fromJson(
+            (item as Map).cast<String, dynamic>(),
+          ),
+      ],
+    );
+  }
+
+  final String id;
+  final String name;
+  final String roomName;
+  final DateTime? startedAt;
+  final DateTime? serverNow;
+  final DateTime? receivedAt;
+  final List<AzoomVoiceParticipantDto> participants;
+
+  AzoomVoiceChannelDto copyWith({
+    DateTime? startedAt,
+    DateTime? serverNow,
+    DateTime? receivedAt,
+    List<AzoomVoiceParticipantDto>? participants,
+  }) {
+    return AzoomVoiceChannelDto(
+      id: id,
+      name: name,
+      roomName: roomName,
+      startedAt: startedAt ?? this.startedAt,
+      serverNow: serverNow ?? this.serverNow,
+      receivedAt: receivedAt ?? this.receivedAt,
+      participants: participants ?? this.participants,
+    );
+  }
+}
+
+class AzoomVoiceParticipantDto {
+  const AzoomVoiceParticipantDto({
+    required this.userId,
+    required this.email,
+    required this.displayName,
+    required this.nickname,
+    required this.status,
+    required this.avatarColor,
+    required this.avatarImageUrl,
+    required this.joinedAt,
+    required this.muted,
+    required this.deafened,
+    required this.cameraEnabled,
+    required this.screenSharing,
+  });
+
+  factory AzoomVoiceParticipantDto.fromJson(Map<String, dynamic> json) {
+    return AzoomVoiceParticipantDto(
+      userId: json['userId'] as String? ?? '',
+      email: json['email'] as String? ?? '',
+      displayName: json['displayName'] as String? ?? '',
+      nickname: json['nickname'] as String? ?? '',
+      status: json['status'] as String? ?? '',
+      avatarColor: json['avatarColor'] as String? ?? '#7AA06A',
+      avatarImageUrl: json['avatarImageUrl'] as String? ?? '',
+      joinedAt: DateTime.tryParse(json['joinedAt'] as String? ?? ''),
+      muted: json['muted'] as bool? ?? false,
+      deafened: json['deafened'] as bool? ?? false,
+      cameraEnabled: json['cameraEnabled'] as bool? ?? false,
+      screenSharing: json['screenSharing'] as bool? ?? false,
+    );
+  }
+
+  final String userId;
+  final String email;
+  final String displayName;
+  final String nickname;
+  final String status;
+  final String avatarColor;
+  final String avatarImageUrl;
+  final DateTime? joinedAt;
+  final bool muted;
+  final bool deafened;
+  final bool cameraEnabled;
+  final bool screenSharing;
+}
+
+class AzoomVoiceJoinDto {
+  const AzoomVoiceJoinDto({required this.channel, required this.liveKit});
+
+  factory AzoomVoiceJoinDto.fromJson(Map<String, dynamic> json) {
+    return AzoomVoiceJoinDto(
+      channel: json['channel'] is Map
+          ? AzoomVoiceChannelDto.fromJson(
+              (json['channel'] as Map).cast<String, dynamic>(),
+            )
+          : const AzoomVoiceChannelDto(
+              id: '',
+              name: '',
+              roomName: '',
+              startedAt: null,
+              serverNow: null,
+              receivedAt: null,
+              participants: [],
+            ),
+      liveKit: json['liveKit'] is Map
+          ? AzoomLiveKitTokenDto.fromJson(
+              (json['liveKit'] as Map).cast<String, dynamic>(),
+            )
+          : const AzoomLiveKitTokenDto.disabled(),
+    );
+  }
+
+  final AzoomVoiceChannelDto channel;
+  final AzoomLiveKitTokenDto liveKit;
+}
+
+class AzoomLiveKitTokenDto {
+  const AzoomLiveKitTokenDto({
+    required this.enabled,
+    required this.url,
+    required this.token,
+    required this.roomName,
+    required this.reason,
+  });
+
+  const AzoomLiveKitTokenDto.disabled()
+    : enabled = false,
+      url = '',
+      token = '',
+      roomName = '',
+      reason = '';
+
+  factory AzoomLiveKitTokenDto.fromJson(Map<String, dynamic> json) {
+    return AzoomLiveKitTokenDto(
+      enabled: json['enabled'] as bool? ?? false,
+      url: json['url'] as String? ?? '',
+      token: json['token'] as String? ?? '',
+      roomName: json['roomName'] as String? ?? '',
+      reason: json['reason'] as String? ?? '',
+    );
+  }
+
+  final bool enabled;
+  final String url;
+  final String token;
+  final String roomName;
+  final String reason;
+}
+
+class AzoomMeetingTranscriptSummaryDto {
+  const AzoomMeetingTranscriptSummaryDto({
+    required this.id,
+    required this.channelId,
+    required this.channelName,
+    required this.roomName,
+    required this.kind,
+    required this.status,
+    required this.titleTimestamp,
+    required this.startedAt,
+    required this.endedAt,
+    required this.utteranceCount,
+  });
+
+  factory AzoomMeetingTranscriptSummaryDto.fromJson(Map<String, dynamic> json) {
+    return AzoomMeetingTranscriptSummaryDto(
+      id: json['id'] as String? ?? '',
+      channelId: json['channelId'] as String? ?? '',
+      channelName: json['channelName'] as String? ?? '',
+      roomName: json['roomName'] as String? ?? '',
+      kind: json['kind'] as String? ?? 'REALTIME',
+      status: json['status'] as String? ?? 'READY',
+      titleTimestamp: json['titleTimestamp'] as String? ?? '',
+      startedAt: DateTime.tryParse(json['startedAt'] as String? ?? ''),
+      endedAt: DateTime.tryParse(json['endedAt'] as String? ?? ''),
+      utteranceCount: json['utteranceCount'] as int? ?? 0,
+    );
+  }
+
+  final String id;
+  final String channelId;
+  final String channelName;
+  final String roomName;
+  final String kind;
+  final String status;
+  final String titleTimestamp;
+  final DateTime? startedAt;
+  final DateTime? endedAt;
+  final int utteranceCount;
+}
+
+class AzoomMeetingTranscriptDto {
+  const AzoomMeetingTranscriptDto({
+    required this.id,
+    required this.companyName,
+    required this.companySlug,
+    required this.channelId,
+    required this.channelName,
+    required this.roomName,
+    required this.kind,
+    required this.status,
+    required this.titleTimestamp,
+    required this.audioFilePath,
+    required this.startedAt,
+    required this.endedAt,
+    required this.utterances,
+  });
+
+  const AzoomMeetingTranscriptDto.empty()
+    : id = '',
+      companyName = '',
+      companySlug = '',
+      channelId = '',
+      channelName = '',
+      roomName = '',
+      kind = 'REALTIME',
+      status = 'READY',
+      titleTimestamp = '',
+      audioFilePath = '',
+      startedAt = null,
+      endedAt = null,
+      utterances = const [];
+
+  factory AzoomMeetingTranscriptDto.fromJson(Map<String, dynamic> json) {
+    return AzoomMeetingTranscriptDto(
+      id: json['id'] as String? ?? '',
+      companyName: json['companyName'] as String? ?? '',
+      companySlug: json['companySlug'] as String? ?? '',
+      channelId: json['channelId'] as String? ?? '',
+      channelName: json['channelName'] as String? ?? '',
+      roomName: json['roomName'] as String? ?? '',
+      kind: json['kind'] as String? ?? 'REALTIME',
+      status: json['status'] as String? ?? 'READY',
+      titleTimestamp: json['titleTimestamp'] as String? ?? '',
+      audioFilePath: json['audioFilePath'] as String? ?? '',
+      startedAt: DateTime.tryParse(json['startedAt'] as String? ?? ''),
+      endedAt: DateTime.tryParse(json['endedAt'] as String? ?? ''),
+      utterances: [
+        for (final item in json['utterances'] as List<dynamic>? ?? const [])
+          AzoomMeetingUtteranceDto.fromJson(
+            (item as Map).cast<String, dynamic>(),
+          ),
+      ],
+    );
+  }
+
+  final String id;
+  final String companyName;
+  final String companySlug;
+  final String channelId;
+  final String channelName;
+  final String roomName;
+  final String kind;
+  final String status;
+  final String titleTimestamp;
+  final String audioFilePath;
+  final DateTime? startedAt;
+  final DateTime? endedAt;
+  final List<AzoomMeetingUtteranceDto> utterances;
+}
+
+class AzoomMeetingUtteranceDto {
+  const AzoomMeetingUtteranceDto({
+    required this.id,
+    required this.sequenceNo,
+    required this.speakerUserId,
+    required this.speakerName,
+    required this.speakerEmail,
+    required this.content,
+    required this.startedAt,
+    required this.endedAt,
+  });
+
+  factory AzoomMeetingUtteranceDto.fromJson(Map<String, dynamic> json) {
+    return AzoomMeetingUtteranceDto(
+      id: json['id'] as String? ?? '',
+      sequenceNo: json['sequenceNo'] as int? ?? 0,
+      speakerUserId: json['speakerUserId'] as String? ?? '',
+      speakerName: json['speakerName'] as String? ?? '',
+      speakerEmail: json['speakerEmail'] as String? ?? '',
+      content: json['content'] as String? ?? '',
+      startedAt: DateTime.tryParse(json['startedAt'] as String? ?? ''),
+      endedAt: DateTime.tryParse(json['endedAt'] as String? ?? ''),
+    );
+  }
+
+  final String id;
+  final int sequenceNo;
+  final String speakerUserId;
+  final String speakerName;
+  final String speakerEmail;
+  final String content;
+  final DateTime? startedAt;
+  final DateTime? endedAt;
+}
+
+class AzoomNotivaSessionDto {
+  const AzoomNotivaSessionDto({
+    required this.roomName,
+    required this.realtimeTranscript,
+  });
+
+  factory AzoomNotivaSessionDto.fromJson(Map<String, dynamic> json) {
+    return AzoomNotivaSessionDto(
+      roomName: json['roomName'] as String? ?? '',
+      realtimeTranscript: json['realtimeTranscript'] is Map
+          ? AzoomMeetingTranscriptDto.fromJson(
+              (json['realtimeTranscript'] as Map).cast<String, dynamic>(),
+            )
+          : const AzoomMeetingTranscriptDto.empty(),
+    );
+  }
+
+  final String roomName;
+  final AzoomMeetingTranscriptDto realtimeTranscript;
+}
+
+class AzoomNotivaAudioDto {
+  const AzoomNotivaAudioDto({
+    required this.sourceFileName,
+    required this.transcript,
+  });
+
+  factory AzoomNotivaAudioDto.fromJson(Map<String, dynamic> json) {
+    return AzoomNotivaAudioDto(
+      sourceFileName: json['sourceFileName'] as String? ?? '',
+      transcript: json['transcript'] is Map
+          ? AzoomMeetingTranscriptDto.fromJson(
+              (json['transcript'] as Map).cast<String, dynamic>(),
+            )
+          : AzoomMeetingTranscriptDto.empty(),
+    );
+  }
+
+  final String sourceFileName;
+  final AzoomMeetingTranscriptDto transcript;
+}
+
+class AzoomNotivaEventDto {
+  const AzoomNotivaEventDto({
+    required this.type,
+    required this.roomName,
+    required this.transcript,
+  });
+
+  factory AzoomNotivaEventDto.fromJson(Map<String, dynamic> json) {
+    return AzoomNotivaEventDto(
+      type: json['type'] as String? ?? '',
+      roomName: json['roomName'] as String? ?? '',
+      transcript: json['transcript'] is Map
+          ? AzoomMeetingTranscriptDto.fromJson(
+              (json['transcript'] as Map).cast<String, dynamic>(),
+            )
+          : const AzoomMeetingTranscriptDto(
+              id: '',
+              companyName: '',
+              companySlug: '',
+              channelId: '',
+              channelName: '',
+              roomName: '',
+              kind: 'REALTIME',
+              status: 'READY',
+              titleTimestamp: '',
+              audioFilePath: '',
+              startedAt: null,
+              endedAt: null,
+              utterances: [],
+            ),
+    );
+  }
+
+  final String type;
+  final String roomName;
+  final AzoomMeetingTranscriptDto transcript;
+}

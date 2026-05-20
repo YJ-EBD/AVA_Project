@@ -14,4 +14,6 @@ public interface AvaAiMessageRepository extends JpaRepository<AvaAiMessageEntity
 	List<AvaAiMessageEntity> findTop200ByConversationIdOrderByCreatedAtDesc(UUID conversationId);
 
 	List<AvaAiMessageEntity> findTop24ByConversationIdOrderByCreatedAtDesc(UUID conversationId);
+
+	void deleteByConversationId(UUID conversationId);
 }

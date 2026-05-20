@@ -1,16 +1,18 @@
 import 'package:dio/dio.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../features/auth/application/company_scope.dart';
 import '../../../features/auth/data/auth_api.dart';
 
 final chatApiProvider = Provider<ChatApi>((ref) {
-  return ChatApi(ref.watch(dioProvider));
+  return ChatApi(ref.watch(dioProvider), ref.watch(activeCompanyProvider));
 });
 
 class ChatApi {
-  const ChatApi(this._dio);
+  const ChatApi(this._dio, this._activeCompany);
 
   final Dio _dio;
+  final String? _activeCompany;
 
   Future<List<ChatRoomDto>> rooms(String accessToken) async {
     final response = await _dio.get<List<dynamic>>(
@@ -425,7 +427,13 @@ class ChatApi {
   }
 
   Options _authOptions(String accessToken) {
-    return Options(headers: {'Authorization': 'Bearer $accessToken'});
+    return Options(
+      headers: {
+        'Authorization': 'Bearer $accessToken',
+        if (_activeCompany != null && _activeCompany.isNotEmpty)
+          avaCompanyHeader: _activeCompany,
+      },
+    );
   }
 }
 
@@ -483,6 +491,7 @@ class ChatRoomDto {
     required this.avatarImageUrl,
     required this.notice,
     required this.members,
+    required this.unreadCount,
   });
 
   const ChatRoomDto.empty()
@@ -497,7 +506,8 @@ class ChatRoomDto {
       lastMessageSpoiler = false,
       avatarImageUrl = '',
       notice = null,
-      members = const [];
+      members = const [],
+      unreadCount = 0;
 
   factory ChatRoomDto.fromJson(Map<String, dynamic> json) {
     return ChatRoomDto(
@@ -520,6 +530,7 @@ class ChatRoomDto {
         for (final item in json['members'] as List<dynamic>? ?? const [])
           UserProfileDto.fromJson((item as Map).cast<String, dynamic>()),
       ],
+      unreadCount: (json['unreadCount'] as num?)?.toInt() ?? 0,
     );
   }
 
@@ -535,6 +546,7 @@ class ChatRoomDto {
   final String avatarImageUrl;
   final ChatNoticeDto? notice;
   final List<UserProfileDto> members;
+  final int unreadCount;
 }
 
 class UserProfileDto {
@@ -638,6 +650,9 @@ class ChatMessageDto {
     required this.roomCode,
     required this.senderId,
     required this.senderName,
+    required this.senderNickname,
+    required this.senderAvatarColor,
+    required this.senderAvatarImageUrl,
     required this.content,
     required this.sentAt,
     required this.unreadCount,
@@ -653,6 +668,9 @@ class ChatMessageDto {
       roomCode: json['roomCode'] as String? ?? '',
       senderId: json['senderId'] as String? ?? '',
       senderName: json['senderName'] as String? ?? '',
+      senderNickname: json['senderNickname'] as String? ?? '',
+      senderAvatarColor: json['senderAvatarColor'] as String? ?? '',
+      senderAvatarImageUrl: json['senderAvatarImageUrl'] as String? ?? '',
       content: json['content'] as String? ?? '',
       sentAt: DateTime.tryParse(json['sentAt'] as String? ?? ''),
       unreadCount: (json['unreadCount'] as num?)?.toInt() ?? 0,
@@ -671,6 +689,9 @@ class ChatMessageDto {
   final String roomCode;
   final String senderId;
   final String senderName;
+  final String senderNickname;
+  final String senderAvatarColor;
+  final String senderAvatarImageUrl;
   final String content;
   final DateTime? sentAt;
   final int unreadCount;

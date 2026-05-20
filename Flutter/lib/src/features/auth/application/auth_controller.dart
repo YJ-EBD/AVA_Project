@@ -41,47 +41,73 @@ class AuthController extends AsyncNotifier<AuthState> {
     required String email,
     required String password,
     required bool autoLogin,
+    bool forceLogin = false,
   }) async {
     state = const AsyncLoading();
-    state = await AsyncValue.guard(() async {
+    try {
       final session = await ref
           .watch(authApiProvider)
-          .login(email: email, password: password, autoLogin: autoLogin);
+          .login(
+            email: email,
+            password: password,
+            autoLogin: autoLogin,
+            forceLogin: forceLogin,
+          );
       final store = ref.watch(authSessionStoreProvider);
       if (autoLogin) {
         await store.write(session);
       } else {
         await store.clear();
       }
-      return AuthState(session: session);
-    });
+      state = AsyncData(AuthState(session: session));
+    } on DuplicateLoginRequiredException catch (error, stackTrace) {
+      state = AsyncValue.error(error, stackTrace);
+      Error.throwWithStackTrace(error, stackTrace);
+    } on PendingApprovalRequiredException catch (error, stackTrace) {
+      state = AsyncValue.error(error, stackTrace);
+      Error.throwWithStackTrace(error, stackTrace);
+    } on Object catch (error, stackTrace) {
+      state = AsyncValue.error(error, stackTrace);
+    }
   }
 
-  Future<void> signup({
+  Future<String> signup({
     required String email,
     required String password,
     required String displayName,
+    required String companyName,
     required String department,
+    required String emailVerificationCode,
     String? nickname,
     String? phoneNumber,
+    String? contactEmail,
+    String? gender,
     DateTime? birthDate,
   }) async {
     state = const AsyncLoading();
-    state = await AsyncValue.guard(() async {
-      final session = await ref
+    try {
+      final result = await ref
           .watch(authApiProvider)
           .signup(
             email: email,
             password: password,
             displayName: displayName,
+            companyName: companyName,
             department: department,
+            emailVerificationCode: emailVerificationCode,
             nickname: nickname,
             phoneNumber: phoneNumber,
+            contactEmail: contactEmail,
+            gender: gender,
             birthDate: birthDate,
           );
-      await ref.watch(authSessionStoreProvider).write(session);
-      return AuthState(session: session);
-    });
+      await ref.watch(authSessionStoreProvider).clear();
+      state = const AsyncData(AuthState());
+      return result.message.isEmpty ? '관리자 승인 후 로그인 가능합니다.' : result.message;
+    } on Object catch (error, stackTrace) {
+      state = AsyncValue.error(error, stackTrace);
+      Error.throwWithStackTrace(error, stackTrace);
+    }
   }
 
   Future<void> logout() async {
@@ -94,5 +120,10 @@ class AuthController extends AsyncNotifier<AuthState> {
       await ref.watch(authSessionStoreProvider).clear();
       return const AuthState();
     });
+  }
+
+  Future<void> forceLogoutLocally() async {
+    await ref.watch(authSessionStoreProvider).clear();
+    state = const AsyncData(AuthState());
   }
 }

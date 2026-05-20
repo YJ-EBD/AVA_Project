@@ -12,6 +12,23 @@ if (-not (Test-Path $Model)) {
     throw "Model file not found: $Model"
 }
 
+$ExistingListener = Get-NetTCPConnection -LocalPort 8088 -State Listen -ErrorAction SilentlyContinue | Select-Object -First 1
+if ($ExistingListener) {
+    Write-Host "AVA local LLM server is already listening on port 8088."
+    exit 0
+}
+
+$ExistingProcess = Get-CimInstance Win32_Process -Filter "Name = 'llama-server.exe'" -ErrorAction SilentlyContinue |
+    Where-Object {
+        $_.CommandLine -like "*Qwen_Qwen3.5-27B-Q4_K_M.gguf*" -or
+        ($_.CommandLine -like "*--port*" -and $_.CommandLine -like "*8088*")
+    } |
+    Select-Object -First 1
+if ($ExistingProcess) {
+    Write-Host "AVA local LLM server process is already running. PID: $($ExistingProcess.ProcessId)"
+    exit 0
+}
+
 $ServerArgs = @(
     "--model", $Model,
     "--host", "127.0.0.1",

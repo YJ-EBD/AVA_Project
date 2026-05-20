@@ -7,6 +7,7 @@ import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.time.Duration;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 
 import org.springframework.beans.factory.annotation.Value;
@@ -25,6 +26,8 @@ public class AvaAiLlmClient {
 	private final int maxTokens;
 	private final double temperature;
 	private final Duration timeout;
+	private final Duration unavailableRetryWindow;
+	private final Duration unavailableRetryDelay = Duration.ofSeconds(3);
 
 	public AvaAiLlmClient(
 		ObjectMapper objectMapper,
@@ -32,7 +35,8 @@ public class AvaAiLlmClient {
 		@Value("${ava.ai.model:ava-qwen3.5-27b-q4km}") String model,
 		@Value("${ava.ai.max-tokens:1024}") int maxTokens,
 		@Value("${ava.ai.temperature:0.2}") double temperature,
-		@Value("${ava.ai.timeout-seconds:180}") long timeoutSeconds
+		@Value("${ava.ai.timeout-seconds:180}") long timeoutSeconds,
+		@Value("${ava.ai.unavailable-retry-seconds:90}") long unavailableRetrySeconds
 	) {
 		this.objectMapper = objectMapper;
 		this.httpClient = HttpClient.newBuilder()
@@ -43,6 +47,7 @@ public class AvaAiLlmClient {
 		this.maxTokens = maxTokens;
 		this.temperature = temperature;
 		this.timeout = Duration.ofSeconds(timeoutSeconds);
+		this.unavailableRetryWindow = Duration.ofSeconds(Math.max(0, unavailableRetrySeconds));
 	}
 
 	public String model() {
@@ -50,6 +55,7 @@ public class AvaAiLlmClient {
 	}
 
 	public String complete(List<PromptMessage> messages) {
+		long retryUntil = System.nanoTime() + unavailableRetryWindow.toNanos();
 		try {
 			Map<String, Object> payload = Map.of(
 				"model", model,
@@ -66,22 +72,52 @@ public class AvaAiLlmClient {
 				.POST(HttpRequest.BodyPublishers.ofString(objectMapper.writeValueAsString(payload)))
 				.build();
 
-			HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
-			if (response.statusCode() < 200 || response.statusCode() >= 300) {
-				throw new IllegalStateException("LLM server returned " + response.statusCode() + ": " + response.body());
+			while (true) {
+				try {
+					HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
+					if (response.statusCode() < 200 || response.statusCode() >= 300) {
+						if (isTemporarilyUnavailable(response.statusCode(), response.body()) && pauseBeforeRetry(retryUntil)) {
+							continue;
+						}
+						throw new IllegalStateException("LLM server returned " + response.statusCode() + ": " + response.body());
+					}
+					JsonNode root = objectMapper.readTree(response.body());
+					String content = root.path("choices").path(0).path("message").path("content").asText("");
+					if (content.isBlank()) {
+						throw new IllegalStateException("LLM server returned an empty answer.");
+					}
+					return stripThinkingBlock(content.strip());
+				} catch (IOException exception) {
+					if (pauseBeforeRetry(retryUntil)) {
+						continue;
+					}
+					throw new IllegalStateException("LLM server request failed.", exception);
+				}
 			}
-			JsonNode root = objectMapper.readTree(response.body());
-			String content = root.path("choices").path(0).path("message").path("content").asText("");
-			if (content.isBlank()) {
-				throw new IllegalStateException("LLM server returned an empty answer.");
-			}
-			return stripThinkingBlock(content.strip());
 		} catch (IOException exception) {
 			throw new IllegalStateException("LLM server request failed.", exception);
 		} catch (InterruptedException exception) {
 			Thread.currentThread().interrupt();
 			throw new IllegalStateException("LLM server request was interrupted.", exception);
 		}
+	}
+
+	private boolean isTemporarilyUnavailable(int statusCode, String body) {
+		if (statusCode == 503) {
+			return true;
+		}
+		String normalized = body == null ? "" : body.toLowerCase(Locale.ROOT);
+		return normalized.contains("loading model") || normalized.contains("unavailable");
+	}
+
+	private boolean pauseBeforeRetry(long retryUntilNanos) throws InterruptedException {
+		long remainingNanos = retryUntilNanos - System.nanoTime();
+		if (remainingNanos <= 0) {
+			return false;
+		}
+		long sleepMillis = Math.min(unavailableRetryDelay.toMillis(), Duration.ofNanos(remainingNanos).toMillis());
+		Thread.sleep(Math.max(100, sleepMillis));
+		return true;
 	}
 
 	private String stripThinkingBlock(String content) {

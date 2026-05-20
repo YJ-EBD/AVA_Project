@@ -59,10 +59,16 @@ class _TypingParticipant {
 }
 
 class ChatRoomPanel extends ConsumerStatefulWidget {
-  const ChatRoomPanel({required this.room, required this.onClose, super.key});
+  const ChatRoomPanel({
+    required this.room,
+    required this.onClose,
+    this.mobileLayout = false,
+    super.key,
+  });
 
   final ChatRoom room;
   final VoidCallback onClose;
+  final bool mobileLayout;
 
   @override
   ConsumerState<ChatRoomPanel> createState() => _ChatRoomPanelState();
@@ -326,7 +332,7 @@ class _ChatRoomPanelState extends ConsumerState<ChatRoomPanel> {
           .read(chatRoomsProvider.notifier)
           .messagePosted(
             _room.id,
-            message.content,
+            chatMessageListPreview(message),
             message.sentAt,
             fallbackRoom: _room,
             spoiler: message.spoiler,
@@ -758,7 +764,7 @@ class _ChatRoomPanelState extends ConsumerState<ChatRoomPanel> {
             .read(chatRoomsProvider.notifier)
             .messagePosted(
               _room.id,
-              file.name,
+              chatAttachmentPreview(file.name, _guessContentType(file.name)),
               message.sentAt ?? DateTime.now(),
               fallbackRoom: _room,
             );
@@ -1131,13 +1137,19 @@ class _ChatRoomPanelState extends ConsumerState<ChatRoomPanel> {
     return Stack(
       children: [
         Container(
-          decoration: const BoxDecoration(
+          decoration: BoxDecoration(
             color: _chatBackground,
-            border: Border(left: BorderSide(color: Color(0xFFD1D1D1))),
+            border: widget.mobileLayout
+                ? null
+                : const Border(left: BorderSide(color: Color(0xFFD1D1D1))),
           ),
           child: Column(
             children: [
-              _ChatHeader(room: _room, onClose: widget.onClose),
+              _ChatHeader(
+                room: _room,
+                onClose: widget.onClose,
+                mobileLayout: widget.mobileLayout,
+              ),
               if (_noticeMessage != null)
                 _ChatNoticeCard(message: _noticeMessage!),
               Expanded(
@@ -1169,6 +1181,7 @@ class _ChatRoomPanelState extends ConsumerState<ChatRoomPanel> {
                 onAttachFiles: _showFileTransferDialog,
                 onTypingChanged: _sendTypingStatus,
                 enabled: _canSendMessages,
+                mobileLayout: widget.mobileLayout,
               ),
             ],
           ),
@@ -2403,13 +2416,60 @@ bool _canGroupImageMessages(ChatMessage first, ChatMessage next) {
 }
 
 class _ChatHeader extends StatelessWidget {
-  const _ChatHeader({required this.room, required this.onClose});
+  const _ChatHeader({
+    required this.room,
+    required this.onClose,
+    required this.mobileLayout,
+  });
 
   final ChatRoom room;
   final VoidCallback onClose;
+  final bool mobileLayout;
 
   @override
   Widget build(BuildContext context) {
+    if (mobileLayout) {
+      return SafeArea(
+        bottom: false,
+        child: Container(
+          height: 58,
+          padding: const EdgeInsets.fromLTRB(4, 4, 8, 4),
+          color: _chatBackground,
+          child: Row(
+            children: [
+              _ChatHeaderAction(
+                key: const ValueKey('mobile-chat-back'),
+                icon: Icons.arrow_back,
+                tooltip: '\uB4A4\uB85C\uAC00\uAE30',
+                onPressed: onClose,
+              ),
+              const SizedBox(width: 4),
+              Expanded(
+                child: Text(
+                  room.title,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    color: Colors.black,
+                    fontSize: 16,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+              ),
+              const _ChatHeaderAction(
+                icon: Icons.search,
+                tooltip: '\uCC44\uD305\uBC29 \uAC80\uC0C9',
+              ),
+              const _ChatHeaderAction(
+                icon: Icons.menu,
+                tooltip: '\uBA54\uB274',
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
     return Container(
       height: 86,
       padding: const EdgeInsets.fromLTRB(14, 12, 10, 10),
@@ -2481,6 +2541,7 @@ class _ChatHeader extends StatelessWidget {
 
 class _ChatHeaderAction extends StatelessWidget {
   const _ChatHeaderAction({
+    super.key,
     required this.icon,
     required this.tooltip,
     this.onPressed,
@@ -4286,12 +4347,14 @@ class _MessageComposer extends StatefulWidget {
     required this.onAttachFiles,
     required this.onTypingChanged,
     required this.enabled,
+    this.mobileLayout = false,
   });
 
   final Future<void> Function(String content, [_SendOptions options]) onSend;
   final VoidCallback onAttachFiles;
   final ValueChanged<bool> onTypingChanged;
   final bool enabled;
+  final bool mobileLayout;
 
   @override
   State<_MessageComposer> createState() => _MessageComposerState();
@@ -4299,11 +4362,19 @@ class _MessageComposer extends StatefulWidget {
 
 class _MessageComposerState extends State<_MessageComposer> {
   final TextEditingController _controller = TextEditingController();
+  final FocusNode _textFocusNode = FocusNode();
   Timer? _typingStopTimer;
   bool _canSend = false;
   bool _isSending = false;
   bool _isTyping = false;
+  bool _mobileToolsOpen = false;
   double _transparency = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    _textFocusNode.addListener(_handleFocusChanged);
+  }
 
   @override
   void didUpdateWidget(covariant _MessageComposer oldWidget) {
@@ -4312,6 +4383,7 @@ class _MessageComposerState extends State<_MessageComposer> {
       _setTyping(false);
       _controller.clear();
       _canSend = false;
+      _mobileToolsOpen = false;
     }
   }
 
@@ -4319,8 +4391,19 @@ class _MessageComposerState extends State<_MessageComposer> {
   void dispose() {
     _setTyping(false);
     _typingStopTimer?.cancel();
+    _textFocusNode.removeListener(_handleFocusChanged);
+    _textFocusNode.dispose();
     _controller.dispose();
     super.dispose();
+  }
+
+  void _handleFocusChanged() {
+    if (!_textFocusNode.hasFocus || !_mobileToolsOpen) {
+      return;
+    }
+    setState(() {
+      _mobileToolsOpen = false;
+    });
   }
 
   void _handleTextChanged() {
@@ -4384,6 +4467,7 @@ class _MessageComposerState extends State<_MessageComposer> {
       _controller.clear();
       setState(() {
         _canSend = false;
+        _mobileToolsOpen = false;
       });
     } finally {
       if (mounted) {
@@ -4512,9 +4596,30 @@ class _MessageComposerState extends State<_MessageComposer> {
     );
   }
 
+  void _toggleMobileTools() {
+    if (!widget.enabled) {
+      return;
+    }
+    FocusScope.of(context).unfocus();
+    setState(() {
+      _mobileToolsOpen = !_mobileToolsOpen;
+    });
+  }
+
+  void _handleMobileAttachFiles() {
+    setState(() {
+      _mobileToolsOpen = false;
+    });
+    widget.onAttachFiles();
+  }
+
   @override
   Widget build(BuildContext context) {
     final sendEnabled = widget.enabled && _canSend && !_isSending;
+
+    if (widget.mobileLayout) {
+      return _buildMobileComposer(context, sendEnabled: sendEnabled);
+    }
 
     return Container(
       height: 122,
@@ -4529,6 +4634,7 @@ class _MessageComposerState extends State<_MessageComposer> {
                       onKeyEvent: _handleComposerKey,
                       child: TextField(
                         controller: _controller,
+                        focusNode: _textFocusNode,
                         enabled: widget.enabled,
                         onChanged: (_) => _handleTextChanged(),
                         expands: true,
@@ -4612,6 +4718,331 @@ class _MessageComposerState extends State<_MessageComposer> {
                 ),
                 const SizedBox(width: 8),
               ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildMobileComposer(
+    BuildContext context, {
+    required bool sendEnabled,
+  }) {
+    final bottomInset = MediaQuery.paddingOf(context).bottom;
+    return Material(
+      key: const ValueKey('mobile-composer-root'),
+      color: Colors.white,
+      child: Padding(
+        padding: EdgeInsets.only(bottom: bottomInset),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            SizedBox(
+              width: double.infinity,
+              height: 48,
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(8, 7, 8, 6),
+                child: Row(
+                  children: [
+                    _MobileComposerCircleButton(
+                      key: const ValueKey('mobile-composer-tools-toggle'),
+                      icon: _mobileToolsOpen ? Icons.close : Icons.add,
+                      tooltip: _mobileToolsOpen ? '메뉴 닫기' : '메뉴 열기',
+                      onPressed: _toggleMobileTools,
+                    ),
+                    const SizedBox(width: 7),
+                    Expanded(
+                      child: Container(
+                        height: 34,
+                        decoration: BoxDecoration(
+                          color: Colors.white,
+                          borderRadius: BorderRadius.circular(18),
+                        ),
+                        child: Row(
+                          children: [
+                            Expanded(
+                              child: Focus(
+                                onKeyEvent: _handleComposerKey,
+                                child: TextField(
+                                  controller: _controller,
+                                  focusNode: _textFocusNode,
+                                  enabled: widget.enabled,
+                                  onChanged: (_) => _handleTextChanged(),
+                                  maxLines: 1,
+                                  style: const TextStyle(
+                                    color: Colors.black,
+                                    fontSize: 14,
+                                  ),
+                                  cursorColor: Colors.black,
+                                  decoration: const InputDecoration(
+                                    hintText: '메시지 입력',
+                                    hintStyle: TextStyle(
+                                      color: Color(0xFF9A9A9A),
+                                      fontSize: 14,
+                                    ),
+                                    border: InputBorder.none,
+                                    isDense: true,
+                                    contentPadding: EdgeInsets.fromLTRB(
+                                      12,
+                                      8,
+                                      8,
+                                      8,
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            ),
+                            _MobileComposerInlineButton(
+                              icon: Icons.sentiment_satisfied_alt_outlined,
+                              tooltip: '이모티콘',
+                              onPressed: _showUnimplementedToast,
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 7),
+                    sendEnabled
+                        ? _MobileComposerSendButton(
+                            isSending: _isSending,
+                            onPressed: _handleSend,
+                          )
+                        : _MobileComposerCircleButton(
+                            key: const ValueKey('mobile-composer-hashtag'),
+                            icon: Icons.tag,
+                            tooltip: '태그',
+                            onPressed: _showUnimplementedToast,
+                          ),
+                  ],
+                ),
+              ),
+            ),
+            AnimatedSize(
+              duration: const Duration(milliseconds: 220),
+              curve: Curves.easeOutCubic,
+              alignment: Alignment.topCenter,
+              child: _mobileToolsOpen
+                  ? _MobileComposerToolsMenu(
+                      onAttachFiles: _handleMobileAttachFiles,
+                      onAction: _showUnimplementedToast,
+                    )
+                  : const SizedBox(width: double.infinity),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _MobileComposerCircleButton extends StatelessWidget {
+  const _MobileComposerCircleButton({
+    super.key,
+    required this.icon,
+    required this.tooltip,
+    required this.onPressed,
+  });
+
+  final IconData icon;
+  final String tooltip;
+  final VoidCallback onPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox.square(
+      dimension: 30,
+      child: IconButton(
+        tooltip: tooltip,
+        padding: EdgeInsets.zero,
+        visualDensity: VisualDensity.compact,
+        style: IconButton.styleFrom(
+          backgroundColor: const Color(0xFFF4F4F4),
+          foregroundColor: _chatIconColor,
+        ),
+        onPressed: onPressed,
+        icon: Icon(icon, size: 20),
+      ),
+    );
+  }
+}
+
+class _MobileComposerInlineButton extends StatelessWidget {
+  const _MobileComposerInlineButton({
+    required this.icon,
+    required this.tooltip,
+    required this.onPressed,
+  });
+
+  final IconData icon;
+  final String tooltip;
+  final VoidCallback onPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox.square(
+      dimension: 30,
+      child: IconButton(
+        tooltip: tooltip,
+        padding: EdgeInsets.zero,
+        visualDensity: VisualDensity.compact,
+        color: const Color(0xFF777777),
+        onPressed: onPressed,
+        icon: Icon(icon, size: 20),
+      ),
+    );
+  }
+}
+
+class _MobileComposerSendButton extends StatelessWidget {
+  const _MobileComposerSendButton({
+    required this.isSending,
+    required this.onPressed,
+  });
+
+  final bool isSending;
+  final VoidCallback onPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox.square(
+      dimension: 32,
+      child: IconButton(
+        tooltip: '전송',
+        padding: EdgeInsets.zero,
+        visualDensity: VisualDensity.compact,
+        style: IconButton.styleFrom(
+          backgroundColor: const Color(0xFFFFDF00),
+          foregroundColor: Colors.black,
+        ),
+        onPressed: isSending ? null : onPressed,
+        icon: Icon(
+          isSending ? Icons.more_horiz : Icons.arrow_upward_rounded,
+          size: 20,
+        ),
+      ),
+    );
+  }
+}
+
+class _MobileComposerToolsMenu extends StatelessWidget {
+  const _MobileComposerToolsMenu({
+    required this.onAttachFiles,
+    required this.onAction,
+  });
+
+  final VoidCallback onAttachFiles;
+  final VoidCallback onAction;
+
+  @override
+  Widget build(BuildContext context) {
+    final items = <_MobileComposerToolItemData>[
+      _MobileComposerToolItemData('사진', Icons.image_rounded, onAction),
+      _MobileComposerToolItemData('카메라', Icons.photo_camera_rounded, onAction),
+      _MobileComposerToolItemData('통화', Icons.phone_rounded, onAction),
+      _MobileComposerToolItemData(
+        '선물하기',
+        Icons.card_giftcard_rounded,
+        onAction,
+      ),
+      _MobileComposerToolItemData(
+        '송금',
+        Icons.currency_bitcoin_rounded,
+        onAction,
+      ),
+      _MobileComposerToolItemData('지도', Icons.location_on_rounded, onAction),
+      _MobileComposerToolItemData(
+        '친구위치',
+        Icons.person_pin_circle_rounded,
+        onAction,
+      ),
+      _MobileComposerToolItemData('뮤직', Icons.music_note_rounded, onAction),
+      _MobileComposerToolItemData(
+        '미니게임',
+        Icons.sports_esports_rounded,
+        onAction,
+      ),
+      _MobileComposerToolItemData(
+        '파일',
+        Icons.insert_drive_file_rounded,
+        onAttachFiles,
+      ),
+      _MobileComposerToolItemData('연락처', Icons.contacts_rounded, onAction),
+      _MobileComposerToolItemData('음성메시지', Icons.graphic_eq_rounded, onAction),
+      _MobileComposerToolItemData('예약메시지', Icons.schedule_rounded, onAction),
+      _MobileComposerToolItemData('캡처', Icons.crop_free_rounded, onAction),
+      _MobileComposerToolItemData(
+        '일정',
+        Icons.event_available_rounded,
+        onAction,
+      ),
+    ];
+    return Container(
+      key: const ValueKey('mobile-composer-tools-menu'),
+      width: double.infinity,
+      decoration: const BoxDecoration(
+        color: Color(0xFFF7F9FC),
+        border: Border(top: BorderSide(color: Color(0xFFE1E8F0))),
+      ),
+      padding: const EdgeInsets.fromLTRB(20, 14, 20, 14),
+      child: GridView.builder(
+        shrinkWrap: true,
+        primary: false,
+        physics: const NeverScrollableScrollPhysics(),
+        itemCount: items.length,
+        gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+          crossAxisCount: 4,
+          mainAxisExtent: 66,
+          crossAxisSpacing: 12,
+          mainAxisSpacing: 8,
+        ),
+        itemBuilder: (context, index) {
+          return _MobileComposerToolItem(data: items[index]);
+        },
+      ),
+    );
+  }
+}
+
+class _MobileComposerToolItemData {
+  const _MobileComposerToolItemData(this.label, this.icon, this.onTap);
+
+  final String label;
+  final IconData icon;
+  final VoidCallback onTap;
+}
+
+class _MobileComposerToolItem extends StatelessWidget {
+  const _MobileComposerToolItem({required this.data});
+
+  final _MobileComposerToolItemData data;
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      borderRadius: BorderRadius.circular(14),
+      onTap: data.onTap,
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Container(
+            width: 36,
+            height: 36,
+            decoration: const BoxDecoration(
+              color: Color(0xFFEAF1FA),
+              shape: BoxShape.circle,
+            ),
+            child: Icon(data.icon, color: Color(0xFF4663CF), size: 21),
+          ),
+          const SizedBox(height: 7),
+          Text(
+            data.label,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: const TextStyle(
+              color: Color(0xFF263238),
+              fontSize: 10.5,
+              fontWeight: FontWeight.w600,
             ),
           ),
         ],

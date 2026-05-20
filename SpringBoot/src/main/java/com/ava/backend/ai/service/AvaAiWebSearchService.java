@@ -27,6 +27,7 @@ public class AvaAiWebSearchService {
 
 	private static final String GOOGLE_CUSTOM_SEARCH_URL = "https://www.googleapis.com/customsearch/v1";
 	private static final String GOOGLE_SEARCH_URL = "https://www.google.com/search?hl=ko&num=10&q=";
+	private static final String GOOGLE_IMAGE_SEARCH_URL = "https://www.google.com/search?tbm=isch&hl=ko&q=";
 	private static final String DUCK_DUCK_GO_HTML_URL = "https://duckduckgo.com/html/?q=";
 
 	private final ObjectMapper objectMapper;
@@ -74,9 +75,9 @@ public class AvaAiWebSearchService {
 		}
 		List<WebSearchResult> googleResults = searchGoogle(normalized);
 		if (isGoodEnough(googleResults)) {
-			return googleResults;
+			return withPreviewImages(googleResults, normalized);
 		}
-		return mergeResults(googleResults, searchDuckDuckGo(normalized));
+		return withPreviewImages(mergeResults(googleResults, searchDuckDuckGo(normalized)), normalized);
 	}
 
 	private List<WebSearchResult> searchGoogle(String query) {
@@ -110,10 +111,11 @@ public class AvaAiWebSearchService {
 				String title = item.path("title").asText("").strip();
 				String url = item.path("link").asText("").strip();
 				String snippet = item.path("snippet").asText("").strip();
+				String imageUrl = item.path("pagemap").path("cse_image").path(0).path("src").asText("").strip();
 				if (title.isBlank() || !isSearchResultUrl(url)) {
 					continue;
 				}
-				addUnique(results, new WebSearchResult("Google", title, url, snippet));
+				addUnique(results, new WebSearchResult("Google", title, url, snippet, imageUrl));
 			}
 			return results;
 		} catch (IllegalArgumentException | IOException exception) {
@@ -257,6 +259,143 @@ public class AvaAiWebSearchService {
 		return List.copyOf(merged);
 	}
 
+	private List<WebSearchResult> withPreviewImages(List<WebSearchResult> results, String query) {
+		if (results.isEmpty()) {
+			return results;
+		}
+		List<String> imageFallbacks = List.of();
+		int imageFallbackIndex = 0;
+		List<WebSearchResult> enriched = new ArrayList<>();
+		for (WebSearchResult result : results) {
+			if (result.imageUrl() != null && !result.imageUrl().isBlank()) {
+				enriched.add(result);
+				continue;
+			}
+			String imageUrl = fetchPreviewImage(result.url());
+			if (imageUrl.isBlank()) {
+				if (imageFallbacks.isEmpty()) {
+					imageFallbacks = searchGoogleImages(query);
+				}
+				if (imageFallbackIndex < imageFallbacks.size()) {
+					imageUrl = imageFallbacks.get(imageFallbackIndex++);
+				}
+			}
+			enriched.add(new WebSearchResult(
+				result.source(),
+				result.title(),
+				result.url(),
+				result.snippet(),
+				imageUrl
+			));
+		}
+		return List.copyOf(enriched);
+	}
+
+	private List<String> searchGoogleImages(String query) {
+		try {
+			URI uri = URI.create(
+				GOOGLE_IMAGE_SEARCH_URL + URLEncoder.encode(query, StandardCharsets.UTF_8)
+			);
+			Document document = Jsoup.parse(requestHtml(uri), "https://www.google.com/");
+			List<String> images = new ArrayList<>();
+			for (Element image : document.select("img[src], img[data-src]")) {
+				if (images.size() >= maxResults) {
+					break;
+				}
+				String value = image.hasAttr("data-src") ? image.attr("data-src") : image.attr("src");
+				String normalized = normalizeImageUrl(uri, value);
+				if (isPreviewImageUrl(normalized) && images.stream().noneMatch(normalized::equalsIgnoreCase)) {
+					images.add(normalized);
+				}
+			}
+			return List.copyOf(images);
+		} catch (IllegalArgumentException | IOException exception) {
+			return List.of();
+		} catch (InterruptedException exception) {
+			Thread.currentThread().interrupt();
+			return List.of();
+		}
+	}
+
+	private String fetchPreviewImage(String url) {
+		if (!isSearchResultUrl(url)) {
+			return "";
+		}
+		try {
+			URI uri = URI.create(url);
+			String html = requestHtml(uri);
+			if (html.isBlank()) {
+				return "";
+			}
+			Document document = Jsoup.parse(html, url);
+			Element image = first(
+				document,
+				"meta[property=og:image]",
+				"meta[name=og:image]",
+				"meta[name=twitter:image]",
+				"meta[property=twitter:image]"
+			);
+			if (image != null) {
+				String value = image.attr("content").strip();
+				String normalized = normalizeImageUrl(uri, value);
+				if (isPreviewImageUrl(normalized)) {
+					return normalized;
+				}
+			}
+			for (Element fallback : document.select("img[src], img[data-src], img[data-original], img[data-lazy-src]")) {
+				String candidate = fallback.hasAttr("data-src")
+					? fallback.attr("data-src")
+					: fallback.hasAttr("data-original")
+						? fallback.attr("data-original")
+						: fallback.hasAttr("data-lazy-src")
+							? fallback.attr("data-lazy-src")
+							: fallback.attr("src");
+				String normalized = normalizeImageUrl(uri, candidate);
+				if (isPreviewImageUrl(normalized)) {
+					return normalized;
+				}
+			}
+			return "";
+		} catch (IllegalArgumentException | IOException exception) {
+			return "";
+		} catch (InterruptedException exception) {
+			Thread.currentThread().interrupt();
+			return "";
+		}
+	}
+
+	private String normalizeImageUrl(URI baseUri, String value) {
+		if (value == null || value.isBlank()) {
+			return "";
+		}
+		String normalized = value.strip();
+		if (normalized.startsWith("//")) {
+			normalized = "https:" + normalized;
+		}
+		if (normalized.startsWith("http://") || normalized.startsWith("https://")) {
+			return normalized;
+		}
+		try {
+			return baseUri.resolve(normalized).toString();
+		} catch (IllegalArgumentException ignored) {
+			return "";
+		}
+	}
+
+	private boolean isPreviewImageUrl(String value) {
+		if (value == null || value.isBlank()) {
+			return false;
+		}
+		String normalized = value.toLowerCase(Locale.ROOT);
+		if (!(normalized.startsWith("http://") || normalized.startsWith("https://"))) {
+			return false;
+		}
+		return !normalized.contains("logo") &&
+			!normalized.contains("favicon") &&
+			!normalized.contains("spacer") &&
+			!normalized.endsWith(".svg");
+	}
+
 	private void addUnique(List<WebSearchResult> results, WebSearchResult candidate) {
 		for (WebSearchResult result : results) {
 			if (result.url().equalsIgnoreCase(candidate.url())) {
@@ -361,14 +500,13 @@ public class AvaAiWebSearchService {
 			!normalized.contains("duckduckgo.com/y.js");
 	}
 
-	private boolean hasWebIntent(String query) {
+	boolean hasWebIntent(String query) {
 		if (query == null || query.isBlank()) {
 			return false;
 		}
 		String value = query.toLowerCase(Locale.ROOT);
 		return containsAny(
 			value,
-			"\uAC80\uC0C9",
 			"\uC778\uD130\uB137",
 			"\uC6F9",
 			"\uAD6C\uAE00",
@@ -400,8 +538,6 @@ public class AvaAiWebSearchService {
 			"\uAC00\uACA9",
 			"\uBC84\uC804",
 			"\uB9B4\uB9AC\uC988",
-			"\uCC3E\uC544\uC918",
-			"\uC54C\uC544\uBD10",
 			"search",
 			"internet",
 			"web",
@@ -432,6 +568,9 @@ public class AvaAiWebSearchService {
 		return false;
 	}
 
-	public record WebSearchResult(String source, String title, String url, String snippet) {
+	public record WebSearchResult(String source, String title, String url, String snippet, String imageUrl) {
+		public WebSearchResult(String source, String title, String url, String snippet) {
+			this(source, title, url, snippet, "");
+		}
 	}
 }

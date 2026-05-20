@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../platform/window_control.dart';
+import '../../../shared/ava_dialog.dart';
 import '../../../shared/ava_toast.dart';
 import '../application/auth_controller.dart';
 import '../data/auth_api.dart';
@@ -24,6 +25,7 @@ class _LoginPageState extends ConsumerState<LoginPage> {
   void initState() {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) {
+      WindowControl.setWindowTitle('AVA');
       WindowControl.compactMessenger();
     });
   }
@@ -43,6 +45,9 @@ class _LoginPageState extends ConsumerState<LoginPage> {
       }
       final error = next.error;
       if (error != null && mounted) {
+        if (isDuplicateLoginRequired(error) || isPendingApprovalRequired(error)) {
+          return;
+        }
         showAvaToast(context, authErrorMessage(error));
       }
     });
@@ -57,7 +62,7 @@ class _LoginPageState extends ConsumerState<LoginPage> {
           gradient: LinearGradient(
             begin: Alignment.topLeft,
             end: Alignment.bottomRight,
-            colors: [Color(0xFF0F1530), Color(0xFF7B61FF), Color(0xFF2F6BFF)],
+            colors: [Color(0xFF4663CF), Color(0xFF4E41A9)],
           ),
         ),
         child: Column(
@@ -193,7 +198,7 @@ class _LoginPageState extends ConsumerState<LoginPage> {
     );
   }
 
-  Future<void> _login() async {
+  Future<void> _login({bool forceLogin = false}) async {
     final email = _emailController.text.trim();
     final password = _passwordController.text;
     if (email.isEmpty || password.isEmpty) {
@@ -201,9 +206,101 @@ class _LoginPageState extends ConsumerState<LoginPage> {
       return;
     }
 
-    await ref
-        .read(authControllerProvider.notifier)
-        .login(email: email, password: password, autoLogin: _autoLogin);
+    try {
+      await ref
+          .read(authControllerProvider.notifier)
+          .login(
+            email: email,
+            password: password,
+            autoLogin: _autoLogin,
+            forceLogin: forceLogin,
+          );
+    } on DuplicateLoginRequiredException {
+      if (!mounted || forceLogin) {
+        return;
+      }
+      final confirmed = await _showDuplicateLoginDialog();
+      if (confirmed == true && mounted) {
+        await _login(forceLogin: true);
+      }
+    } on PendingApprovalRequiredException catch (error) {
+      if (!mounted) {
+        return;
+      }
+      await _showPendingApprovalDialog(error.message);
+    }
+  }
+
+  Future<void> _showPendingApprovalDialog(String message) {
+    return showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) {
+        return AvaDialog(
+          title: '승인 대기',
+          subtitle: '회사 관리자의 승인이 필요합니다.',
+          icon: const Icon(
+            Icons.verified_user_outlined,
+            color: Color(0xFF4F65C8),
+            size: 24,
+          ),
+          actions: [
+            AvaDialogButton(
+              label: '확인',
+              filled: true,
+              onPressed: () => Navigator.of(context).pop(),
+            ),
+          ],
+          child: Text(
+            message,
+            style: const TextStyle(
+              color: Color(0xFF102040),
+              fontSize: 14,
+              height: 1.45,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  Future<bool?> _showDuplicateLoginDialog() {
+    return showDialog<bool>(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) {
+        return AvaDialog(
+          title: '중복 로그인',
+          subtitle: '다른 기기에서 이미 로그인 중입니다.',
+          icon: const Icon(
+            Icons.devices_other_rounded,
+            color: Color(0xFF4F65C8),
+            size: 24,
+          ),
+          actions: [
+            AvaDialogButton(
+              label: '취소',
+              onPressed: () => Navigator.of(context).pop(false),
+            ),
+            AvaDialogButton(
+              label: '로그인',
+              filled: true,
+              onPressed: () => Navigator.of(context).pop(true),
+            ),
+          ],
+          child: const Text(
+            '강제 로그아웃하고 현재 기기에서 로그인 하시겠습니까?',
+            style: TextStyle(
+              color: Color(0xFF102040),
+              fontSize: 14,
+              height: 1.45,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+        );
+      },
+    );
   }
 
   void _findAccount() {
@@ -271,46 +368,35 @@ class _AvaSpeechLogo extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return SizedBox(
-      width: 142,
-      height: 112,
-      child: Stack(
-        alignment: Alignment.center,
-        children: [
-          Positioned(
-            bottom: 14,
-            left: 38,
-            child: Transform.rotate(
-              angle: 0.78,
-              child: Container(
-                width: 32,
-                height: 32,
-                decoration: const BoxDecoration(color: Color(0xFF0F1530)),
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Image.asset(
+          'assets/images/abba_ai_login_logo.png',
+          width: 292,
+          height: 80,
+          fit: BoxFit.contain,
+        ),
+        const SizedBox(height: 16),
+        RichText(
+          textAlign: TextAlign.center,
+          text: const TextSpan(
+            style: TextStyle(
+              color: Colors.white,
+              fontSize: 19,
+              height: 1.2,
+              fontWeight: FontWeight.w400,
+            ),
+            children: [
+              TextSpan(text: '아바스 AI 업무 공간, '),
+              TextSpan(
+                text: '아톡',
+                style: TextStyle(fontWeight: FontWeight.w800),
               ),
-            ),
+            ],
           ),
-          Container(
-            width: 126,
-            height: 82,
-            decoration: BoxDecoration(
-              color: const Color(0xFF0F1530),
-              borderRadius: BorderRadius.circular(42),
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.black.withValues(alpha: 0.18),
-                  blurRadius: 18,
-                  offset: const Offset(0, 10),
-                ),
-              ],
-            ),
-            padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 18),
-            child: Image.asset(
-              'assets/images/ava_app_icon.png',
-              fit: BoxFit.contain,
-            ),
-          ),
-        ],
-      ),
+        ),
+      ],
     );
   }
 }

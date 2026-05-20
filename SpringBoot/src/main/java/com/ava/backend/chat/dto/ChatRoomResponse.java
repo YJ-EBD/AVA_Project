@@ -18,6 +18,7 @@ public record ChatRoomResponse(
 	boolean lastMessageSpoiler,
 	String avatarImageUrl,
 	ChatNoticeResponse notice,
-	List<UserProfileResponse> members
+	List<UserProfileResponse> members,
+	int unreadCount
 ) {
 }

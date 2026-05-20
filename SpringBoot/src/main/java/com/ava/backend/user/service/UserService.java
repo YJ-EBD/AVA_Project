@@ -11,6 +11,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import com.ava.backend.auth.security.AuthPrincipal;
+import com.ava.backend.company.CompanyScopeService;
 import com.ava.backend.user.dto.CompanyBlockRequest;
 import com.ava.backend.user.dto.CompanyEmployeeRequest;
 import com.ava.backend.user.dto.ProfileUpdateRequest;
@@ -30,7 +31,6 @@ public class UserService {
 	private static final String ONLINE = "\uC628\uB77C\uC778";
 	private static final String BACKGROUND = "\uBC31\uADF8\uB77C\uC6B4\uB4DC";
 	private static final String OFFLINE = "\uC624\uD504\uB77C\uC778";
-	private static final String DEFAULT_COMPANY = "ABBA-S";
 	private static final String DEFAULT_DEPARTMENT = "\uBBF8\uC9C0\uC815";
 	private static final String DEFAULT_POSITION = "\uC0AC\uC6D0";
 
@@ -38,17 +38,20 @@ public class UserService {
 	private final UserProfileRepository profileRepository;
 	private final CompanyBlockedEmployeeRepository blockedEmployeeRepository;
 	private final UserMapper userMapper;
+	private final CompanyScopeService companyScopeService;
 
 	public UserService(
 		UserAccountRepository accountRepository,
 		UserProfileRepository profileRepository,
 		CompanyBlockedEmployeeRepository blockedEmployeeRepository,
-		UserMapper userMapper
+		UserMapper userMapper,
+		CompanyScopeService companyScopeService
 	) {
 		this.accountRepository = accountRepository;
 		this.profileRepository = profileRepository;
 		this.blockedEmployeeRepository = blockedEmployeeRepository;
 		this.userMapper = userMapper;
+		this.companyScopeService = companyScopeService;
 	}
 
 	@Transactional(readOnly = true)
@@ -60,8 +63,7 @@ public class UserService {
 
 	@Transactional(readOnly = true)
 	public List<UserProfileResponse> profiles(AuthPrincipal principal) {
-		UserProfile currentProfile = profileEntity(principal.userId());
-		String companyName = normalizeCompany(currentProfile.getCompanyName());
+		String companyName = companyScopeService.effectiveCompany(principal);
 		return profileRepository.findAll().stream()
 			.filter(profile -> companyName.equalsIgnoreCase(normalizeCompany(profile.getCompanyName())))
 			.filter(profile -> !blockedEmployeeRepository.existsByCompanyNameIgnoreCaseAndTargetAccountId(
@@ -84,13 +86,13 @@ public class UserService {
 		String phoneNumber,
 		String email
 	) {
-		UserProfile currentProfile = profileEntity(principal.userId());
-		String companyName = normalizeCompany(currentProfile.getCompanyName());
+		String companyName = companyScopeService.effectiveCompany(principal);
 		String normalizedName = normalizeText(name);
 		String normalizedPhone = digitsOnly(phoneNumber);
 		String normalizedEmail = normalizeEmail(email);
 
 		List<UserProfile> matches = profileRepository.findAll().stream()
+			.filter(profile -> companyName.equalsIgnoreCase(normalizeCompany(profile.getCompanyName())))
 			.filter(profile -> {
 				UserAccount account = profile.getAccount();
 				boolean matchesName = normalizedName.isEmpty()
@@ -129,8 +131,7 @@ public class UserService {
 	@Transactional
 	public UserProfileResponse addCompanyEmployee(AuthPrincipal principal, CompanyEmployeeRequest request) {
 		assertAdmin(principal);
-		UserProfile currentProfile = profileEntity(principal.userId());
-		String companyName = normalizeCompany(currentProfile.getCompanyName());
+		String companyName = companyScopeService.effectiveCompany(principal);
 		UserAccount targetAccount = findTarget(request.targetUserId(), request.email(), request.name(), request.phoneNumber());
 		UserProfile targetProfile = profileEntity(targetAccount.getId());
 		targetProfile.setCompanyName(companyName);
@@ -147,8 +148,7 @@ public class UserService {
 	@Transactional
 	public UserProfileResponse blockEmployee(AuthPrincipal principal, CompanyBlockRequest request) {
 		assertAdmin(principal);
-		UserProfile currentProfile = profileEntity(principal.userId());
-		String companyName = normalizeCompany(currentProfile.getCompanyName());
+		String companyName = companyScopeService.effectiveCompany(principal);
 		UserAccount currentAccount = accountRepository.findById(principal.userId())
 			.orElseThrow(() -> new IllegalArgumentException("\uACC4\uC815\uC744 \uCC3E\uC744 \uC218 \uC5C6\uC2B5\uB2C8\uB2E4."));
 		UserAccount targetAccount = findTarget(request.targetUserId(), request.email(), null, null);
@@ -162,8 +162,7 @@ public class UserService {
 	@Transactional
 	public UserProfileResponse unblockEmployee(AuthPrincipal principal, CompanyBlockRequest request) {
 		assertAdmin(principal);
-		UserProfile currentProfile = profileEntity(principal.userId());
-		String companyName = normalizeCompany(currentProfile.getCompanyName());
+		String companyName = companyScopeService.effectiveCompany(principal);
 		UserAccount targetAccount = findTarget(request.targetUserId(), request.email(), null, null);
 		UserProfile targetProfile = profileEntity(targetAccount.getId());
 		blockedEmployeeRepository.deleteByCompanyNameIgnoreCaseAndTargetAccountId(companyName, targetAccount.getId());
@@ -244,7 +243,7 @@ public class UserService {
 	}
 
 	private void assertAdmin(AuthPrincipal principal) {
-		if (principal.role() != UserRole.ADMIN) {
+		if (principal.role() != UserRole.ADMIN && principal.role() != UserRole.SUPERUSER) {
 			throw new IllegalArgumentException("\uAD8C\uD55C\uC774 \uC5C6\uC2B5\uB2C8\uB2E4.");
 		}
 	}
@@ -272,7 +271,7 @@ public class UserService {
 	}
 
 	private String normalizeCompany(String value) {
-		return isBlank(value) ? DEFAULT_COMPANY : value.trim();
+		return companyScopeService.normalizeCompany(value);
 	}
 
 	private static boolean isUnspecifiedDepartment(String value) {

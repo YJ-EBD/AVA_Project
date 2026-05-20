@@ -4,14 +4,17 @@ import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter/services.dart';
 
 import '../data/mock_messenger_data.dart';
 import '../data/chat_api.dart';
 import '../data/chat_realtime_client.dart';
 import '../domain/messenger_models.dart';
 import '../../auth/application/auth_controller.dart';
+import '../../auth/application/company_scope.dart';
 import '../../auth/data/auth_api.dart';
 import '../../auth/data/auth_models.dart';
+import '../../azoom/presentation/azoom_page.dart';
 import '../../ai/presentation/ava_ai_page.dart';
 import '../../../config/app_config.dart';
 import '../../../platform/window_control.dart';
@@ -26,10 +29,17 @@ import 'widgets/more_panel.dart';
 
 const double _sideNavWidth = 64;
 const double _compactPrimaryPanelWidth = 396;
+const double _mobileMessengerBreakpoint = 720;
 const String _presenceOnline = '\uC628\uB77C\uC778';
 const String _presenceBackground = '\uBC31\uADF8\uB77C\uC6B4\uB4DC';
 const String _presenceOffline = '\uC624\uD504\uB77C\uC778';
 const Duration _presenceHeartbeatInterval = Duration(seconds: 20);
+
+bool _isAzoomRoomCode(String roomCode) {
+  return roomCode.startsWith('azoom-') ||
+      roomCode.startsWith('azoom:') ||
+      roomCode.startsWith('azoom_');
+}
 
 final activeMessengerTabProvider =
     NotifierProvider<ActiveMessengerTab, MessengerTab>(ActiveMessengerTab.new);
@@ -85,6 +95,66 @@ void resetMessengerToCompanyPage(WidgetRef ref) {
   ref.read(focusedChatRoomIdProvider.notifier).clear();
 }
 
+String _windowTitleForTab(MessengerTab tab) {
+  return switch (tab) {
+    MessengerTab.azoom => 'AZOOM',
+    MessengerTab.avaAi => 'AVA AI',
+    MessengerTab.friends ||
+    MessengerTab.chats ||
+    MessengerTab.more => 'Abba-Talk',
+  };
+}
+
+bool _isAdminMoreSession(AuthSession? session) {
+  final role = session?.user.role.toUpperCase();
+  return role == 'ADMIN' || role == 'SUPERUSER';
+}
+
+String chatMessageListPreview(ChatMessageDto? message) {
+  if (message == null) {
+    return '';
+  }
+  final attachment = message.attachment;
+  if (attachment != null) {
+    return chatAttachmentPreview(attachment.fileName, attachment.contentType);
+  }
+  return message.content;
+}
+
+String chatAttachmentPreview(String fileName, String contentType) {
+  final safeName = fileName.trim().isEmpty ? 'attachment' : fileName.trim();
+  final lowerType = contentType.toLowerCase();
+  final lowerName = safeName.toLowerCase();
+  if (lowerType.startsWith('image/') ||
+      lowerName.endsWith('.jpg') ||
+      lowerName.endsWith('.jpeg') ||
+      lowerName.endsWith('.png') ||
+      lowerName.endsWith('.gif') ||
+      lowerName.endsWith('.bmp') ||
+      lowerName.endsWith('.webp') ||
+      lowerName.endsWith('.heic') ||
+      lowerName.endsWith('.heif') ||
+      lowerName.endsWith('.tif') ||
+      lowerName.endsWith('.tiff')) {
+    return '[이미지] $safeName';
+  }
+  if (lowerType.startsWith('video/') ||
+      lowerName.endsWith('.mp4') ||
+      lowerName.endsWith('.m4v') ||
+      lowerName.endsWith('.mov') ||
+      lowerName.endsWith('.avi') ||
+      lowerName.endsWith('.mkv') ||
+      lowerName.endsWith('.webm') ||
+      lowerName.endsWith('.wmv') ||
+      lowerName.endsWith('.mpg') ||
+      lowerName.endsWith('.mpeg') ||
+      lowerName.endsWith('.3gp') ||
+      lowerName.endsWith('.3gpp')) {
+    return '[동영상] $safeName';
+  }
+  return '[파일] $safeName';
+}
+
 final currentUserProfileProvider = Provider<PersonProfile>((ref) {
   final user = ref.watch(authControllerProvider).value?.session?.user;
   if (user == null) {
@@ -107,7 +177,7 @@ final userProfilesProvider =
 final friendGroupsProvider = Provider<List<UserGroup>>((ref) {
   final users = ref.watch(userProfilesProvider).value ?? const [];
   if (users.isEmpty) {
-    return userGroups;
+    return const [];
   }
 
   final grouped = <String, List<PersonProfile>>{};
@@ -137,7 +207,7 @@ final friendGroupsProvider = Provider<List<UserGroup>>((ref) {
 final updatedUserProfilesProvider = Provider<List<PersonProfile>>((ref) {
   final users = ref.watch(userProfilesProvider).value ?? const [];
   if (users.isEmpty) {
-    return updatedUsers;
+    return const [];
   }
   return users.take(5).toList();
 });
@@ -146,6 +216,7 @@ class UserProfiles extends AsyncNotifier<List<PersonProfile>> {
   @override
   Future<List<PersonProfile>> build() async {
     final session = ref.watch(authControllerProvider).value?.session;
+    ref.watch(activeCompanyProvider);
     if (session == null || session.accessToken.isEmpty) {
       return const [];
     }
@@ -172,6 +243,7 @@ class ChatRooms extends Notifier<List<ChatRoom>> {
   @override
   List<ChatRoom> build() {
     final session = ref.watch(authControllerProvider).value?.session;
+    final activeCompany = ref.watch(activeCompanyProvider);
     final userKey = _userKey(session);
     if (session == null || session.accessToken.isEmpty || userKey == null) {
       _loadedUserKey = null;
@@ -179,8 +251,9 @@ class ChatRooms extends Notifier<List<ChatRoom>> {
       _isLoadingRemoteRooms = false;
       return const [];
     }
-    if (_loadedUserKey != userKey) {
-      _loadedUserKey = userKey;
+    final scopedUserKey = '$userKey:${activeCompany ?? ''}';
+    if (_loadedUserKey != scopedUserKey) {
+      _loadedUserKey = scopedUserKey;
       _hasLoadedRemoteRooms = false;
       _isLoadingRemoteRooms = false;
       Future<void>.microtask(() => refreshFromServer(force: true));
@@ -202,13 +275,15 @@ class ChatRooms extends Notifier<List<ChatRoom>> {
     if (userKey == null) {
       return;
     }
+    final activeCompany = ref.read(activeCompanyProvider);
+    final scopedUserKey = '$userKey:${activeCompany ?? ''}';
 
     _isLoadingRemoteRooms = true;
     try {
       final remoteRooms = await ref
           .read(chatApiProvider)
           .rooms(session.accessToken);
-      if (_loadedUserKey != userKey) {
+      if (_loadedUserKey != scopedUserKey) {
         return;
       }
       final visibleRooms = remoteRooms.where(_shouldDisplayRemoteRoom);
@@ -435,6 +510,9 @@ class ChatRooms extends Notifier<List<ChatRoom>> {
   }
 
   bool _shouldDisplayRemoteRoom(ChatRoomDto room) {
+    if (_isAzoomRoomCode(room.code)) {
+      return false;
+    }
     if (room.type == 'SELF' && room.lastMessage.trim().isEmpty) {
       return false;
     }
@@ -495,6 +573,7 @@ class ChatRooms extends Notifier<List<ChatRoom>> {
       participantCount: room.participantCount,
       isPinned: room.pinned,
       pinnedAt: room.pinnedAt ?? fallback?.pinnedAt,
+      unreadCount: room.unreadCount,
       isMuted: fallback?.isMuted ?? false,
       notice: _noticeFromRemote(room.notice),
     );
@@ -1480,6 +1559,7 @@ class _MessengerPageState extends ConsumerState<MessengerPage>
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) {
         resetMessengerToCompanyPage(ref);
+        _syncWindowTitle(ref.read(activeMessengerTabProvider));
       }
     });
     WindowControl.setNotificationReplyHandler(_sendNotificationReply);
@@ -1554,6 +1634,30 @@ class _MessengerPageState extends ConsumerState<MessengerPage>
       _visibleChatRoom = null;
       _isChatPanelClosing = false;
     });
+  }
+
+  void _syncWindowTitle(MessengerTab tab) {
+    unawaited(WindowControl.setWindowTitle(_windowTitleForTab(tab)));
+  }
+
+  Future<void> _resizeWindowForTab(MessengerTab tab) async {
+    switch (tab) {
+      case MessengerTab.azoom:
+        await WindowControl.openAzoomMessenger();
+      case MessengerTab.avaAi:
+        await WindowControl.expandMessenger();
+      case MessengerTab.friends:
+      case MessengerTab.chats:
+        await WindowControl.compactMessenger();
+      case MessengerTab.more:
+        if (_isAdminMoreSession(
+          ref.read(authControllerProvider).value?.session,
+        )) {
+          await WindowControl.expandMessenger();
+        } else {
+          await WindowControl.compactMessenger();
+        }
+    }
   }
 
   void _syncInboxRealtime(AuthSession? session) {
@@ -1651,6 +1755,10 @@ class _MessengerPageState extends ConsumerState<MessengerPage>
     if (!mounted || event.room.code.isEmpty) {
       return;
     }
+    if (_isAzoomRoomCode(event.room.code)) {
+      ref.read(chatRoomsProvider.notifier).remove(event.room.code);
+      return;
+    }
 
     if (event.type == 'room-deleted') {
       ref.read(chatRoomsProvider.notifier).remove(event.room.code);
@@ -1668,6 +1776,7 @@ class _MessengerPageState extends ConsumerState<MessengerPage>
     final selectedRoom = ref.read(selectedChatRoomProvider);
     final isOpen = selectedRoom?.id == room.id;
     final isMine = message?.senderId == session.user.id;
+    final preview = chatMessageListPreview(message);
 
     ref
         .read(chatRoomsProvider.notifier)
@@ -1690,7 +1799,7 @@ class _MessengerPageState extends ConsumerState<MessengerPage>
         isMine ||
         message == null ||
         message.silent ||
-        message.content.isEmpty ||
+        preview.isEmpty ||
         message.systemMessage) {
       return;
     }
@@ -1698,12 +1807,13 @@ class _MessengerPageState extends ConsumerState<MessengerPage>
     final sender = _notificationSender(displayedRoom, message);
     await WindowControl.showChatNotification(
       roomId: displayedRoom.id,
+      roomTitle: displayedRoom.title,
       senderName: sender.name,
       senderNickname: sender.nickname?.isNotEmpty == true
           ? sender.nickname!
           : sender.name,
       avatarColor: colorToHex(sender.color),
-      body: message.content,
+      body: preview,
     );
   }
 
@@ -1740,6 +1850,7 @@ class _MessengerPageState extends ConsumerState<MessengerPage>
     ref.read(focusedChatRoomIdProvider.notifier).focus(target);
     ref.read(selectedChatRoomProvider.notifier).open(target);
     await WindowControl.expandMessenger();
+    await WindowControl.showMessengerWindow();
   }
 
   Future<void> _sendNotificationReply(String roomId, String content) async {
@@ -1777,6 +1888,30 @@ class _MessengerPageState extends ConsumerState<MessengerPage>
         _clearChatPanel();
       }
     });
+    ref.listen<MessengerTab>(activeMessengerTabProvider, (previous, next) {
+      if (previous == next) {
+        return;
+      }
+      _syncWindowTitle(next);
+      if (next == MessengerTab.azoom) {
+        unawaited(WindowControl.openAzoomMessenger());
+        return;
+      }
+      if (previous == MessengerTab.azoom) {
+        ref.read(azoomVoiceStageActiveProvider.notifier).setActive(false);
+        unawaited(() async {
+          await WindowControl.restoreMessengerFromAzoom();
+          await _resizeWindowForTab(next);
+        }());
+        return;
+      }
+      if (next == MessengerTab.avaAi ||
+          next == MessengerTab.friends ||
+          next == MessengerTab.chats ||
+          next == MessengerTab.more) {
+        unawaited(_resizeWindowForTab(next));
+      }
+    });
     ref.listen<AsyncValue<AuthState>>(authControllerProvider, (previous, next) {
       _syncInboxRealtime(next.value?.session);
       _syncPresence(next.value?.session);
@@ -1798,17 +1933,37 @@ class _MessengerPageState extends ConsumerState<MessengerPage>
       });
     }
     final activeTab = ref.watch(activeMessengerTabProvider);
+    final windowTitle = _windowTitleForTab(activeTab);
+    final hideAzoomVoiceChrome =
+        activeTab == MessengerTab.azoom &&
+        ref.watch(azoomVoiceStageActiveProvider);
     final dimNativePopup = ref.watch(nativePopupDimProvider);
     final visibleRoom = _visibleChatRoom;
+    final rootMobileLayout =
+        MediaQuery.sizeOf(context).width <= _mobileMessengerBreakpoint;
+    final fullPageTab =
+        activeTab == MessengerTab.azoom ||
+        activeTab == MessengerTab.avaAi ||
+        (activeTab == MessengerTab.more && _isAdminMoreSession(session));
 
     return Scaffold(
       backgroundColor: const Color(0xFFF5F5F5),
       body: Column(
         children: [
-          const AppWindowTitleBar(),
+          if (!hideAzoomVoiceChrome && !rootMobileLayout)
+            AppWindowTitleBar(title: windowTitle),
           Expanded(
             child: LayoutBuilder(
               builder: (context, constraints) {
+                final mobileLayout =
+                    constraints.maxWidth <= _mobileMessengerBreakpoint;
+                if (mobileLayout && !hideAzoomVoiceChrome) {
+                  return _buildMobileLayout(
+                    activeTab: activeTab,
+                    visibleRoom: visibleRoom,
+                    dimNativePopup: dimNativePopup,
+                  );
+                }
                 final contentWidth = (constraints.maxWidth - _sideNavWidth)
                     .clamp(0.0, double.infinity);
                 final shouldReserveChatPanel =
@@ -1823,11 +1978,12 @@ class _MessengerPageState extends ConsumerState<MessengerPage>
 
                 return Stack(
                   children: [
-                    activeTab == MessengerTab.avaAi
+                    fullPageTab
                         ? Row(
                             children: [
-                              MessengerSideNav(activeTab: activeTab),
-                              const Expanded(child: AvaAiPage()),
+                              if (!hideAzoomVoiceChrome)
+                                MessengerSideNav(activeTab: activeTab),
+                              Expanded(child: _buildPrimaryPanel(activeTab)),
                             ],
                           )
                         : Row(
@@ -1872,12 +2028,129 @@ class _MessengerPageState extends ConsumerState<MessengerPage>
   }
 
   Widget _buildPrimaryPanel(MessengerTab activeTab) {
+    final activeCompany = ref.watch(activeCompanyProvider);
     return switch (activeTab) {
       MessengerTab.friends => const FriendsPanel(),
       MessengerTab.chats => const ChatsPanel(),
-      MessengerTab.avaAi => const AvaAiPage(),
+      MessengerTab.azoom => AzoomPage(
+        key: ValueKey('azoom-${activeCompany ?? ''}'),
+        currentUser: ref.watch(currentUserProfileProvider),
+        mobileActiveTab: activeTab,
+        onMobileTabSelected: (tab) =>
+            ref.read(activeMessengerTabProvider.notifier).setTab(tab),
+      ),
+      MessengerTab.avaAi => AvaAiPage(
+        key: ValueKey('ava-ai-${activeCompany ?? ''}'),
+      ),
       MessengerTab.more => const MorePanel(),
     };
+  }
+
+  Widget _buildMobileLayout({
+    required MessengerTab activeTab,
+    required ChatRoom? visibleRoom,
+    required bool dimNativePopup,
+  }) {
+    final showChatRoom = visibleRoom != null;
+    final primaryPanel = _buildPrimaryPanel(activeTab);
+    final mobileContent = showChatRoom
+        ? ChatRoomPanel(
+            key: ValueKey('mobile-chat-panel-${visibleRoom.id}'),
+            room: visibleRoom,
+            onClose: _requestCloseChatPanel,
+            mobileLayout: true,
+          )
+        : activeTab == MessengerTab.azoom
+        ? primaryPanel
+        : _MobileStatusInset(
+            color: _mobileStatusBackground(activeTab),
+            overlayStyle: _mobileOverlayStyle(activeTab),
+            child: primaryPanel,
+          );
+    return PopScope(
+      canPop: !showChatRoom,
+      onPopInvokedWithResult: (didPop, _) {
+        if (!didPop && showChatRoom) {
+          _requestCloseChatPanel();
+        }
+      },
+      child: Stack(
+        children: [
+          Column(
+            children: [
+              Expanded(child: mobileContent),
+              if (!showChatRoom && activeTab != MessengerTab.azoom)
+                _MobileBottomNav(activeTab: activeTab),
+            ],
+          ),
+          if (dimNativePopup)
+            Positioned.fill(
+              child: IgnorePointer(
+                child: ColoredBox(color: Colors.black.withValues(alpha: 0.32)),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
+  Color _mobileStatusBackground(MessengerTab activeTab) {
+    return switch (activeTab) {
+      MessengerTab.avaAi => const Color(0xFFE9F0F5),
+      MessengerTab.more =>
+        _mobileCanOpenAdminPanel(ref.watch(currentUserProfileProvider).role)
+            ? const Color(0xFF4663CF)
+            : Colors.white,
+      _ => Colors.white,
+    };
+  }
+
+  SystemUiOverlayStyle _mobileOverlayStyle(MessengerTab activeTab) {
+    final lightIcons =
+        activeTab == MessengerTab.more &&
+        _mobileCanOpenAdminPanel(ref.watch(currentUserProfileProvider).role);
+    return SystemUiOverlayStyle(
+      statusBarColor: Colors.transparent,
+      systemNavigationBarColor: Colors.transparent,
+      systemNavigationBarDividerColor: Colors.transparent,
+      statusBarIconBrightness: lightIcons ? Brightness.light : Brightness.dark,
+      systemNavigationBarIconBrightness: Brightness.dark,
+      statusBarBrightness: lightIcons ? Brightness.dark : Brightness.light,
+    );
+  }
+}
+
+bool _mobileCanOpenAdminPanel(String? role) {
+  final normalized = (role ?? '').toUpperCase();
+  return normalized == 'ADMIN' || normalized == 'SUPERUSER';
+}
+
+class _MobileStatusInset extends StatelessWidget {
+  const _MobileStatusInset({
+    required this.color,
+    required this.overlayStyle,
+    required this.child,
+  });
+
+  final Color color;
+  final SystemUiOverlayStyle overlayStyle;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    final topInset = MediaQuery.paddingOf(context).top;
+    return AnnotatedRegion<SystemUiOverlayStyle>(
+      value: overlayStyle,
+      child: ColoredBox(
+        color: color,
+        child: Column(
+          children: [
+            SizedBox(height: topInset),
+            Expanded(child: child),
+          ],
+        ),
+      ),
+    );
   }
 }
 
@@ -1907,6 +2180,134 @@ class _SlidingChatPanel extends StatelessWidget {
           room: room,
           onClose: onClose,
         ),
+      ),
+    );
+  }
+}
+
+class _MobileBottomNav extends ConsumerWidget {
+  const _MobileBottomNav({required this.activeTab});
+
+  final MessengerTab activeTab;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final quietRoomIds = ref.watch(quietChatRoomsProvider).toSet();
+    final unreadCount = ref
+        .watch(chatRoomsProvider)
+        .fold<int>(
+          0,
+          (count, room) =>
+              quietRoomIds.contains(room.id) ? count : count + room.unreadCount,
+        );
+
+    final bottomInset = MediaQuery.paddingOf(context).bottom;
+    return Container(
+      key: const ValueKey('mobile-bottom-nav'),
+      height: 58 + bottomInset,
+      padding: EdgeInsets.only(bottom: bottomInset),
+      decoration: const BoxDecoration(
+        color: Color(0xFFEDEDED),
+        border: Border(top: BorderSide(color: Color(0xFFDADADA))),
+      ),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceAround,
+        children: [
+          _MobileBottomNavItem(
+            key: const ValueKey('mobile-nav-friends'),
+            icon: Icons.person,
+            isActive: activeTab == MessengerTab.friends,
+            onTap: () => _selectTab(ref, MessengerTab.friends),
+          ),
+          _MobileBottomNavItem(
+            key: const ValueKey('mobile-nav-chats'),
+            icon: Icons.chat_bubble,
+            isActive: activeTab == MessengerTab.chats,
+            badge: unreadCount > 0 ? '$unreadCount' : null,
+            onTap: () => _selectTab(ref, MessengerTab.chats),
+          ),
+          _MobileBottomNavItem(
+            key: const ValueKey('mobile-nav-azoom'),
+            icon: Icons.videocam,
+            isActive: activeTab == MessengerTab.azoom,
+            onTap: () => _selectTab(ref, MessengerTab.azoom),
+          ),
+          _MobileBottomNavItem(
+            key: const ValueKey('mobile-nav-ai'),
+            icon: Icons.auto_awesome,
+            isActive: activeTab == MessengerTab.avaAi,
+            onTap: () => _selectTab(ref, MessengerTab.avaAi),
+          ),
+          _MobileBottomNavItem(
+            key: const ValueKey('mobile-nav-more'),
+            icon: Icons.more_horiz,
+            isActive: activeTab == MessengerTab.more,
+            onTap: () => _selectTab(ref, MessengerTab.more),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _selectTab(WidgetRef ref, MessengerTab tab) {
+    ref.read(activeMessengerTabProvider.notifier).setTab(tab);
+  }
+}
+
+class _MobileBottomNavItem extends StatelessWidget {
+  const _MobileBottomNavItem({
+    super.key,
+    required this.icon,
+    required this.isActive,
+    required this.onTap,
+    this.badge,
+  });
+
+  final IconData icon;
+  final bool isActive;
+  final VoidCallback onTap;
+  final String? badge;
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      width: 54,
+      height: 48,
+      child: Stack(
+        alignment: Alignment.center,
+        clipBehavior: Clip.none,
+        children: [
+          IconButton(
+            tooltip: '',
+            onPressed: onTap,
+            icon: Icon(
+              icon,
+              color: isActive ? Colors.black : const Color(0xFF7A7A7A),
+              size: 24,
+            ),
+          ),
+          if (badge != null)
+            Positioned(
+              top: 4,
+              right: 8,
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFFF4B2B),
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: Text(
+                  badge!,
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 11,
+                    fontWeight: FontWeight.w800,
+                    height: 1.1,
+                  ),
+                ),
+              ),
+            ),
+        ],
       ),
     );
   }

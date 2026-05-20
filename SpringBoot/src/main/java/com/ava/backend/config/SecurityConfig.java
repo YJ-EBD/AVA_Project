@@ -4,9 +4,11 @@ import java.util.Arrays;
 import java.util.List;
 
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.boot.web.servlet.FilterRegistrationBean;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
+import org.springframework.security.config.annotation.method.configuration.EnableMethodSecurity;
 import org.springframework.security.config.annotation.web.configurers.AbstractHttpConfigurer;
 import org.springframework.security.config.http.SessionCreationPolicy;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
@@ -20,6 +22,7 @@ import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
 import com.ava.backend.auth.security.JwtAuthenticationFilter;
 
 @Configuration
+@EnableMethodSecurity
 public class SecurityConfig {
 
 	private final List<String> allowedOrigins;
@@ -29,7 +32,12 @@ public class SecurityConfig {
 	}
 
 	@Bean
-	SecurityFilterChain securityFilterChain(HttpSecurity http, JwtAuthenticationFilter jwtAuthenticationFilter) throws Exception {
+	SecurityFilterChain securityFilterChain(
+		HttpSecurity http,
+		JwtAuthenticationFilter jwtAuthenticationFilter,
+		AuthRateLimitFilter authRateLimitFilter,
+		SystemRequestLogFilter systemRequestLogFilter
+	) throws Exception {
 		return http
 			.csrf(AbstractHttpConfigurer::disable)
 			.cors(cors -> cors.configurationSource(corsConfigurationSource()))
@@ -37,18 +45,31 @@ public class SecurityConfig {
 			.authorizeHttpRequests(authorize -> authorize
 				.requestMatchers(
 					"/api/health",
+					"/api/readiness",
 					"/actuator/health",
 					"/api/auth/signup",
+					"/api/auth/email-verifications",
+					"/api/auth/email-verifications/confirm",
 					"/api/auth/login",
 					"/api/auth/refresh",
 					"/api/auth/find-account",
 					"/api/app-updates/**",
-					"/ws/**"
+					"/ws/**",
+					"/rtc/**"
 				).permitAll()
 				.anyRequest().authenticated()
 			)
+			.addFilterBefore(systemRequestLogFilter, UsernamePasswordAuthenticationFilter.class)
+			.addFilterBefore(authRateLimitFilter, UsernamePasswordAuthenticationFilter.class)
 			.addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class)
 			.build();
+	}
+
+	@Bean
+	FilterRegistrationBean<SystemRequestLogFilter> systemRequestLogFilterRegistration(SystemRequestLogFilter filter) {
+		var registration = new FilterRegistrationBean<SystemRequestLogFilter>(filter);
+		registration.setEnabled(false);
+		return registration;
 	}
 
 	@Bean

@@ -7,8 +7,16 @@ class AuthWindowTitleBar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return SizedBox(
+    return Container(
       height: 34,
+      decoration: const BoxDecoration(
+        gradient: LinearGradient(
+          begin: Alignment.centerLeft,
+          end: Alignment.centerRight,
+          colors: [Color(0xFF4663CF), Color(0xFF4E41A9)],
+        ),
+        border: Border(bottom: BorderSide(color: Color(0x334E41A9))),
+      ),
       child: Row(
         children: [
           Expanded(
@@ -23,7 +31,7 @@ class AuthWindowTitleBar extends StatelessWidget {
                     'AVA',
                     style: TextStyle(
                       color: Colors.white,
-                      fontSize: 12,
+                      fontSize: 16,
                       fontWeight: FontWeight.w800,
                     ),
                   ),

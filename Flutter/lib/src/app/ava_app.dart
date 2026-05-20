@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../features/auth/presentation/auth_session_gate.dart';
 import '../features/update/presentation/app_update_gate.dart';
 import 'router.dart';
 
@@ -30,9 +31,12 @@ class AvaApp extends ConsumerWidget {
       ),
       routerConfig: router,
       builder: (context, child) {
-        return AppUpdateGate(
+        return AuthSessionGate(
           navigatorKey: appNavigatorKey,
-          child: child ?? const SizedBox.shrink(),
+          child: AppUpdateGate(
+            navigatorKey: appNavigatorKey,
+            child: child ?? const SizedBox.shrink(),
+          ),
         );
       },
     );

@@ -16,75 +16,247 @@ import java.util.Locale;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.core.io.Resource;
 import org.springframework.core.io.UrlResource;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 
 import com.ava.backend.update.dto.AppUpdateManifestResponse;
+import com.ava.backend.update.dto.AppUpdateReleaseResponse;
+import com.ava.backend.update.entity.AppUpdateReleaseEntity;
+import com.ava.backend.update.repository.AppUpdateReleaseRepository;
 
 @Service
 public class AppUpdateService {
 
 	private static final String WINDOWS_PLATFORM = "windows";
+	private static final String MACOS_PLATFORM = "macos";
+	private static final String ANDROID_PLATFORM = "android";
 
 	private final Path updateDirectory;
-	private final String latestWindowsVersion;
-	private final String windowsFileName;
-	private final boolean windowsRequired;
-	private final String windowsReleaseNotes;
+	private final PlatformUpdateConfig windowsConfig;
+	private final PlatformUpdateConfig macosConfig;
+	private final PlatformUpdateConfig androidConfig;
+	private final AppUpdateReleaseRepository releaseRepository;
 
 	public AppUpdateService(
+		AppUpdateReleaseRepository releaseRepository,
 		@Value("${ava.app-update.directory:AppUpdates}") String updateDirectory,
 		@Value("${ava.app-update.windows.latest-version:0.1.0}") String latestWindowsVersion,
 		@Value("${ava.app-update.windows.file-name:ava-windows-${ava.app-update.windows.latest-version:0.1.0}.zip}") String windowsFileName,
 		@Value("${ava.app-update.windows.required:false}") boolean windowsRequired,
-		@Value("${ava.app-update.windows.release-notes:AVA desktop update}") String windowsReleaseNotes
+		@Value("${ava.app-update.windows.release-notes:AVA desktop update}") String windowsReleaseNotes,
+		@Value("${ava.app-update.macos.latest-version:0.1.0}") String latestMacosVersion,
+		@Value("${ava.app-update.macos.file-name:ava-macos-${ava.app-update.macos.latest-version:0.1.0}.zip}") String macosFileName,
+		@Value("${ava.app-update.macos.required:false}") boolean macosRequired,
+		@Value("${ava.app-update.macos.release-notes:AVA macOS desktop update}") String macosReleaseNotes,
+		@Value("${ava.app-update.android.latest-version:0.1.0}") String latestAndroidVersion,
+		@Value("${ava.app-update.android.file-name:ava-android-${ava.app-update.android.latest-version:0.1.0}.apk}") String androidFileName,
+		@Value("${ava.app-update.android.required:false}") boolean androidRequired,
+		@Value("${ava.app-update.android.release-notes:AVA Android update}") String androidReleaseNotes
 	) {
+		this.releaseRepository = releaseRepository;
 		this.updateDirectory = Path.of(updateDirectory).toAbsolutePath().normalize();
-		this.latestWindowsVersion = normalizeVersion(latestWindowsVersion);
-		this.windowsFileName = windowsFileName == null || windowsFileName.isBlank()
-			? "ava-windows-" + this.latestWindowsVersion + ".zip"
-			: windowsFileName.strip();
-		this.windowsRequired = windowsRequired;
-		this.windowsReleaseNotes = windowsReleaseNotes == null ? "" : windowsReleaseNotes.strip();
-	}
-
-	public AppUpdateManifestResponse windowsManifest(String currentVersion) {
-		String normalizedCurrent = normalizeVersion(currentVersion);
-		Path packagePath = packagePath();
-		boolean packageExists = Files.isRegularFile(packagePath);
-		boolean updateAvailable = packageExists && compareVersions(latestWindowsVersion, normalizedCurrent) > 0;
-		String encodedFileName = URLEncoder.encode(windowsFileName, StandardCharsets.UTF_8)
-			.replace("+", "%20");
-		return new AppUpdateManifestResponse(
+		this.windowsConfig = buildConfig(
 			WINDOWS_PLATFORM,
-			normalizedCurrent,
 			latestWindowsVersion,
-			updateAvailable,
-			updateAvailable && windowsRequired,
 			windowsFileName,
-			updateAvailable ? "/api/app-updates/windows/download/" + encodedFileName : "",
-			packageExists ? sha256(packagePath) : "",
-			packageExists ? size(packagePath) : 0,
-			windowsReleaseNotes
+			windowsRequired,
+			windowsReleaseNotes,
+			".zip"
+		);
+		this.macosConfig = buildConfig(
+			MACOS_PLATFORM,
+			latestMacosVersion,
+			macosFileName,
+			macosRequired,
+			macosReleaseNotes,
+			".zip"
+		);
+		this.androidConfig = buildConfig(
+			ANDROID_PLATFORM,
+			latestAndroidVersion,
+			androidFileName,
+			androidRequired,
+			androidReleaseNotes,
+			".apk"
 		);
 	}
 
+	public AppUpdateManifestResponse windowsManifest(String currentVersion) {
+		return manifest(WINDOWS_PLATFORM, currentVersion);
+	}
+
+	public AppUpdateManifestResponse macosManifest(String currentVersion) {
+		return manifest(MACOS_PLATFORM, currentVersion);
+	}
+
+	public AppUpdateManifestResponse androidManifest(String currentVersion) {
+		return manifest(ANDROID_PLATFORM, currentVersion);
+	}
+
+	public AppUpdateManifestResponse manifest(String platform, String currentVersion) {
+		PlatformUpdateConfig config = configFor(platform);
+		String normalizedCurrent = normalizeVersion(currentVersion);
+		Path packagePath = packagePath(config.fileName());
+		boolean packageExists = Files.isRegularFile(packagePath);
+		String packageSha256 = packageExists ? sha256(packagePath) : "";
+		long packageSize = packageExists ? size(packagePath) : 0;
+		AppUpdateReleaseEntity release = saveConfiguredRelease(
+			config,
+			packageExists,
+			packageSha256,
+			packageSize
+		);
+		boolean updateAvailable = packageExists && compareVersions(config.latestVersion(), normalizedCurrent) > 0;
+		String encodedFileName = URLEncoder.encode(config.fileName(), StandardCharsets.UTF_8)
+			.replace("+", "%20");
+		return new AppUpdateManifestResponse(
+			release.getPlatform(),
+			normalizedCurrent,
+			release.getVersion(),
+			updateAvailable,
+			updateAvailable && release.isRequired(),
+			release.getFileName(),
+			updateAvailable ? "/api/app-updates/" + release.getPlatform() + "/download/" + encodedFileName : "",
+			release.getSha256(),
+			release.getSizeBytes(),
+			release.getReleaseNotes()
+		);
+	}
+
+	public AppUpdateReleaseResponse release(String platform, String version) {
+		PlatformUpdateConfig config = configFor(platform);
+		if (config.latestVersion().equals(normalizeVersion(version))) {
+			Path packagePath = packagePath(config.fileName());
+			boolean packageExists = Files.isRegularFile(packagePath);
+			saveConfiguredRelease(
+				config,
+				packageExists,
+				packageExists ? sha256(packagePath) : "",
+				packageExists ? size(packagePath) : 0
+			);
+		}
+		String normalizedPlatform = platform == null ? "" : platform.strip().toLowerCase(Locale.ROOT);
+		String normalizedVersion = normalizeVersion(version);
+		AppUpdateReleaseEntity release = releaseRepository
+			.findByPlatformAndVersion(normalizedPlatform, normalizedVersion)
+			.orElseThrow(() -> new IllegalArgumentException("Update release not found."));
+		return toReleaseResponse(release);
+	}
+
 	public UpdatePackage windowsPackage(String fileName) {
-		if (!windowsFileName.equals(fileName)) {
+		return packageFor(WINDOWS_PLATFORM, fileName);
+	}
+
+	public UpdatePackage macosPackage(String fileName) {
+		return packageFor(MACOS_PLATFORM, fileName);
+	}
+
+	public UpdatePackage androidPackage(String fileName) {
+		return packageFor(ANDROID_PLATFORM, fileName);
+	}
+
+	public UpdatePackage packageFor(String platform, String fileName) {
+		PlatformUpdateConfig config = configFor(platform);
+		if (!config.fileName().equals(fileName)) {
 			throw new IllegalArgumentException("Unknown update package.");
 		}
-		Path path = packagePath();
+		Path path = packagePath(config.fileName());
 		if (!Files.isRegularFile(path)) {
 			throw new IllegalArgumentException("Update package not found.");
 		}
 		try {
-			return new UpdatePackage(new UrlResource(path.toUri()), windowsFileName, Files.size(path));
+			return new UpdatePackage(new UrlResource(path.toUri()), config.fileName(), Files.size(path));
 		} catch (IOException exception) {
 			throw new IllegalStateException("Update package cannot be read.", exception);
 		}
 	}
 
-	private Path packagePath() {
-		return updateDirectory.resolve(windowsFileName).normalize();
+	private PlatformUpdateConfig buildConfig(
+		String platform,
+		String latestVersion,
+		String fileName,
+		boolean required,
+		String releaseNotes,
+		String extension
+	) {
+		String normalizedLatest = normalizeVersion(latestVersion);
+		String resolvedFileName = fileName == null || fileName.isBlank()
+			? "ava-" + platform + "-" + normalizedLatest + extension
+			: fileName.strip();
+		return new PlatformUpdateConfig(
+			platform,
+			normalizedLatest,
+			resolvedFileName,
+			required,
+			releaseNotes == null ? "" : releaseNotes.strip()
+		);
+	}
+
+	private PlatformUpdateConfig configFor(String platform) {
+		String normalized = platform == null ? "" : platform.strip().toLowerCase(Locale.ROOT);
+		if (WINDOWS_PLATFORM.equals(normalized)) {
+			return windowsConfig;
+		}
+		if (MACOS_PLATFORM.equals(normalized)) {
+			return macosConfig;
+		}
+		if (ANDROID_PLATFORM.equals(normalized)) {
+			return androidConfig;
+		}
+		throw new IllegalArgumentException("Unsupported update platform.");
+	}
+
+	private Path packagePath(String fileName) {
+		return updateDirectory.resolve(fileName).normalize();
+	}
+
+	private AppUpdateReleaseEntity saveConfiguredRelease(
+		PlatformUpdateConfig config,
+		boolean packageAvailable,
+		String sha256,
+		long sizeBytes
+	) {
+		AppUpdateReleaseEntity release = releaseRepository
+			.findByPlatformAndVersion(config.platform(), config.latestVersion())
+			.orElseGet(() -> new AppUpdateReleaseEntity(config.platform(), config.latestVersion()));
+		release.update(
+			config.fileName(),
+			config.required(),
+			config.releaseNotes(),
+			sha256,
+			sizeBytes,
+			packageAvailable
+		);
+		try {
+			return releaseRepository.saveAndFlush(release);
+		} catch (DataIntegrityViolationException exception) {
+			AppUpdateReleaseEntity existing = releaseRepository
+				.findByPlatformAndVersion(config.platform(), config.latestVersion())
+				.orElseThrow(() -> exception);
+			existing.update(
+				config.fileName(),
+				config.required(),
+				config.releaseNotes(),
+				sha256,
+				sizeBytes,
+				packageAvailable
+			);
+			return releaseRepository.save(existing);
+		}
+	}
+
+	private AppUpdateReleaseResponse toReleaseResponse(AppUpdateReleaseEntity release) {
+		return new AppUpdateReleaseResponse(
+			release.getPlatform(),
+			release.getVersion(),
+			release.getFileName(),
+			release.isRequired(),
+			release.getReleaseNotes(),
+			release.getSha256(),
+			release.getSizeBytes(),
+			release.isPackageAvailable(),
+			release.getUpdatedAt()
+		);
 	}
 
 	private long size(Path path) {
@@ -142,5 +314,14 @@ public class AppUpdateService {
 	}
 
 	public record UpdatePackage(Resource resource, String fileName, long sizeBytes) {
+	}
+
+	private record PlatformUpdateConfig(
+		String platform,
+		String latestVersion,
+		String fileName,
+		boolean required,
+		String releaseNotes
+	) {
 	}
 }

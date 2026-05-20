@@ -78,6 +78,7 @@ public class ChatController {
 		@PathVariable String roomCode,
 		@AuthenticationPrincipal AuthPrincipal principal
 	) {
+		assertRegularChatRoomCode(roomCode);
 		return chatService.recentMessages(roomCode, principal);
 	}
 
@@ -87,6 +88,7 @@ public class ChatController {
 		@Valid @RequestBody ChatMessageRequest request,
 		@AuthenticationPrincipal AuthPrincipal principal
 	) {
+		assertRegularChatRoomCode(roomCode);
 		ChatMessageResponse response = chatService.send(roomCode, request, principal);
 		messagingTemplate.convertAndSend("/topic/rooms/" + roomCode, response);
 		publishRoomEvent(roomCode, response);
@@ -103,6 +105,7 @@ public class ChatController {
 		@RequestParam(value = "groupId", required = false) String groupId,
 		@AuthenticationPrincipal AuthPrincipal principal
 	) {
+		assertRegularChatRoomCode(roomCode);
 		ChatMessageResponse response = chatService.sendAttachment(roomCode, file, groupId, principal);
 		messagingTemplate.convertAndSend("/topic/rooms/" + roomCode, response);
 		publishRoomEvent(roomCode, response);
@@ -115,6 +118,7 @@ public class ChatController {
 		@PathVariable String attachmentId,
 		@AuthenticationPrincipal AuthPrincipal principal
 	) {
+		assertRegularChatRoomCode(roomCode);
 		ChatService.AttachmentDownload download = chatService.attachment(roomCode, attachmentId, principal);
 		return ResponseEntity.ok()
 			.header(
@@ -135,6 +139,7 @@ public class ChatController {
 		@RequestParam(value = "type", required = false) String type,
 		@AuthenticationPrincipal AuthPrincipal principal
 	) {
+		assertRegularChatRoomCode(roomCode);
 		return chatService.talkDrawerItems(roomCode, type, principal);
 	}
 
@@ -143,6 +148,7 @@ public class ChatController {
 		@PathVariable String roomCode,
 		@AuthenticationPrincipal AuthPrincipal principal
 	) {
+		assertRegularChatRoomCode(roomCode);
 		ChatReadStateResponse response = chatService.markRead(roomCode, principal);
 		publishReadState(roomCode, response);
 		return response;
@@ -153,6 +159,7 @@ public class ChatController {
 		@PathVariable String roomCode,
 		@AuthenticationPrincipal AuthPrincipal principal
 	) {
+		assertRegularChatRoomCode(roomCode);
 		ChatRoomLeaveResponse response = chatService.leaveRoom(roomCode, principal);
 		if (response.deleted()) {
 			publishRoomDeleted(response);
@@ -195,6 +202,7 @@ public class ChatController {
 		@Valid @RequestBody ChatNoticeRequest request,
 		@AuthenticationPrincipal AuthPrincipal principal
 	) {
+		assertRegularChatRoomCode(roomCode);
 		return chatService.setNotice(roomCode, request, principal);
 	}
 
@@ -204,6 +212,13 @@ public class ChatController {
 		@RequestBody ChatPinRequest request,
 		@AuthenticationPrincipal AuthPrincipal principal
 	) {
+		assertRegularChatRoomCode(roomCode);
 		return chatService.setPinned(roomCode, request, principal);
+	}
+
+	private void assertRegularChatRoomCode(String roomCode) {
+		if (chatService.isAzoomRoomCode(roomCode)) {
+			throw new IllegalArgumentException("AZOOM chat rooms must use the AZOOM API.");
+		}
 	}
 }

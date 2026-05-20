@@ -5,6 +5,7 @@ class PanelHeader extends StatelessWidget {
     required this.title,
     required this.actions,
     this.titleFontWeight = FontWeight.w800,
+    this.titleWidget,
     this.trailing,
     super.key,
   });
@@ -12,6 +13,7 @@ class PanelHeader extends StatelessWidget {
   final String title;
   final List<Widget> actions;
   final FontWeight titleFontWeight;
+  final Widget? titleWidget;
   final Widget? trailing;
 
   @override
@@ -20,15 +22,16 @@ class PanelHeader extends StatelessWidget {
       padding: const EdgeInsets.fromLTRB(22, 28, 16, 8),
       child: Row(
         children: [
-          Text(
-            title,
-            style: TextStyle(
-              color: Colors.black,
-              fontSize: 18,
-              fontWeight: titleFontWeight,
-              letterSpacing: 0,
-            ),
-          ),
+          titleWidget ??
+              Text(
+                title,
+                style: TextStyle(
+                  color: Colors.black,
+                  fontSize: 18,
+                  fontWeight: titleFontWeight,
+                  letterSpacing: 0,
+                ),
+              ),
           if (trailing != null) ...[const SizedBox(width: 4), trailing!],
           const Spacer(),
           ...actions,

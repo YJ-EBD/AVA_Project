@@ -31,6 +31,8 @@ public class UserMapper {
 			account.getDisplayName(),
 			blankToDefault(profile.getNickname(), account.getDisplayName()),
 			blankToNull(profile.getPhoneNumber()),
+			blankToNull(profile.getContactEmail()),
+			blankToNull(profile.getGender()),
 			account.getRole(),
 			blankToDefault(profile.getCompanyName(), "ABBA-S"),
 			blankToDefault(profile.getPosition(), "\uC0AC\uC6D0"),

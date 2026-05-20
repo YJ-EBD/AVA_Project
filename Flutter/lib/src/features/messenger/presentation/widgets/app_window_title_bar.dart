@@ -3,15 +3,17 @@ import 'package:flutter/material.dart';
 import '../../../../platform/window_control.dart';
 
 class AppWindowTitleBar extends StatelessWidget {
-  const AppWindowTitleBar({super.key});
+  const AppWindowTitleBar({required this.title, super.key});
+
+  final String title;
 
   @override
   Widget build(BuildContext context) {
     return Container(
       height: 34,
       decoration: const BoxDecoration(
-        color: Colors.white,
-        border: Border(bottom: BorderSide(color: Color(0xFFE4E4E4))),
+        color: Color(0xFF4F66C8),
+        border: Border(bottom: BorderSide(color: Color(0xFF4058B8))),
       ),
       child: Row(
         children: [
@@ -19,15 +21,15 @@ class AppWindowTitleBar extends StatelessWidget {
             child: GestureDetector(
               behavior: HitTestBehavior.opaque,
               onPanStart: (_) => WindowControl.startDrag(),
-              child: const Padding(
-                padding: EdgeInsets.only(left: 18),
+              child: Padding(
+                padding: const EdgeInsets.only(left: 18),
                 child: Align(
                   alignment: Alignment.centerLeft,
                   child: Text(
-                    'AVA',
-                    style: TextStyle(
-                      color: Colors.black,
-                      fontSize: 12,
+                    title,
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 16,
                       fontWeight: FontWeight.w800,
                     ),
                   ),
@@ -82,11 +84,9 @@ class _WindowButtonState extends State<_WindowButton> {
     final background = widget.isClose && _isHovered
         ? const Color(0xFFE81123)
         : _isHovered
-        ? const Color(0xFFEDEDED)
+        ? Colors.white.withValues(alpha: 0.13)
         : Colors.transparent;
-    final foreground = widget.isClose && _isHovered
-        ? Colors.white
-        : Colors.black;
+    final foreground = Colors.white;
 
     return MouseRegion(
       onEnter: (_) => setState(() => _isHovered = true),

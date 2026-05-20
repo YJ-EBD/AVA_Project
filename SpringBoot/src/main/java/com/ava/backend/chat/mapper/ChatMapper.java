@@ -20,11 +20,20 @@ import com.ava.backend.user.dto.UserProfileResponse;
 public class ChatMapper {
 
 	public ChatRoomResponse toRoomResponse(ChatRoomEntity room, long participantCount) {
-		return toRoomResponse(room, participantCount, List.of());
+		return toRoomResponse(room, participantCount, List.of(), 0);
 	}
 
 	public ChatRoomResponse toRoomResponse(ChatRoomEntity room, long participantCount, List<UserProfileResponse> members) {
-		return toRoomResponse(room, participantCount, members, false, null);
+		return toRoomResponse(room, participantCount, members, false, null, 0);
+	}
+
+	public ChatRoomResponse toRoomResponse(
+		ChatRoomEntity room,
+		long participantCount,
+		List<UserProfileResponse> members,
+		int unreadCount
+	) {
+		return toRoomResponse(room, participantCount, members, false, null, unreadCount);
 	}
 
 	public ChatRoomResponse toRoomResponse(
@@ -33,6 +42,17 @@ public class ChatMapper {
 		List<UserProfileResponse> members,
 		boolean pinned,
 		Instant pinnedAt
+	) {
+		return toRoomResponse(room, participantCount, members, pinned, pinnedAt, 0);
+	}
+
+	public ChatRoomResponse toRoomResponse(
+		ChatRoomEntity room,
+		long participantCount,
+		List<UserProfileResponse> members,
+		boolean pinned,
+		Instant pinnedAt,
+		int unreadCount
 	) {
 		return new ChatRoomResponse(
 			room.getCode(),
@@ -46,7 +66,8 @@ public class ChatMapper {
 			room.isLastMessageSpoiler(),
 			room.getAvatarImageUrl(),
 			toNoticeResponse(room),
-			members
+			members,
+			unreadCount
 		);
 	}
 
@@ -69,6 +90,9 @@ public class ChatMapper {
 			message.getRoomCode(),
 			message.getSenderId(),
 			message.getSenderName(),
+			"",
+			"#7AA06A",
+			"",
 			message.getContent(),
 			message.getSentAt(),
 			0,
@@ -89,6 +113,9 @@ public class ChatMapper {
 			message.getRoomCode(),
 			message.getSenderId(),
 			message.getSenderName(),
+			"",
+			"#7AA06A",
+			"",
 			message.getContent(),
 			message.getSentAt(),
 			unreadCount,

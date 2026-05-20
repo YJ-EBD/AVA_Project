@@ -24,6 +24,9 @@ public class ChatRoomEntity {
 	@Column(nullable = false, length = 120)
 	private String title;
 
+	@Column(name = "company_name", length = 80)
+	private String companyName = "ABBA-S";
+
 	@Enumerated(EnumType.STRING)
 	@Column(nullable = false, length = 20)
 	private ChatRoomType type;
@@ -94,6 +97,14 @@ public class ChatRoomEntity {
 
 	public String getTitle() {
 		return title;
+	}
+
+	public String getCompanyName() {
+		return companyName;
+	}
+
+	public void setCompanyName(String companyName) {
+		this.companyName = companyName;
 	}
 
 	public ChatRoomType getType() {

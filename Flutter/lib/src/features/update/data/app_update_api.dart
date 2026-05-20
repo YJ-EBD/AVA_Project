@@ -1,3 +1,5 @@
+import 'dart:io' as io;
+
 import 'package:dio/dio.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -15,12 +17,50 @@ class AppUpdateApi {
   final Dio _dio;
   final AppConfig _config;
 
-  Future<AppUpdateManifestDto> windowsLatest() async {
+  Future<AppUpdateManifestDto?> latestForCurrentPlatform() async {
+    final platform = currentUpdatePlatform;
+    if (platform == null) {
+      return null;
+    }
+    return latest(platform);
+  }
+
+  Future<AppUpdateManifestDto> latest(String platform) async {
     final response = await _dio.get<Map<String, dynamic>>(
-      '/api/app-updates/windows/latest',
+      '/api/app-updates/$platform/latest',
       queryParameters: {'currentVersion': AppVersion.name},
     );
     return AppUpdateManifestDto.fromJson(response.data ?? const {});
+  }
+
+  Future<AppUpdateManifestDto> windowsLatest() => latest('windows');
+
+  Future<AppUpdateReleaseDto?> currentRelease() async {
+    final platform = currentUpdatePlatform;
+    if (platform == null) {
+      return null;
+    }
+    return release(platform, AppVersion.name);
+  }
+
+  Future<AppUpdateReleaseDto> release(String platform, String version) async {
+    final response = await _dio.get<Map<String, dynamic>>(
+      '/api/app-updates/$platform/releases/$version',
+    );
+    return AppUpdateReleaseDto.fromJson(response.data ?? const {});
+  }
+
+  String? get currentUpdatePlatform {
+    if (io.Platform.isWindows) {
+      return 'windows';
+    }
+    if (io.Platform.isMacOS) {
+      return 'macos';
+    }
+    if (io.Platform.isAndroid) {
+      return 'android';
+    }
+    return null;
   }
 
   String absoluteDownloadUrl(String downloadUrl) {
@@ -75,4 +115,39 @@ class AppUpdateManifestDto {
   final String sha256;
   final int sizeBytes;
   final String releaseNotes;
+}
+
+class AppUpdateReleaseDto {
+  const AppUpdateReleaseDto({
+    required this.platform,
+    required this.version,
+    required this.fileName,
+    required this.required,
+    required this.releaseNotes,
+    required this.sha256,
+    required this.sizeBytes,
+    required this.packageAvailable,
+  });
+
+  factory AppUpdateReleaseDto.fromJson(Map<String, dynamic> json) {
+    return AppUpdateReleaseDto(
+      platform: json['platform'] as String? ?? 'windows',
+      version: json['version'] as String? ?? AppVersion.name,
+      fileName: json['fileName'] as String? ?? '',
+      required: json['required'] as bool? ?? false,
+      releaseNotes: json['releaseNotes'] as String? ?? '',
+      sha256: json['sha256'] as String? ?? '',
+      sizeBytes: (json['sizeBytes'] as num?)?.toInt() ?? 0,
+      packageAvailable: json['packageAvailable'] as bool? ?? false,
+    );
+  }
+
+  final String platform;
+  final String version;
+  final String fileName;
+  final bool required;
+  final String releaseNotes;
+  final String sha256;
+  final int sizeBytes;
+  final bool packageAvailable;
 }

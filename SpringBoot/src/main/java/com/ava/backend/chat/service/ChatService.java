@@ -56,7 +56,9 @@ import com.ava.backend.chat.repository.ChatMessageRepository;
 import com.ava.backend.chat.repository.ChatRoomMemberRepository;
 import com.ava.backend.chat.repository.ChatRoomRepository;
 import com.ava.backend.chat.repository.ChatTalkDrawerItemRepository;
+import com.ava.backend.company.CompanyScopeService;
 import com.ava.backend.user.entity.UserAccount;
+import com.ava.backend.user.entity.UserProfile;
 import com.ava.backend.user.dto.UserProfileResponse;
 import com.ava.backend.user.mapper.UserMapper;
 import com.ava.backend.user.repository.UserAccountRepository;
@@ -78,6 +80,7 @@ public class ChatService {
 	private final UserMapper userMapper;
 	private final ChatMapper chatMapper;
 	private final ChatFolderSettingsService chatFolderSettingsService;
+	private final CompanyScopeService companyScopeService;
 	private final Path backupDirectory;
 	private final Path attachmentDirectory;
 	private final boolean mongoEnabled;
@@ -95,6 +98,7 @@ public class ChatService {
 		UserMapper userMapper,
 		ChatMapper chatMapper,
 		ChatFolderSettingsService chatFolderSettingsService,
+		CompanyScopeService companyScopeService,
 		@Value("${ava.chat.backup-directory:ChatBackUp}") String backupDirectory,
 		@Value("${ava.chat.attachment-directory:ChatUploads}") String attachmentDirectory,
 		@Value("${ava.chat.mongo-enabled:true}") boolean mongoEnabled
@@ -111,6 +115,7 @@ public class ChatService {
 		this.userMapper = userMapper;
 		this.chatMapper = chatMapper;
 		this.chatFolderSettingsService = chatFolderSettingsService;
+		this.companyScopeService = companyScopeService;
 		this.backupDirectory = Path.of(backupDirectory);
 		this.attachmentDirectory = Path.of(attachmentDirectory);
 		this.mongoEnabled = mongoEnabled;
@@ -119,8 +124,11 @@ public class ChatService {
 	@Transactional(readOnly = true)
 	public List<ChatRoomResponse> rooms(AuthPrincipal principal) {
 		Map<String, Instant> pinnedRoomOrder = chatFolderSettingsService.pinnedRoomOrder(principal);
+		String companyName = companyScopeService.effectiveCompany(principal);
+		boolean superuser = principal.role() == com.ava.backend.user.entity.UserRole.SUPERUSER;
 		return chatRoomDao.findAllRooms().stream()
-			.filter(room -> memberRepository.existsByRoomCodeAndAccountId(room.getCode(), principal.userId()))
+			.filter(room -> companyName.equalsIgnoreCase(roomCompanyName(room)))
+			.filter(room -> superuser || memberRepository.existsByRoomCodeAndAccountId(room.getCode(), principal.userId()))
 			.filter(room -> shouldDisplayInRoomList(room, principal))
 			.sorted(Comparator
 				.comparing((ChatRoomEntity room) -> !pinnedRoomOrder.containsKey(room.getCode()))
@@ -132,12 +140,16 @@ public class ChatService {
 			.map(room -> toRoomResponse(
 				room,
 				pinnedRoomOrder.containsKey(room.getCode()),
-				pinnedRoomOrder.get(room.getCode())
+				pinnedRoomOrder.get(room.getCode()),
+				principal
 			))
 			.toList();
 	}
 
 	private boolean shouldDisplayInRoomList(ChatRoomEntity room, AuthPrincipal principal) {
+		if (isAzoomRoom(room)) {
+			return false;
+		}
 		if (room.getType() != ChatRoomType.SELF) {
 			if (hasLastMessage(room)) {
 				return true;
@@ -146,6 +158,18 @@ public class ChatService {
 				&& room.getCreatedByAccountId().equals(principal.userId());
 		}
 		return hasLastMessage(room);
+	}
+
+	private boolean isAzoomRoom(ChatRoomEntity room) {
+		return isAzoomRoomCode(room.getCode());
+	}
+
+	public boolean isAzoomRoomCode(String roomCode) {
+		return roomCode != null && (
+			roomCode.startsWith("azoom-")
+				|| roomCode.startsWith("azoom:")
+				|| roomCode.startsWith("azoom_")
+		);
 	}
 
 	private boolean hasLastMessage(ChatRoomEntity room) {
@@ -162,12 +186,14 @@ public class ChatService {
 		UserAccount currentUser = accountRepository.findById(principal.userId())
 			.orElseThrow(() -> new IllegalArgumentException("Account not found."));
 		UserAccount targetUser = findDirectTarget(request);
+		String companyName = companyScopeService.effectiveCompany(principal);
+		assertTargetInCompany(targetUser, companyName);
 		if (currentUser.getId().equals(targetUser.getId())) {
 			throw new IllegalArgumentException("Cannot start a direct room with yourself.");
 		}
 
-		ChatRoomEntity room = findExistingDirectRoom(currentUser.getId(), targetUser.getId())
-			.orElseGet(() -> createDirectRoom(currentUser, targetUser));
+		ChatRoomEntity room = findExistingDirectRoom(currentUser.getId(), targetUser.getId(), companyName)
+			.orElseGet(() -> createDirectRoom(currentUser, targetUser, companyName));
 		return toRoomResponse(room, principal);
 	}
 
@@ -182,9 +208,11 @@ public class ChatService {
 		}
 
 		List<UserAccount> targetUsers = new ArrayList<>();
+		String companyName = companyScopeService.effectiveCompany(principal);
 		for (UUID targetId : targetIds) {
 			UserAccount targetUser = accountRepository.findById(targetId)
 				.orElseThrow(() -> new IllegalArgumentException("Group chat target not found."));
+			assertTargetInCompany(targetUser, companyName);
 			targetUsers.add(targetUser);
 		}
 
@@ -208,6 +236,7 @@ public class ChatService {
 			false,
 			""
 		);
+		room.setCompanyName(companyName);
 		room.setCreatedByAccountId(currentUser.getId());
 		room.setAvatarImageUrl(normalizeAvatarImageUrl(request.avatarImageUrl()));
 		room = roomRepository.save(room);
@@ -232,14 +261,16 @@ public class ChatService {
 				false,
 				""
 			)));
+		room.setCompanyName(companyScopeService.effectiveCompany(principal));
 		ensureMember(room, currentUser);
+		roomRepository.save(room);
 		return toRoomResponse(room, principal);
 	}
 
 	@Transactional(readOnly = true)
 	public List<ChatMessageResponse> recentMessages(String roomCode, AuthPrincipal principal) {
 		ChatRoomMemberEntity membership = assertMember(roomCode, principal);
-		Instant visibleSince = membership.getJoinedAt();
+		Instant visibleSince = membership == null ? null : membership.getJoinedAt();
 		List<ChatMessageEntity> visibleMessages = visibleSince == null
 			? messageJpaRepository.findTop50ByRoomCodeOrderBySentAtDesc(roomCode)
 			: messageJpaRepository.findTop50ByRoomCodeAndSentAtGreaterThanEqualOrderBySentAtDesc(roomCode, visibleSince);
@@ -254,6 +285,29 @@ public class ChatService {
 			return messageRepository.findTop50ByRoomCodeOrderBySentAtDesc(roomCode).stream()
 				.sorted(Comparator.comparing(ChatMessageDocument::getSentAt))
 				.map(chatMapper::toMessageResponse)
+				.map(this::withSenderProfile)
+				.toList();
+		} catch (RuntimeException ignored) {
+			return List.of();
+		}
+	}
+
+	@Transactional(readOnly = true)
+	public List<ChatMessageResponse> recentMessagesIgnoringJoin(String roomCode, AuthPrincipal principal) {
+		assertMember(roomCode, principal);
+		List<ChatMessageResponse> savedMessages = messageJpaRepository.findTop50ByRoomCodeOrderBySentAtDesc(roomCode)
+			.stream()
+			.sorted(Comparator.comparing(ChatMessageEntity::getSentAt))
+			.map(this::toMessageResponse)
+			.toList();
+		if (!savedMessages.isEmpty() || !mongoEnabled) {
+			return savedMessages;
+		}
+		try {
+			return messageRepository.findTop50ByRoomCodeOrderBySentAtDesc(roomCode).stream()
+				.sorted(Comparator.comparing(ChatMessageDocument::getSentAt))
+				.map(chatMapper::toMessageResponse)
+				.map(this::withSenderProfile)
 				.toList();
 		} catch (RuntimeException ignored) {
 			return List.of();
@@ -267,17 +321,18 @@ public class ChatService {
 		String content = request.content().trim();
 		boolean silent = request.isSilent();
 		boolean spoiler = request.isSpoiler();
+		String senderName = displayNameFor(principal.userId(), principal.displayName());
 		var savedMessage = messageJpaRepository.save(new ChatMessageEntity(
 			roomCode,
 			principal.userId(),
-			principal.displayName(),
+			senderName,
 			content,
 			silent,
 			spoiler
 		));
 		readReceiptRepository.save(new ChatMessageReadReceiptEntity(savedMessage, principal.userId()));
 		if (mongoEnabled) {
-			archiveToMongo(roomCode, principal, content, silent, spoiler);
+			archiveToMongo(roomCode, principal, senderName, content, silent, spoiler);
 		}
 		room.updateLastMessage(content, spoiler);
 		roomRepository.save(room);
@@ -323,7 +378,7 @@ public class ChatService {
 		ChatMessageEntity savedMessage = messageJpaRepository.save(ChatMessageEntity.attachment(
 			roomCode,
 			principal.userId(),
-			principal.displayName(),
+			displayNameFor(principal.userId(), principal.displayName()),
 			originalName,
 			contentType,
 			size,
@@ -332,7 +387,7 @@ public class ChatService {
 		));
 		readReceiptRepository.save(new ChatMessageReadReceiptEntity(savedMessage, principal.userId()));
 		talkDrawerItemRepository.save(new ChatTalkDrawerItemEntity(
-			companyNameFor(principal.userId()),
+			companyScopeService.effectiveCompany(principal),
 			roomCode,
 			savedMessage.getId(),
 			savedMessage.getAttachmentId(),
@@ -344,9 +399,83 @@ public class ChatService {
 			storedPath.toString(),
 			checksumSha256,
 			principal.userId(),
-			principal.displayName()
+			displayNameFor(principal.userId(), principal.displayName())
 		));
-		room.updateLastMessage(originalName, false);
+		room.updateLastMessage(attachmentPreview(originalName, contentType), false);
+		roomRepository.save(room);
+		return toMessageResponse(savedMessage);
+	}
+
+	@Transactional
+	public ChatMessageResponse sendAttachmentFromPath(
+		String roomCode,
+		Path sourcePath,
+		String groupId,
+		AuthPrincipal principal
+	) {
+		assertMember(roomCode, principal);
+		if (sourcePath == null || !Files.isRegularFile(sourcePath)) {
+			throw new IllegalArgumentException("Attachment file is required.");
+		}
+		var room = chatRoomDao.findByCode(roomCode);
+		String originalName = sanitizeFileName(sourcePath.getFileName().toString());
+		String probedContentType;
+		try {
+			probedContentType = Files.probeContentType(sourcePath);
+		} catch (IOException ignored) {
+			probedContentType = null;
+		}
+		String contentType = normalizeContentType(probedContentType);
+		String normalizedGroupId = normalizeAttachmentGroupId(groupId);
+		String storedName = UUID.randomUUID() + "-" + originalName;
+		Path roomDirectory = attachmentDirectory.resolve(roomCode);
+		Path storedPath = roomDirectory.resolve(storedName).normalize();
+		if (!storedPath.startsWith(roomDirectory.normalize())) {
+			throw new IllegalArgumentException("Invalid attachment path.");
+		}
+		long size;
+		String checksumSha256;
+		try {
+			Files.createDirectories(roomDirectory);
+			size = Files.size(sourcePath);
+			MessageDigest digest = MessageDigest.getInstance("SHA-256");
+			try (InputStream inputStream = new DigestInputStream(Files.newInputStream(sourcePath), digest)) {
+				Files.copy(inputStream, storedPath, StandardCopyOption.REPLACE_EXISTING);
+			}
+			checksumSha256 = HexFormat.of().formatHex(digest.digest());
+		} catch (IOException exception) {
+			throw new IllegalStateException("Failed to store attachment.", exception);
+		} catch (NoSuchAlgorithmException exception) {
+			throw new IllegalStateException("SHA-256 digest is not available.", exception);
+		}
+
+		ChatMessageEntity savedMessage = messageJpaRepository.save(ChatMessageEntity.attachment(
+			roomCode,
+			principal.userId(),
+			displayNameFor(principal.userId(), principal.displayName()),
+			originalName,
+			contentType,
+			size,
+			storedPath.toString(),
+			normalizedGroupId
+		));
+		readReceiptRepository.save(new ChatMessageReadReceiptEntity(savedMessage, principal.userId()));
+		talkDrawerItemRepository.save(new ChatTalkDrawerItemEntity(
+			companyScopeService.effectiveCompany(principal),
+			roomCode,
+			savedMessage.getId(),
+			savedMessage.getAttachmentId(),
+			normalizedGroupId,
+			originalName,
+			contentType,
+			size,
+			mediaTypeFor(originalName, contentType),
+			storedPath.toString(),
+			checksumSha256,
+			principal.userId(),
+			displayNameFor(principal.userId(), principal.displayName())
+		));
+		room.updateLastMessage(attachmentPreview(originalName, contentType), false);
 		roomRepository.save(room);
 		return toMessageResponse(savedMessage);
 	}
@@ -358,7 +487,7 @@ public class ChatService {
 		AuthPrincipal principal
 	) {
 		assertMember(roomCode, principal);
-		String companyName = companyNameFor(principal.userId());
+		String companyName = companyScopeService.effectiveCompany(principal);
 		ChatTalkDrawerMediaType type = parseMediaType(mediaType);
 		List<ChatTalkDrawerItemEntity> items = type == null
 			? talkDrawerItemRepository.findTop200ByCompanyNameIgnoreCaseAndRoomCodeAndDeletedFalseOrderByUploadedAtDesc(
@@ -489,7 +618,7 @@ public class ChatService {
 	@Transactional
 	public ChatReadStateResponse markRead(String roomCode, AuthPrincipal principal) {
 		ChatRoomMemberEntity membership = assertMember(roomCode, principal);
-		Instant visibleSince = membership.getJoinedAt();
+		Instant visibleSince = membership == null ? null : membership.getJoinedAt();
 		List<ChatMessageEntity> messages = visibleSince == null
 			? messageJpaRepository.findByRoomCodeOrderBySentAtAsc(roomCode)
 			: messageJpaRepository.findByRoomCodeAndSentAtGreaterThanEqualOrderBySentAtAsc(roomCode, visibleSince);
@@ -609,21 +738,6 @@ public class ChatService {
 		return normalized.length() > 120 ? normalized.substring(0, 120) : normalized;
 	}
 
-	private String companyNameFor(UUID accountId) {
-		return profileRepository.findByAccountId(accountId)
-			.map(profile -> normalizeCompanyName(profile.getCompanyName()))
-			.filter(companyName -> !companyName.isBlank())
-			.orElse("UNKNOWN");
-	}
-
-	private String normalizeCompanyName(String value) {
-		if (value == null || value.isBlank()) {
-			return "UNKNOWN";
-		}
-		String normalized = value.trim().replaceAll("\\s+", " ");
-		return normalized.length() > 80 ? normalized.substring(0, 80) : normalized;
-	}
-
 	private ChatTalkDrawerMediaType mediaTypeFor(String fileName, String contentType) {
 		String type = contentType == null ? "" : contentType.toLowerCase();
 		String lowerName = fileName == null ? "" : fileName.toLowerCase();
@@ -634,6 +748,16 @@ public class ChatService {
 			return ChatTalkDrawerMediaType.VIDEO;
 		}
 		return ChatTalkDrawerMediaType.FILE;
+	}
+
+	private String attachmentPreview(String fileName, String contentType) {
+		ChatTalkDrawerMediaType mediaType = mediaTypeFor(fileName, contentType);
+		String safeName = fileName == null || fileName.isBlank() ? "attachment" : fileName.trim();
+		return switch (mediaType) {
+			case IMAGE -> "[이미지] " + safeName;
+			case VIDEO -> "[동영상] " + safeName;
+			case FILE -> "[파일] " + safeName;
+		};
 	}
 
 	private ChatTalkDrawerMediaType parseMediaType(String mediaType) {
@@ -679,16 +803,17 @@ public class ChatService {
 			.orElseThrow(() -> new IllegalArgumentException("Direct chat target not found."));
 	}
 
-	private Optional<ChatRoomEntity> findExistingDirectRoom(UUID firstUserId, UUID secondUserId) {
+	private Optional<ChatRoomEntity> findExistingDirectRoom(UUID firstUserId, UUID secondUserId, String companyName) {
 		return roomRepository.findAll().stream()
 			.filter(room -> room.getType() == ChatRoomType.DIRECT)
+			.filter(room -> companyName.equalsIgnoreCase(roomCompanyName(room)))
 			.filter(room -> chatRoomDao.countMembers(room.getCode()) == 2)
 			.filter(room -> memberRepository.existsByRoomCodeAndAccountId(room.getCode(), firstUserId))
 			.filter(room -> memberRepository.existsByRoomCodeAndAccountId(room.getCode(), secondUserId))
 			.findFirst();
 	}
 
-	private ChatRoomEntity createDirectRoom(UserAccount currentUser, UserAccount targetUser) {
+	private ChatRoomEntity createDirectRoom(UserAccount currentUser, UserAccount targetUser, String companyName) {
 		String roomCode = directRoomCode(currentUser.getId(), targetUser.getId());
 		Optional<ChatRoomEntity> existingRoom = roomRepository.findByCode(roomCode);
 		if (existingRoom.isPresent()
@@ -707,8 +832,9 @@ public class ChatService {
 			)));
 		if (room.getCreatedByAccountId() == null) {
 			room.setCreatedByAccountId(currentUser.getId());
-			room = roomRepository.save(room);
 		}
+		room.setCompanyName(companyName);
+		room = roomRepository.save(room);
 		ensureMember(room, currentUser);
 		ensureMember(room, targetUser);
 		return room;
@@ -741,7 +867,8 @@ public class ChatService {
 		return toRoomResponse(
 			room,
 			pinnedRoomOrder.containsKey(room.getCode()),
-			pinnedRoomOrder.get(room.getCode())
+			pinnedRoomOrder.get(room.getCode()),
+			principal
 		);
 	}
 
@@ -751,7 +878,24 @@ public class ChatService {
 			chatRoomDao.countMembers(room.getCode()),
 			membersOf(room.getCode()),
 			pinned,
-			pinnedAt
+			pinnedAt,
+			0
+		);
+	}
+
+	private ChatRoomResponse toRoomResponse(
+		ChatRoomEntity room,
+		boolean pinned,
+		Instant pinnedAt,
+		AuthPrincipal principal
+	) {
+		return chatMapper.toRoomResponse(
+			room,
+			chatRoomDao.countMembers(room.getCode()),
+			membersOf(room.getCode()),
+			pinned,
+			pinnedAt,
+			unreadCountForRoom(room, principal.userId())
 		);
 	}
 
@@ -768,7 +912,38 @@ public class ChatService {
 	}
 
 	private ChatMessageResponse toMessageResponse(ChatMessageEntity message) {
-		return chatMapper.toMessageResponse(message, unreadCount(message));
+		return withSenderProfile(chatMapper.toMessageResponse(message, unreadCount(message)));
+	}
+
+	private ChatMessageResponse withSenderProfile(ChatMessageResponse message) {
+		if (message.senderId() == null) {
+			return message;
+		}
+		String senderName = accountRepository.findById(message.senderId())
+			.map(UserAccount::getDisplayName)
+			.map(String::trim)
+			.filter(value -> !value.isBlank())
+			.orElse(message.senderName());
+		UserProfile profile = profileRepository.findByAccountId(message.senderId()).orElse(null);
+		String nickname = profile == null ? "" : blankToDefault(profile.getNickname(), "");
+		String avatarColor = profile == null ? "#7AA06A" : blankToDefault(profile.getAvatarColor(), "#7AA06A");
+		String avatarImageUrl = profile == null ? "" : blankToDefault(profile.getAvatarImageUrl(), "");
+		return new ChatMessageResponse(
+			message.id(),
+			message.roomCode(),
+			message.senderId(),
+			senderName,
+			nickname,
+			avatarColor,
+			avatarImageUrl,
+			message.content(),
+			message.sentAt(),
+			message.unreadCount(),
+			message.systemMessage(),
+			message.silent(),
+			message.spoiler(),
+			message.attachment()
+		);
 	}
 
 	private int unreadCount(ChatMessageEntity message) {
@@ -788,6 +963,33 @@ public class ChatService {
 			readCount++;
 		}
 		return Math.max(0, readableMemberIds.size() - (int) readCount);
+	}
+
+	private int unreadCountForRoom(ChatRoomEntity room, UUID accountId) {
+		Optional<ChatRoomMemberEntity> membership = memberRepository.findByRoomCodeAndAccountId(room.getCode(), accountId);
+		if (membership.isEmpty()) {
+			return 0;
+		}
+		Instant visibleSince = membership.get().getJoinedAt();
+		List<ChatMessageEntity> messages = visibleSince == null
+			? messageJpaRepository.findByRoomCodeOrderBySentAtAsc(room.getCode())
+			: messageJpaRepository.findByRoomCodeAndSentAtGreaterThanEqualOrderBySentAtAsc(room.getCode(), visibleSince);
+		List<UUID> unreadMessageIds = messages.stream()
+			.filter(message -> !message.isSystemMessage())
+			.filter(message -> !accountId.equals(message.getSenderId()))
+			.map(ChatMessageEntity::getId)
+			.toList();
+		if (unreadMessageIds.isEmpty()) {
+			return 0;
+		}
+		Set<UUID> readMessageIds = readReceiptRepository.findByMessage_IdInAndAccountId(unreadMessageIds, accountId)
+			.stream()
+			.map(receipt -> receipt.getMessage().getId())
+			.collect(java.util.stream.Collectors.toSet());
+		long unreadCount = unreadMessageIds.stream()
+			.filter(messageId -> !readMessageIds.contains(messageId))
+			.count();
+		return unreadCount > Integer.MAX_VALUE ? Integer.MAX_VALUE : (int) unreadCount;
 	}
 
 	private List<UserProfileResponse> membersOf(String roomCode) {
@@ -1048,6 +1250,7 @@ public class ChatService {
 	private void archiveToMongo(
 		String roomCode,
 		AuthPrincipal principal,
+		String senderName,
 		String content,
 		boolean silent,
 		boolean spoiler
@@ -1056,7 +1259,7 @@ public class ChatService {
 			messageRepository.save(new ChatMessageDocument(
 				roomCode,
 				principal.userId(),
-				principal.displayName(),
+				senderName,
 				content,
 				silent,
 				spoiler
@@ -1066,12 +1269,46 @@ public class ChatService {
 		}
 	}
 
+	private String displayNameFor(UUID accountId, String fallback) {
+		return accountRepository.findById(accountId)
+			.map(UserAccount::getDisplayName)
+			.map(String::trim)
+			.filter(value -> !value.isBlank())
+			.orElse(blankToDefault(fallback, ""));
+	}
+
+	private String blankToDefault(String value, String fallback) {
+		return value == null || value.isBlank() ? fallback : value;
+	}
+
 	private ChatRoomMemberEntity assertMember(String roomCode, AuthPrincipal principal) {
-		if (!memberRepository.existsByRoomCodeAndAccountId(roomCode, principal.userId())) {
+		Optional<ChatRoomMemberEntity> membership = memberRepository.findByRoomCodeAndAccountId(roomCode, principal.userId());
+		if (membership.isPresent()) {
+			return membership.get();
+		}
+		ChatRoomEntity room = chatRoomDao.findByCode(roomCode);
+		if (principal.role() == com.ava.backend.user.entity.UserRole.SUPERUSER
+			&& companyScopeService.effectiveCompany(principal).equalsIgnoreCase(roomCompanyName(room))) {
+			return null;
+		}
+		if (membership.isEmpty()) {
 			throw new IllegalArgumentException("채팅방 권한이 없습니다.");
 		}
-		return memberRepository.findByRoomCodeAndAccountId(roomCode, principal.userId())
-			.orElseThrow(() -> new IllegalArgumentException("Chat room permission is required."));
+		return membership.orElseThrow(() -> new IllegalArgumentException("Chat room permission is required."));
+	}
+
+	private void assertTargetInCompany(UserAccount targetUser, String companyName) {
+		String targetCompany = profileRepository.findByAccountId(targetUser.getId())
+			.map(UserProfile::getCompanyName)
+			.map(companyScopeService::normalizeCompany)
+			.orElse(CompanyScopeService.DEFAULT_COMPANY);
+		if (!companyName.equalsIgnoreCase(targetCompany)) {
+			throw new IllegalArgumentException("선택한 회사의 사용자만 채팅에 추가할 수 있습니다.");
+		}
+	}
+
+	private String roomCompanyName(ChatRoomEntity room) {
+		return companyScopeService.normalizeCompany(room.getCompanyName());
 	}
 
 	public record ChatRoomBackup(

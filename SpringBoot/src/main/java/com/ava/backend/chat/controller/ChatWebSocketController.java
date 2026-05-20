@@ -52,6 +52,7 @@ public class ChatWebSocketController {
 		if (authPrincipal == null) {
 			throw new IllegalArgumentException("웹소켓 인증이 필요합니다.");
 		}
+		assertRegularChatRoomCode(roomCode);
 		ChatMessageResponse response = chatService.send(roomCode, request, authPrincipal);
 		messagingTemplate.convertAndSend("/topic/rooms/" + roomCode, response);
 		publishRoomEvent(roomCode, response);
@@ -68,6 +69,7 @@ public class ChatWebSocketController {
 		if (authPrincipal == null) {
 			throw new IllegalArgumentException("WebSocket authentication is required.");
 		}
+		assertRegularChatRoomCode(roomCode);
 		chatService.assertRoomMember(roomCode, authPrincipal);
 		messagingTemplate.convertAndSend(
 			"/topic/rooms/" + roomCode + "/typing",
@@ -107,5 +109,11 @@ public class ChatWebSocketController {
 				claims.sessionId()
 			))
 			.orElse(null);
+	}
+
+	private void assertRegularChatRoomCode(String roomCode) {
+		if (chatService.isAzoomRoomCode(roomCode)) {
+			throw new IllegalArgumentException("AZOOM chat rooms must use the AZOOM API.");
+		}
 	}
 }

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../config/app_version.dart';
+import '../../../admin/presentation/admin_panel.dart';
 import '../../domain/messenger_models.dart';
 import '../messenger_page.dart';
 import 'panel_header.dart';
@@ -12,6 +13,9 @@ class MorePanel extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final profile = ref.watch(currentUserProfileProvider);
+    if (_canOpenAdminPanel(profile.role)) {
+      return const AdminPanel();
+    }
 
     return Container(
       color: Colors.white,
@@ -36,6 +40,11 @@ class MorePanel extends ConsumerWidget {
       ),
     );
   }
+}
+
+bool _canOpenAdminPanel(String? role) {
+  final normalized = (role ?? '').toUpperCase();
+  return normalized == 'ADMIN' || normalized == 'SUPERUSER';
 }
 
 class _AccountPanel extends StatelessWidget {

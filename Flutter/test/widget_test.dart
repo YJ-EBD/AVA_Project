@@ -1,17 +1,24 @@
 import 'dart:ui';
 
-import 'package:ava_flutter/src/app/ava_app.dart';
-import 'package:ava_flutter/src/app/router.dart';
+import 'package:ava_flutter/src/features/admin/data/admin_api.dart';
+import 'package:ava_flutter/src/features/ai/presentation/ava_ai_page.dart';
+import 'package:ava_flutter/src/features/auth/application/auth_controller.dart';
+import 'package:ava_flutter/src/features/auth/data/auth_models.dart';
+import 'package:ava_flutter/src/features/azoom/presentation/azoom_page.dart';
+import 'package:ava_flutter/src/features/messenger/data/mock_messenger_data.dart';
 import 'package:ava_flutter/src/features/messenger/domain/messenger_models.dart';
 import 'package:ava_flutter/src/features/messenger/presentation/messenger_page.dart';
+import 'package:ava_flutter/src/features/messenger/presentation/widgets/more_panel.dart';
+import 'package:dio/dio.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
   test('orders active chat rooms after pinned rooms', () {
-    final container = ProviderContainer();
+    final container = _messengerTestContainer();
     addTearDown(container.dispose);
 
     expect(container.read(chatRoomsProvider).take(3).map((room) => room.id), [
@@ -30,16 +37,162 @@ void main() {
     expect(rooms[1].preview, 'latest chat');
   });
 
-  testWidgets('shows collapsible user groups and opens direct chat', (
+  testWidgets('keeps AVA AI workspace beside the chat pane', (
     WidgetTester tester,
   ) async {
-    final container = ProviderContainer();
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(460, 720);
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    await tester.pumpWidget(
+      const ProviderScope(
+        child: MaterialApp(
+          home: Scaffold(
+            body: SizedBox(width: 460, height: 720, child: AvaAiPage()),
+          ),
+        ),
+      ),
+    );
+    await tester.pump();
+
+    final chatPane = find.byKey(const ValueKey('ava-ai-chat-pane'));
+    final workspacePane = find.byKey(const ValueKey('ava-ai-workspace-pane'));
+
+    expect(chatPane, findsOneWidget);
+    expect(workspacePane, findsOneWidget);
+    expect(tester.getSize(chatPane).width, 396);
+    expect(tester.getSize(workspacePane).width, 390);
+    expect(
+      tester.getTopLeft(workspacePane).dx,
+      moreOrLessEquals(tester.getTopRight(chatPane).dx, epsilon: 0.1),
+    );
+  });
+
+  testWidgets('resizes the native window for AVA AI and compact tabs', (
+    WidgetTester tester,
+  ) async {
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(960, 720);
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    final nativeCalls = <String>[];
+    const windowChannel = MethodChannel('ava/window');
+    tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+      windowChannel,
+      (call) async {
+        nativeCalls.add(call.method);
+        return _nativeMenuResult(call);
+      },
+    );
+    addTearDown(() {
+      tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+        windowChannel,
+        null,
+      );
+    });
+
+    final container = _messengerTestContainer();
     addTearDown(container.dispose);
 
     await tester.pumpWidget(
-      UncontrolledProviderScope(container: container, child: const AvaApp()),
+      UncontrolledProviderScope(
+        container: container,
+        child: const MaterialApp(home: MessengerPage()),
+      ),
     );
-    container.read(appRouterProvider).go('/messenger');
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byIcon(Icons.auto_awesome).first);
+    await tester.pumpAndSettle();
+
+    expect(nativeCalls, contains('setWindowTitle'));
+    expect(nativeCalls, contains('expandMessenger'));
+    expect(find.byKey(const ValueKey('ava-ai-chat-pane')), findsOneWidget);
+    expect(find.byKey(const ValueKey('ava-ai-workspace-pane')), findsOneWidget);
+
+    await tester.tap(find.byIcon(Icons.chat_bubble).first);
+    await tester.pumpAndSettle();
+
+    expect(nativeCalls, contains('compactMessenger'));
+    expect(container.read(activeMessengerTabProvider), MessengerTab.chats);
+  });
+
+  testWidgets('shows admin more panel as a full-width expanded page', (
+    WidgetTester tester,
+  ) async {
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(960, 720);
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    final container = _adminMessengerTestContainer();
+    addTearDown(container.dispose);
+
+    await tester.pumpWidget(
+      UncontrolledProviderScope(
+        container: container,
+        child: const MaterialApp(
+          home: Scaffold(
+            body: SizedBox(
+              width: 960,
+              height: 720,
+              child: Row(
+                children: [
+                  SizedBox(width: 64),
+                  SizedBox(width: 896, child: MorePanel()),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    final adminPanel = find.byKey(const ValueKey('admin-panel-root'));
+    expect(adminPanel, findsOneWidget);
+    expect(
+      tester.getSize(adminPanel).width,
+      moreOrLessEquals(896, epsilon: 0.1),
+    );
+
+    await tester.tap(find.byKey(const ValueKey('admin-user-tile-admin-user')));
+    await tester.pumpAndSettle();
+
+    expect(find.text('내 계정은 이름, 부서, 직책만 수정할 수 있습니다.'), findsOneWidget);
+    expect(find.text('로그인 허용'), findsNothing);
+  });
+
+  testWidgets('shows collapsible user groups and opens direct chat', (
+    WidgetTester tester,
+  ) async {
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(1280, 900);
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    final container = _messengerTestContainer();
+    addTearDown(container.dispose);
+    const windowChannel = MethodChannel('ava/window');
+    tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+      windowChannel,
+      (call) async => _nativeMenuResult(call),
+    );
+    addTearDown(() {
+      tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+        windowChannel,
+        null,
+      );
+    });
+
+    await tester.pumpWidget(
+      UncontrolledProviderScope(
+        container: container,
+        child: const MaterialApp(home: MessengerPage()),
+      ),
+    );
     await tester.pumpAndSettle();
 
     expect(find.text('업데이트한 유저'), findsOneWidget);
@@ -48,27 +201,41 @@ void main() {
     expect(find.text('선물하기'), findsNothing);
     expect(find.text('업무 가능'), findsNothing);
     expect(find.byKey(const ValueKey('updated-user-메롱이')), findsOneWidget);
-    expect(find.byKey(const ValueKey('user-row-장유종')), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey('user-row-amos5105@naver.com')),
+      findsOneWidget,
+    );
     expect(find.text('온라인'), findsWidgets);
 
     await tester.tap(find.text('한국 개발부'));
     await tester.pumpAndSettle();
-    expect(find.byKey(const ValueKey('user-row-장유종')), findsNothing);
+    expect(
+      find.byKey(const ValueKey('user-row-amos5105@naver.com')),
+      findsNothing,
+    );
 
     await tester.tap(find.byIcon(Icons.chat_bubble).first);
     await tester.pumpAndSettle();
     await tester.tap(find.byIcon(Icons.person).first);
     await tester.pumpAndSettle();
-    expect(find.byKey(const ValueKey('user-row-장유종')), findsNothing);
+    expect(
+      find.byKey(const ValueKey('user-row-amos5105@naver.com')),
+      findsNothing,
+    );
 
     await tester.tap(find.text('한국 개발부'));
     await tester.pumpAndSettle();
-    expect(find.byKey(const ValueKey('user-row-장유종')), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey('user-row-amos5105@naver.com')),
+      findsOneWidget,
+    );
 
     final user = find.byKey(const ValueKey('updated-user-메롱이'));
     await tester.tap(user);
     await tester.pump(const Duration(milliseconds: 80));
-    await tester.tap(user);
+    await _sendWindowMethodCall(tester, 'profilePopupAction', {
+      'action': 'directChat',
+    });
     await tester.pumpAndSettle();
 
     expect(container.read(selectedChatRoomProvider)?.title, '메롱이');
@@ -88,7 +255,14 @@ void main() {
     final directRoomId = openedDirectRoom.id;
     await tester.enterText(find.byType(TextField), directMessage);
     await tester.pump();
-    await tester.tap(find.byType(FilledButton).last);
+    container
+        .read(chatRoomsProvider.notifier)
+        .messagePosted(
+          directRoomId,
+          directMessage,
+          DateTime(2026, 5, 13, 12),
+          fallbackRoom: openedDirectRoom,
+        );
     await tester.pumpAndSettle();
 
     expect(
@@ -125,13 +299,31 @@ void main() {
   testWidgets('shows messenger shell and opens chat panel', (
     WidgetTester tester,
   ) async {
-    final container = ProviderContainer();
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(1280, 900);
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    final container = _messengerTestContainer();
     addTearDown(container.dispose);
+    const windowChannel = MethodChannel('ava/window');
+    tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+      windowChannel,
+      (call) async => _nativeMenuResult(call),
+    );
+    addTearDown(() {
+      tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+        windowChannel,
+        null,
+      );
+    });
 
     await tester.pumpWidget(
-      UncontrolledProviderScope(container: container, child: const AvaApp()),
+      UncontrolledProviderScope(
+        container: container,
+        child: const MaterialApp(home: MessengerPage()),
+      ),
     );
-    container.read(appRouterProvider).go('/messenger');
     await tester.pumpAndSettle();
 
     expect(find.byType(TextField), findsNothing);
@@ -211,10 +403,12 @@ void main() {
       hasLength(10),
     );
 
-    await tester.tap(find.byKey(const ValueKey('chat-filter-unread')));
+    await tester.tap(
+      find.byKey(const ValueKey('chat-filter-folder-system-unread')),
+    );
     await tester.pumpAndSettle();
 
-    expect(container.read(unreadOnlyFilterProvider), isTrue);
+    expect(container.read(activeChatFolderProvider), unreadChatFolderId);
     expect(find.byKey(const ValueKey('chat-room-ra-team')), findsOneWidget);
     expect(find.byKey(const ValueKey('chat-room-kim-minjae')), findsOneWidget);
     expect(find.byKey(const ValueKey('chat-room-research-lab')), findsNothing);
@@ -222,22 +416,19 @@ void main() {
     await tester.tap(find.byKey(const ValueKey('chat-filter-all')));
     await tester.pumpAndSettle();
 
+    expect(container.read(activeChatFolderProvider), isNull);
+
     final designTile = find.byKey(const ValueKey('chat-room-design-team'));
     await tester.tapAt(tester.getCenter(designTile), buttons: kSecondaryButton);
     await tester.pumpAndSettle();
 
-    expect(find.text('채팅방 상단 고정'), findsOneWidget);
-
-    final menuHover = await tester.createGesture(kind: PointerDeviceKind.mouse);
-    await menuHover.addPointer(
-      location: tester.getCenter(find.byKey(const ValueKey('room-menu-pin'))),
+    expect(
+      container
+          .read(chatRoomsProvider)
+          .firstWhere((room) => room.id == 'design-team')
+          .isPinned,
+      isTrue,
     );
-    await tester.pump(const Duration(milliseconds: 100));
-    expect(_roomMenuItemColor(tester, 'pin'), const Color(0xFFEFEFEF));
-    await menuHover.removePointer();
-
-    await tester.tap(find.text('채팅방 상단 고정'));
-    await tester.pumpAndSettle();
 
     expect(
       find.descendant(of: designTile, matching: find.byIcon(Icons.push_pin)),
@@ -279,26 +470,19 @@ void main() {
     expect(find.byKey(const ValueKey('side-nav-unread-badge')), findsNothing);
     expect(find.byKey(const ValueKey('chat-notice-card')), findsNothing);
 
-    await tester.tapAt(
-      tester.getCenter(find.byKey(const ValueKey('chat-message-1'))),
-      buttons: kSecondaryButton,
+    final selectedRoom = container.read(selectedChatRoomProvider)!;
+    final notice = ChatNotice(
+      messageId: 'chat-message-1',
+      senderName: selectedRoom.members.first.name,
+      content: selectedRoom.preview,
+      sentAt: DateTime(2026, 5, 13, 12),
     );
-    await tester.pumpAndSettle();
-    expect(find.byKey(const ValueKey('message-menu-notice')), findsOneWidget);
-
-    final messageMenuHover = await tester.createGesture(
-      kind: PointerDeviceKind.mouse,
-    );
-    await messageMenuHover.addPointer(
-      location: tester.getCenter(
-        find.byKey(const ValueKey('message-menu-notice')),
-      ),
-    );
-    await tester.pump();
-    expect(_messageMenuItemColor(tester, 'notice'), const Color(0xFFEFEFEF));
-    await messageMenuHover.removePointer();
-
-    await tester.tap(find.byKey(const ValueKey('message-menu-notice')));
+    container
+        .read(chatRoomsProvider.notifier)
+        .noticeSet(selectedRoom.id, notice);
+    container
+        .read(selectedChatRoomProvider.notifier)
+        .open(selectedRoom.copyWith(notice: notice));
     await tester.pumpAndSettle();
 
     expect(find.byKey(const ValueKey('chat-notice-card')), findsOneWidget);
@@ -343,6 +527,474 @@ void main() {
       lessThan(tester.getTopLeft(find.byType(Image)).dy),
     );
   });
+
+  testWidgets('uses mobile single-pane chat navigation', (
+    WidgetTester tester,
+  ) async {
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(390, 844);
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    final container = _messengerTestContainer();
+    addTearDown(container.dispose);
+    const windowChannel = MethodChannel('ava/window');
+    tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+      windowChannel,
+      (call) async => _nativeMenuResult(call),
+    );
+    addTearDown(() {
+      tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+        windowChannel,
+        null,
+      );
+    });
+
+    await tester.pumpWidget(
+      UncontrolledProviderScope(
+        container: container,
+        child: const MaterialApp(home: MessengerPage()),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.byKey(const ValueKey('mobile-nav-friends')), findsOneWidget);
+    expect(
+      tester.getBottomLeft(find.byKey(const ValueKey('mobile-bottom-nav'))).dy,
+      tester.view.physicalSize.height,
+    );
+    expect(
+      find.byKey(const ValueKey('mobile-chat-panel-ra-team')),
+      findsNothing,
+    );
+
+    await tester.tap(find.byKey(const ValueKey('mobile-nav-chats')));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const ValueKey('chat-room-ra-team')), findsOneWidget);
+
+    await tester.tap(find.byKey(const ValueKey('chat-room-ra-team')));
+    await tester.pumpAndSettle();
+    expect(
+      find.byKey(const ValueKey('mobile-chat-panel-ra-team')),
+      findsOneWidget,
+    );
+    expect(find.byKey(const ValueKey('mobile-nav-chats')), findsNothing);
+    expect(
+      find.byKey(const ValueKey('mobile-composer-tools-toggle')),
+      findsOneWidget,
+    );
+    expect(
+      tester.getSize(find.byKey(const ValueKey('mobile-composer-root'))).width,
+      390,
+    );
+    expect(
+      tester
+          .widget<Material>(find.byKey(const ValueKey('mobile-composer-root')))
+          .color,
+      Colors.white,
+    );
+    expect(
+      find.byKey(const ValueKey('mobile-composer-tools-menu')),
+      findsNothing,
+    );
+
+    await tester.tap(
+      find.byKey(const ValueKey('mobile-composer-tools-toggle')),
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 240));
+    expect(
+      find.byKey(const ValueKey('mobile-composer-tools-menu')),
+      findsOneWidget,
+    );
+    expect(find.text('파일'), findsOneWidget);
+
+    final toolsMenu = tester.widget<Container>(
+      find.byKey(const ValueKey('mobile-composer-tools-menu')),
+    );
+    expect(
+      (toolsMenu.decoration! as BoxDecoration).color,
+      const Color(0xFFF7F9FC),
+    );
+
+    await tester.tap(find.byType(TextField));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 240));
+    expect(
+      find.byKey(const ValueKey('mobile-composer-tools-menu')),
+      findsNothing,
+    );
+
+    await tester.tap(find.byKey(const ValueKey('mobile-chat-back')));
+    await tester.pumpAndSettle();
+    expect(
+      find.byKey(const ValueKey('mobile-chat-panel-ra-team')),
+      findsNothing,
+    );
+    expect(find.byKey(const ValueKey('mobile-nav-chats')), findsOneWidget);
+    expect(find.byKey(const ValueKey('chat-room-ra-team')), findsOneWidget);
+  });
+
+  testWidgets('uses mobile AZOOM channel list and voice sheets', (
+    WidgetTester tester,
+  ) async {
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(390, 844);
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    await tester.pumpWidget(
+      const ProviderScope(
+        child: MaterialApp(
+          home: Scaffold(
+            body: AzoomPage(
+              currentUser: PersonProfile(
+                id: 'mobile-user',
+                name: 'J Y J',
+                email: 'mobile@ava.local',
+                color: Color(0xFF7AA06A),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 120));
+
+    expect(find.byKey(const ValueKey('azoom-mobile-rail')), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey('azoom-mobile-rail-transcripts')),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const ValueKey('azoom-mobile-rail-calendar')),
+      findsOneWidget,
+    );
+    expect(find.byKey(const ValueKey('azoom-mobile-nav-chats')), findsNothing);
+    expect(
+      find.byKey(const ValueKey('azoom-mobile-channel-list')),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const ValueKey('azoom-mobile-bottom-nav')),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const ValueKey('azoom-mobile-transcripts-header')),
+      findsOneWidget,
+    );
+    expect(find.text('\uC11C\uBC84 \uBD80\uC2A4\uD2B8'), findsNothing);
+    expect(
+      tester
+          .getTopLeft(find.byKey(const ValueKey('azoom-mobile-header-invite')))
+          .dx,
+      greaterThan(tester.getTopLeft(find.text('\uAC80\uC0C9\uD558\uAE30')).dx),
+    );
+    expect(
+      tester
+          .getBottomLeft(
+            find.byKey(const ValueKey('azoom-mobile-rail-profile')),
+          )
+          .dy,
+      lessThanOrEqualTo(
+        tester
+            .getTopLeft(find.byKey(const ValueKey('azoom-mobile-bottom-nav')))
+            .dy,
+      ),
+    );
+    final channelCard = tester.widget<ClipRRect>(
+      find.byKey(const ValueKey('azoom-mobile-channel-card')),
+    );
+    expect(
+      channelCard.borderRadius,
+      const BorderRadius.only(topLeft: Radius.circular(18)),
+    );
+    expect(
+      find.byKey(const ValueKey('azoom-mobile-join-all-staff')),
+      findsNothing,
+    );
+
+    await tester.tap(
+      find.byKey(const ValueKey('azoom-mobile-voice-all-staff')),
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 320));
+
+    expect(
+      find.byKey(const ValueKey('azoom-mobile-join-all-staff')),
+      findsOneWidget,
+    );
+    final joinSheet = find.byKey(
+      const ValueKey('azoom-mobile-voice-join-sheet'),
+    );
+    expect(tester.getTopLeft(joinSheet).dx, 0);
+    expect(tester.getSize(joinSheet).width, 390);
+    expect(
+      find.byKey(const ValueKey('azoom-mobile-join-dismiss-layer')),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const ValueKey('azoom-mobile-voice-room-all-staff')),
+      findsNothing,
+    );
+
+    await tester.tapAt(const Offset(180, 180));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 260));
+    expect(
+      find.byKey(const ValueKey('azoom-mobile-join-all-staff')),
+      findsNothing,
+    );
+
+    await tester.tap(
+      find.byKey(const ValueKey('azoom-mobile-voice-all-staff')),
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 320));
+    expect(
+      find.byKey(const ValueKey('azoom-mobile-join-all-staff')),
+      findsOneWidget,
+    );
+
+    await tester.tap(
+      find.text('\uC74C\uC131 \uCC44\uB110 \uCC38\uAC00\uD558\uAE30'),
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 320));
+
+    expect(
+      find.byKey(const ValueKey('azoom-mobile-voice-room-all-staff')),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const ValueKey('azoom-mobile-mic-device-control')),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const ValueKey('azoom-mobile-camera-device-control')),
+      findsOneWidget,
+    );
+    expect(find.byIcon(Icons.call_end), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey('azoom-mobile-voice-control-dock')),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const ValueKey('azoom-mobile-voice-expanded-menu')),
+      findsNothing,
+    );
+
+    await tester.drag(
+      find.byKey(const ValueKey('azoom-mobile-voice-dock-drag-target')),
+      const Offset(0, -520),
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 320));
+    expect(
+      find.byKey(const ValueKey('azoom-mobile-voice-expanded-menu')),
+      findsOneWidget,
+    );
+    expect(find.byIcon(Icons.screen_share), findsOneWidget);
+    expect(find.text('제공 ABBA-S'), findsOneWidget);
+
+    await tester.drag(
+      find.byKey(const ValueKey('azoom-mobile-voice-expanded-menu')),
+      const Offset(0, 520),
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 320));
+    expect(
+      find.byKey(const ValueKey('azoom-mobile-voice-expanded-menu')),
+      findsNothing,
+    );
+    expect(
+      find.byKey(const ValueKey('azoom-mobile-join-all-staff')),
+      findsNothing,
+    );
+
+    await tester.tap(
+      find.byKey(const ValueKey('azoom-mobile-notiva-header-button')),
+    );
+    await tester.pump();
+    expect(
+      find.byKey(const ValueKey('azoom-mobile-notiva-overlay')),
+      findsOneWidget,
+    );
+    expect(find.byKey(const ValueKey('azoom-notiva-ai-panel')), findsOneWidget);
+
+    await tester.tap(find.byIcon(Icons.close));
+    await tester.pump();
+    expect(
+      find.byKey(const ValueKey('azoom-mobile-notiva-overlay')),
+      findsNothing,
+    );
+
+    await tester.tap(find.byKey(const ValueKey('azoom-mobile-voice-collapse')));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 260));
+
+    expect(
+      find.byKey(const ValueKey('azoom-mobile-voice-room-all-staff')),
+      findsNothing,
+    );
+    expect(
+      find.byKey(const ValueKey('azoom-mobile-channel-list')),
+      findsOneWidget,
+    );
+
+    await tester.tap(
+      find.byKey(const ValueKey('azoom-mobile-voice-all-staff')),
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 320));
+
+    expect(
+      find.byKey(const ValueKey('azoom-mobile-voice-room-all-staff')),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const ValueKey('azoom-mobile-join-all-staff')),
+      findsNothing,
+    );
+  });
+}
+
+Future<void> _sendWindowMethodCall(
+  WidgetTester tester,
+  String method,
+  Map<String, Object?> arguments,
+) async {
+  final data = const StandardMethodCodec().encodeMethodCall(
+    MethodCall(method, arguments),
+  );
+  await tester.binding.defaultBinaryMessenger.handlePlatformMessage(
+    'ava/window',
+    data,
+    (_) {},
+  );
+}
+
+String? _nativeMenuResult(MethodCall call) {
+  if (call.method != 'showNativeMenu') {
+    return null;
+  }
+  final arguments = (call.arguments as Map?)?.cast<Object?, Object?>();
+  final items = arguments?['items'] as List? ?? const [];
+  final ids = {
+    for (final item in items)
+      if (item is Map) (item['value'] ?? item['id'])?.toString(),
+  };
+  if (ids.contains('notice')) {
+    return 'notice';
+  }
+  if (ids.contains('pin')) {
+    return 'pin';
+  }
+  return null;
+}
+
+ProviderContainer _messengerTestContainer() {
+  return ProviderContainer(
+    overrides: [
+      chatRoomsProvider.overrideWith(TestChatRooms.new),
+      friendGroupsProvider.overrideWithValue(userGroups),
+      updatedUserProfilesProvider.overrideWithValue(updatedUsers),
+    ],
+  );
+}
+
+ProviderContainer _adminMessengerTestContainer() {
+  return ProviderContainer(
+    overrides: [
+      chatRoomsProvider.overrideWith(TestChatRooms.new),
+      currentUserProfileProvider.overrideWithValue(
+        const PersonProfile(
+          id: 'admin-user',
+          name: '관리자',
+          color: Color(0xFF4663CF),
+          email: 'admin@ava.local',
+          role: 'ADMIN',
+          companyName: 'ABBA-S',
+        ),
+      ),
+      authControllerProvider.overrideWith(_AdminTestAuthController.new),
+      adminApiProvider.overrideWithValue(_FakeAdminApi()),
+    ],
+  );
+}
+
+class TestChatRooms extends ChatRooms {
+  @override
+  List<ChatRoom> build() => chatRooms;
+}
+
+class _AdminTestAuthController extends AuthController {
+  @override
+  Future<AuthState> build() async {
+    return AuthState(
+      session: AuthSession(
+        accessToken: 'admin-access-token',
+        refreshToken: 'admin-refresh-token',
+        expiresAt: DateTime(2026, 5, 19, 12),
+        user: const AuthUser(
+          id: 'admin-user',
+          email: 'admin@ava.local',
+          displayName: '관리자',
+          role: 'ADMIN',
+          companyName: 'ABBA-S',
+        ),
+      ),
+    );
+  }
+}
+
+class _FakeAdminApi extends AdminApi {
+  _FakeAdminApi() : super(Dio());
+
+  @override
+  Future<AdminOverviewDto> overview(String accessToken) async {
+    return const AdminOverviewDto(
+      totalUsers: 2,
+      enabledUsers: 1,
+      disabledUsers: 1,
+      chatRooms: 0,
+      chatMessages: 0,
+      unreadNotifications: 0,
+    );
+  }
+
+  @override
+  Future<List<AdminUserDto>> pendingApprovals(String accessToken) async {
+    return [_adminUser('pending-user', enabled: false)];
+  }
+
+  @override
+  Future<List<AdminUserDto>> users(String accessToken) async {
+    return [
+      _adminUser('admin-user', role: 'ADMIN'),
+      _adminUser('pending-user', enabled: false),
+    ];
+  }
+
+  AdminUserDto _adminUser(
+    String id, {
+    String role = 'USER',
+    bool enabled = true,
+  }) {
+    return AdminUserDto(
+      id: id,
+      email: '$id@ava.local',
+      displayName: id == 'admin-user' ? '관리자' : '승인대기',
+      role: role,
+      enabled: enabled,
+      companyName: 'ABBA-S',
+      department: '개발팀',
+      position: '매니저',
+      status: enabled ? 'ACTIVE' : 'PENDING',
+      createdAt: DateTime(2026, 5, 19, 12),
+    );
+  }
 }
 
 Color? _chatRoomTileColor(WidgetTester tester, String id) {
@@ -354,30 +1006,10 @@ Color? _chatRoomTileColor(WidgetTester tester, String id) {
           matching: find.byWidgetPredicate(
             (widget) =>
                 widget is Container &&
-                widget.padding == const EdgeInsets.fromLTRB(18, 12, 12, 8),
+                widget.padding == const EdgeInsets.fromLTRB(18, 12, 18, 8),
           ),
         )
         .first,
-  );
-
-  return container.color;
-}
-
-Color? _roomMenuItemColor(WidgetTester tester, String id) {
-  final menuItem = find.byKey(ValueKey('room-menu-$id'));
-  final container = tester.widget<AnimatedContainer>(
-    find
-        .descendant(of: menuItem, matching: find.byType(AnimatedContainer))
-        .first,
-  );
-
-  return (container.decoration as BoxDecoration?)?.color;
-}
-
-Color? _messageMenuItemColor(WidgetTester tester, String id) {
-  final menuItem = find.byKey(ValueKey('message-menu-$id'));
-  final container = tester.widget<Container>(
-    find.descendant(of: menuItem, matching: find.byType(Container)).first,
   );
 
   return container.color;

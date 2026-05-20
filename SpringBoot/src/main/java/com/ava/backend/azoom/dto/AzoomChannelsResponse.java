@@ -1,0 +1,12 @@
+package com.ava.backend.azoom.dto;
+
+import java.util.List;
+
+public record AzoomChannelsResponse(
+	String companyName,
+	boolean liveKitEnabled,
+	String liveKitUrl,
+	List<AzoomTextChannelResponse> textChannels,
+	List<AzoomVoiceChannelResponse> voiceChannels
+) {
+}

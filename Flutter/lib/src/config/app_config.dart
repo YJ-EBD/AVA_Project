@@ -6,11 +6,11 @@ class AppConfig {
   static const fromEnvironment = AppConfig(
     apiBaseUrl: String.fromEnvironment(
       'AVA_API_BASE_URL',
-      defaultValue: 'http://localhost:8080',
+      defaultValue: 'http://112.166.136.198:8080',
     ),
     websocketUrl: String.fromEnvironment(
       'AVA_WS_URL',
-      defaultValue: 'ws://localhost:8080/ws',
+      defaultValue: 'ws://112.166.136.198:8080/ws',
     ),
   );
 

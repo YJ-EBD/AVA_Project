@@ -7,6 +7,8 @@ class AuthUser {
     this.name,
     this.nickname,
     this.phoneNumber,
+    this.contactEmail,
+    this.gender,
     this.companyName,
     this.position,
     this.department,
@@ -29,6 +31,8 @@ class AuthUser {
       name: json['name'] as String?,
       nickname: json['nickname'] as String?,
       phoneNumber: json['phoneNumber'] as String?,
+      contactEmail: json['contactEmail'] as String?,
+      gender: json['gender'] as String?,
       companyName: json['companyName'] as String?,
       position: json['position'] as String?,
       department: json['department'] as String?,
@@ -49,6 +53,8 @@ class AuthUser {
   final String? name;
   final String? nickname;
   final String? phoneNumber;
+  final String? contactEmail;
+  final String? gender;
   final String? companyName;
   final String? position;
   final String? department;
@@ -68,6 +74,8 @@ class AuthUser {
       'name': name,
       'nickname': nickname,
       'phoneNumber': phoneNumber,
+      'contactEmail': contactEmail,
+      'gender': gender,
       'companyName': companyName,
       'position': position,
       'department': department,
@@ -125,4 +133,26 @@ class AuthSession {
       'user': user.toJson(),
     };
   }
+}
+
+class SignupResult {
+  const SignupResult({
+    required this.user,
+    required this.pendingApproval,
+    required this.message,
+  });
+
+  factory SignupResult.fromJson(Map<String, dynamic> json) {
+    return SignupResult(
+      user: AuthUser.fromJson(
+        (json['user'] as Map?)?.cast<String, dynamic>() ?? const {},
+      ),
+      pendingApproval: json['pendingApproval'] as bool? ?? false,
+      message: json['message'] as String? ?? '',
+    );
+  }
+
+  final AuthUser user;
+  final bool pendingApproval;
+  final String message;
 }

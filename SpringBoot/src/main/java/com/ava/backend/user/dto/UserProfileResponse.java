@@ -12,6 +12,8 @@ public record UserProfileResponse(
 	String displayName,
 	String nickname,
 	String phoneNumber,
+	String contactEmail,
+	String gender,
 	UserRole role,
 	String companyName,
 	String position,

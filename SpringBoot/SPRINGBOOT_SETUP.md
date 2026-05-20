@@ -1,72 +1,59 @@
-# Spring Boot 기본 세팅
+# Spring Boot Setup
 
-## 설치 환경
+## Project Rule
 
-- Microsoft OpenJDK `21.0.11 LTS`
-  - 경로: `C:\Program Files\Microsoft\jdk-21.0.11.10-hotspot`
-- Gradle 전역 설치 없이 프로젝트의 `gradlew.bat` 사용
-- Docker Desktop Personal 사용
+- Do not use Docker for AVA development, verification, or runtime work.
+- Do not add compose files or container runtime dependencies to this project.
+- PostgreSQL, MongoDB, Redis, LLM, and AZOOM media services must be provided as local/native Windows services, standalone binaries, or external endpoints.
 
-## Docker 무료 사용 기준
+## Runtime
 
-Docker Desktop은 Docker Personal 기준으로 개인/교육/비상업 오픈소스/소규모 사업자에게 무료입니다.
-소규모 사업자 기준은 직원 250명 미만 AND 연매출 1천만 달러 미만입니다.
+- Java 21
+- Spring Boot
+- PostgreSQL: `localhost:5432` by default, override with `AVA_POSTGRES_URL`
+- MongoDB: `localhost:27017` by default, override with `AVA_MONGODB_URI`
+- Redis: `localhost:6379` by default, override with `AVA_REDIS_HOST` and `AVA_REDIS_PORT`
+- Backend: `0.0.0.0:8080` by default
 
-## 프로젝트
+## AZOOM Media
 
-- Spring Boot `4.0.6`
-- Java `21`
-- Gradle Groovy DSL
-- Group: `com.ava`
-- Artifact: `ava-backend`
-- Package: `com.ava.backend`
+AZOOM text chat is separate from the normal messenger chat. Store and publish it
+through AZOOM-only DB tables and `/topic/azoom/**`; do not route it through the
+normal `채팅` room/message API or `/topic/rooms/**`.
 
-## 주요 의존성
-
-- Spring Web MVC
-- Spring WebSocket
-- Spring Security
-- Spring Validation
-- Spring Data JPA
-- PostgreSQL Driver
-- Spring Data MongoDB
-- Spring Data Redis
-- Spring Boot Actuator
-- Lombok
-- DevTools
-- Docker Compose Support
-
-## 기본 설정
-
-- `src/main/resources/application.yml`
-  - PostgreSQL, MongoDB, Redis 연결 기본값
-  - 기본 서버 포트: `8080`
-- `compose.yaml`
-  - PostgreSQL `5432`
-  - MongoDB `27017`
-  - Redis `6379`
-  - 로컬 개발용 Docker volume 포함
-- `/api/health` 헬스 체크 API
-- `/actuator/health` Actuator 헬스 체크
-- `/ws` STOMP WebSocket endpoint
-  - publish prefix: `/app`
-  - subscribe prefix: `/topic`, `/queue`
-- Security 설정
-  - `/api/health`, `/actuator/health`, `/ws/**`, 인증 API 허용
-  - 그 외 요청은 인증 필요
-
-## 실행 명령
+AZOOM voice/video uses LiveKit-compatible WebRTC clients, but the media server
+must be a native Windows executable, Windows service, or external server. It
+must work from computers on different internet networks, not only the local LAN:
 
 ```powershell
 cd D:\AVA_Project\SpringBoot
-docker compose up -d
-.\gradlew.bat test
-.\gradlew.bat bootRun
+.\start_azoom_sfu.ps1
+.\start_backend_with_azoom_sfu.ps1
 ```
 
-`bootRun` 실행 시 Docker Desktop이 정상 실행 중이어야 합니다.
+The native SFU installer creates `SpringBoot\LiveKit\azoom-livekit.env` with:
 
-## 검증
+```powershell
+AVA_LIVEKIT_URL=ws://112.166.136.198:7880
+AVA_LIVEKIT_API_KEY=ava-azoom
+AVA_LIVEKIT_API_SECRET=<generated-secret>
+```
 
-- `.\gradlew.bat test` 통과
-- `GET http://localhost:8080/api/health` 응답 확인
+For external clients, open or forward TCP `7880`, TCP `7881`, and UDP
+`50000-50100` plus UDP `3478` to the server PC. LiveKit must advertise public ICE
+candidates for `112.166.136.198`; if the LiveKit variables are empty, Spring Boot
+keeps AZOOM text chat and voice presence working, but disables actual media token
+responses.
+
+## Commands
+
+```powershell
+cd D:\AVA_Project\SpringBoot
+.\gradlew.bat test
+.\gradlew.bat bootRun
+.\start_backend_with_azoom_sfu.ps1
+```
+
+## Seeded System Account
+
+- `admin@ava.admin` / `Ava1234!` (`SUPERUSER`)

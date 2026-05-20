@@ -179,8 +179,7 @@ const wchar_t* WindowClassRegistrar::GetWindowClass() {
     window_class.hInstance = GetModuleHandle(nullptr);
     window_class.hIcon =
         LoadIcon(window_class.hInstance, MAKEINTRESOURCE(IDI_APP_ICON));
-    window_class.hbrBackground =
-        static_cast<HBRUSH>(GetStockObject(WHITE_BRUSH));
+    window_class.hbrBackground = CreateSolidBrush(RGB(191, 211, 227));
     window_class.lpszMenuName = nullptr;
     window_class.lpfnWndProc = Win32Window::WndProc;
     RegisterClass(&window_class);
@@ -403,10 +402,12 @@ void Win32Window::UpdateTheme(HWND const window) {
                         &corner_preference, sizeof(corner_preference));
 
   const COLORREF no_border = DWMWA_COLOR_NONE;
-  const COLORREF white = RGB(255, 255, 255);
-  const COLORREF black = RGB(0, 0, 0);
+  const COLORREF app_title_bar_blue = RGB(79, 102, 200);
+  const COLORREF white_text = RGB(255, 255, 255);
   DwmSetWindowAttribute(window, DWMWA_BORDER_COLOR, &no_border,
                         sizeof(no_border));
-  DwmSetWindowAttribute(window, DWMWA_CAPTION_COLOR, &white, sizeof(white));
-  DwmSetWindowAttribute(window, DWMWA_TEXT_COLOR, &black, sizeof(black));
+  DwmSetWindowAttribute(window, DWMWA_CAPTION_COLOR, &app_title_bar_blue,
+                        sizeof(app_title_bar_blue));
+  DwmSetWindowAttribute(window, DWMWA_TEXT_COLOR, &white_text,
+                        sizeof(white_text));
 }

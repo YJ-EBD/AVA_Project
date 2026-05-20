@@ -8,6 +8,7 @@ import 'package:flutter/services.dart';
 import '../../../../platform/window_control.dart';
 import '../../../../shared/ava_toast.dart';
 import '../../../auth/application/auth_controller.dart';
+import '../../../auth/application/company_scope.dart';
 import '../../../auth/data/auth_api.dart';
 import '../../data/chat_api.dart';
 import '../../data/mock_messenger_data.dart';
@@ -107,7 +108,10 @@ class _FriendsPanelState extends ConsumerState<FriendsPanel> {
     final groups = ref.watch(friendGroupsProvider);
     final updatedProfiles = ref.watch(updatedUserProfilesProvider);
     final profilesState = ref.watch(userProfilesProvider);
-    final companyName = _companyTitle(currentProfile, allProfiles);
+    final activeCompany = ref.watch(activeCompanyProvider);
+    final companyName =
+        activeCompany ?? _companyTitle(currentProfile, allProfiles);
+    final isSuperuser = _isSuperuser(ref);
     final query = _searchController.text.trim();
     final searchResults = _filterProfiles(allProfiles, query);
 
@@ -133,6 +137,13 @@ class _FriendsPanelState extends ConsumerState<FriendsPanel> {
               children: [
                 PanelHeader(
                   title: companyName,
+                  titleWidget: isSuperuser
+                      ? _CompanySwitcherTitle(
+                          companyName: companyName,
+                          onSelected: (company) =>
+                              _selectCompany(context, ref, company),
+                        )
+                      : null,
                   titleFontWeight: FontWeight.w500,
                   actions: [
                     HeaderIconButton(
@@ -200,7 +211,7 @@ class _FriendsPanelState extends ConsumerState<FriendsPanel> {
                                     _showUserProfile(context, ref, user),
                               ),
                             ),
-                            if (profilesState.isLoading && groups == userGroups)
+                            if (profilesState.isLoading)
                               const Padding(
                                 padding: EdgeInsets.symmetric(vertical: 12),
                                 child: Text(
@@ -310,7 +321,27 @@ class _FriendsPanelState extends ConsumerState<FriendsPanel> {
         ?.user
         .role
         .toUpperCase();
-    return role == 'ADMIN';
+    return role == 'ADMIN' || role == 'SUPERUSER';
+  }
+
+  bool _isSuperuser(WidgetRef ref) {
+    final role = ref
+        .read(authControllerProvider)
+        .value
+        ?.session
+        ?.user
+        .role
+        .toUpperCase();
+    return role == 'SUPERUSER';
+  }
+
+  void _selectCompany(BuildContext context, WidgetRef ref, String company) {
+    ref.read(activeCompanyProvider.notifier).select(company);
+    ref.invalidate(userProfilesProvider);
+    ref.read(chatRoomsProvider.notifier).refreshFromServer(force: true);
+    ref.read(selectedChatRoomProvider.notifier).close();
+    ref.read(focusedChatRoomIdProvider.notifier).clear();
+    _showBlackToast(context, '$company 회사로 전환했습니다.');
   }
 
   Future<void> _showNativeEmployeeAddPopup(
@@ -999,6 +1030,77 @@ class _CompanySearchBar extends StatelessWidget {
             ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+class _CompanySwitcherTitle extends StatelessWidget {
+  const _CompanySwitcherTitle({
+    required this.companyName,
+    required this.onSelected,
+  });
+
+  final String companyName;
+  final ValueChanged<String> onSelected;
+
+  @override
+  Widget build(BuildContext context) {
+    return PopupMenuButton<String>(
+      tooltip: '\uD68C\uC0AC \uC804\uD658',
+      padding: EdgeInsets.zero,
+      offset: const Offset(0, 8),
+      color: Colors.white,
+      elevation: 8,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+      onSelected: onSelected,
+      itemBuilder: (context) => [
+        for (final company in avaCompanies)
+          PopupMenuItem<String>(
+            value: company,
+            height: 38,
+            child: Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    company,
+                    style: TextStyle(
+                      color: Colors.black,
+                      fontSize: 14,
+                      fontWeight: company == companyName
+                          ? FontWeight.w800
+                          : FontWeight.w600,
+                    ),
+                  ),
+                ),
+                if (company == companyName)
+                  const Icon(Icons.check, size: 17, color: Color(0xFF2D6FFF)),
+              ],
+            ),
+          ),
+      ],
+      child: MouseRegion(
+        cursor: SystemMouseCursors.click,
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(
+              companyName,
+              style: const TextStyle(
+                color: Colors.black,
+                fontSize: 18,
+                fontWeight: FontWeight.w500,
+                letterSpacing: 0,
+              ),
+            ),
+            const SizedBox(width: 4),
+            const Icon(
+              Icons.keyboard_arrow_down,
+              size: 18,
+              color: Colors.black,
+            ),
+          ],
+        ),
       ),
     );
   }

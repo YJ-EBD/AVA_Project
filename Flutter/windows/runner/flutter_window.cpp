@@ -33,7 +33,10 @@
 namespace {
 
 constexpr int kCompactMessengerWidth = 460;
+constexpr int kCompactMessengerHeight = 720;
 constexpr int kExpandedMessengerWidth = 960;
+constexpr int kAzoomMessengerWidth = 1344;
+constexpr int kAzoomMessengerHeight = 722;
 constexpr wchar_t kNotificationClassName[] = L"AVA_CHAT_NOTIFICATION";
 constexpr wchar_t kChatFloatingClassName[] = L"AVA_CHAT_FLOATING";
 constexpr wchar_t kProfilePopupClassName[] = L"AVA_PROFILE_POPUP";
@@ -51,6 +54,12 @@ constexpr wchar_t kQuietToastClassName[] = L"AVA_QUIET_TOAST";
 constexpr int kNotificationWidth = 310;
 constexpr int kNotificationHeight = 132;
 constexpr int kNotificationMargin = 18;
+
+WINDOWPLACEMENT g_pre_azoom_window_placement{};
+bool g_has_pre_azoom_window_placement = false;
+WINDOWPLACEMENT g_pre_azoom_fullscreen_placement{};
+DWORD g_pre_azoom_fullscreen_style = 0;
+bool g_azoom_fullscreen = false;
 constexpr int kChatFloatingExpandedWidth = 200;
 constexpr int kChatFloatingCollapsedWidth = 48;
 constexpr int kChatFloatingHeight = 38;
@@ -133,6 +142,7 @@ bool g_ole_initialized = false;
 
 struct NotificationState {
   std::string room_id;
+  std::wstring room_title;
   std::wstring sender_name;
   std::wstring sender_nickname;
   std::wstring body;
@@ -869,8 +879,11 @@ void DrawNotification(NotificationState* state, HWND hwnd) {
   HFONT avatar_font = CreateUiFont(10, FW_BOLD);
   HFONT button_font = CreateUiFont(9, FW_NORMAL);
 
-  RECT app_rect{16, 8, 110, 25};
-  DrawTextBlock(hdc, L"\xC571", app_rect, app_font, RGB(0, 0, 0),
+  RECT app_rect{16, 8, kNotificationWidth - 72, 25};
+  std::wstring title = state->room_title.empty()
+      ? L"\xC571"
+      : state->room_title;
+  DrawTextBlock(hdc, title, app_rect, app_font, RGB(0, 0, 0),
                 DT_LEFT | DT_VCENTER | DT_SINGLELINE);
   DrawBellIcon(hdc, kNotificationWidth - 42, 8);
 
@@ -933,6 +946,110 @@ void ResizeWindowToLogicalWidth(HWND window, int logical_width) {
                SWP_NOZORDER | SWP_NOACTIVATE);
 }
 
+void ResizeWindowToLogicalSize(HWND window, int logical_width, int logical_height) {
+  if (IsZoomed(window)) {
+    ShowWindow(window, SW_RESTORE);
+  }
+
+  RECT rect;
+  GetWindowRect(window, &rect);
+  UINT dpi = GetDpiForWindow(window);
+  int width = MulDiv(logical_width, dpi, 96);
+  int height = MulDiv(logical_height, dpi, 96);
+
+  HMONITOR monitor = MonitorFromWindow(window, MONITOR_DEFAULTTONEAREST);
+  MONITORINFO monitor_info{};
+  monitor_info.cbSize = sizeof(monitor_info);
+  if (GetMonitorInfo(monitor, &monitor_info)) {
+    const RECT work = monitor_info.rcWork;
+    const int work_width = work.right - work.left;
+    const int work_height = work.bottom - work.top;
+    width = std::min(width, work_width);
+    height = std::min(height, work_height);
+    rect.left = std::clamp(rect.left, work.left, work.right - width);
+    rect.top = std::clamp(rect.top, work.top, work.bottom - height);
+  }
+
+  SetWindowPos(window, nullptr, rect.left, rect.top, width, height,
+               SWP_NOZORDER | SWP_NOACTIVATE);
+}
+
+void StorePreAzoomWindowPlacement(HWND window) {
+  if (!window || g_has_pre_azoom_window_placement) {
+    return;
+  }
+
+  WINDOWPLACEMENT placement{};
+  placement.length = sizeof(WINDOWPLACEMENT);
+  if (!GetWindowPlacement(window, &placement)) {
+    return;
+  }
+
+  g_pre_azoom_window_placement = placement;
+  g_has_pre_azoom_window_placement = true;
+}
+
+void RestorePreAzoomWindowPlacement(HWND window) {
+  if (!window) {
+    return;
+  }
+
+  if (g_azoom_fullscreen) {
+    SetWindowLongPtr(window, GWL_STYLE, g_pre_azoom_fullscreen_style);
+    SetWindowPlacement(window, &g_pre_azoom_fullscreen_placement);
+    SetWindowPos(window, nullptr, 0, 0, 0, 0,
+                 SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE |
+                     SWP_FRAMECHANGED);
+    g_azoom_fullscreen = false;
+  }
+
+  if (!g_has_pre_azoom_window_placement) {
+    ResizeWindowToLogicalSize(window, kCompactMessengerWidth,
+                              kCompactMessengerHeight);
+    return;
+  }
+
+  WINDOWPLACEMENT placement = g_pre_azoom_window_placement;
+  placement.length = sizeof(WINDOWPLACEMENT);
+  SetWindowPlacement(window, &placement);
+  g_has_pre_azoom_window_placement = false;
+}
+
+void SetAzoomFullscreen(HWND window, bool fullscreen) {
+  if (!window || g_azoom_fullscreen == fullscreen) {
+    return;
+  }
+
+  if (fullscreen) {
+    g_pre_azoom_fullscreen_style =
+        static_cast<DWORD>(GetWindowLongPtr(window, GWL_STYLE));
+    g_pre_azoom_fullscreen_placement.length = sizeof(WINDOWPLACEMENT);
+    GetWindowPlacement(window, &g_pre_azoom_fullscreen_placement);
+
+    HMONITOR monitor = MonitorFromWindow(window, MONITOR_DEFAULTTONEAREST);
+    MONITORINFO monitor_info{};
+    monitor_info.cbSize = sizeof(monitor_info);
+    if (!GetMonitorInfo(monitor, &monitor_info)) {
+      return;
+    }
+
+    SetWindowLongPtr(window, GWL_STYLE, WS_POPUP | WS_VISIBLE);
+    const RECT rect = monitor_info.rcMonitor;
+    SetWindowPos(window, HWND_TOP, rect.left, rect.top,
+                 rect.right - rect.left, rect.bottom - rect.top,
+                 SWP_NOACTIVATE | SWP_FRAMECHANGED);
+    g_azoom_fullscreen = true;
+    return;
+  }
+
+  SetWindowLongPtr(window, GWL_STYLE, g_pre_azoom_fullscreen_style);
+  SetWindowPlacement(window, &g_pre_azoom_fullscreen_placement);
+  SetWindowPos(window, nullptr, 0, 0, 0, 0,
+               SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE |
+                   SWP_FRAMECHANGED);
+  g_azoom_fullscreen = false;
+}
+
 void SendNotificationReply(NotificationState* state) {
   if (!state || !state->edit || !state->channel) {
     return;
@@ -956,6 +1073,21 @@ void SendNotificationReply(NotificationState* state) {
       flutter::EncodableValue(content);
   state->channel->InvokeMethod(
       "notificationReply",
+      std::make_unique<flutter::EncodableValue>(arguments));
+}
+
+void OpenNotificationRoom(NotificationState* state) {
+  if (!state || !state->channel || state->room_id.empty()) {
+    return;
+  }
+
+  flutter::EncodableMap arguments;
+  arguments[flutter::EncodableValue("action")] =
+      flutter::EncodableValue("openRoom");
+  arguments[flutter::EncodableValue("roomId")] =
+      flutter::EncodableValue(state->room_id);
+  state->channel->InvokeMethod(
+      "floatingAction",
       std::make_unique<flutter::EncodableValue>(arguments));
 }
 
@@ -999,6 +1131,13 @@ LRESULT CALLBACK NotificationWndProc(HWND hwnd,
         } else if (state && state->edit) {
           SetFocus(state->edit);
         }
+        return 0;
+      }
+      RECT content_rect{0, 0, kNotificationWidth, 94};
+      if (PtInRect(&content_rect, point)) {
+        OpenNotificationRoom(state);
+        AnimateWindow(hwnd, 140, AW_HIDE | AW_SLIDE | AW_VER_POSITIVE);
+        DestroyWindow(hwnd);
         return 0;
       }
       return 0;
@@ -1454,6 +1593,7 @@ void RegisterNotificationClass() {
 void ShowNativeChatNotification(
     flutter::MethodChannel<flutter::EncodableValue>* channel,
     const std::string& room_id,
+    const std::string& room_title,
     const std::string& sender_name,
     const std::string& sender_nickname,
     COLORREF avatar_color,
@@ -1471,6 +1611,7 @@ void ShowNativeChatNotification(
 
   auto* state = new NotificationState();
   state->room_id = room_id;
+  state->room_title = Utf16FromUtf8(room_title.empty() ? "AVA" : room_title);
   state->sender_name = Utf16FromUtf8(sender_name);
   state->sender_nickname = Utf16FromUtf8(
       sender_nickname.empty() ? sender_name : sender_nickname);
@@ -8256,11 +8397,44 @@ bool FlutterWindow::OnCreate() {
         } else if (method == "close") {
           PostMessage(window, WM_CLOSE, 0, 0);
           result->Success();
+        } else if (method == "setWindowTitle") {
+          const auto* arguments = call.arguments();
+          const auto* map = arguments
+              ? std::get_if<flutter::EncodableMap>(arguments)
+              : nullptr;
+          std::string title = map ? StringArgument(*map, "title") : "AVA";
+          if (title.empty()) {
+            title = "AVA";
+          }
+          std::wstring window_title = Utf16FromUtf8(title);
+          SetWindowTextW(window, window_title.c_str());
+          result->Success();
         } else if (method == "compactMessenger") {
           ResizeWindowToLogicalWidth(window, kCompactMessengerWidth);
           result->Success();
         } else if (method == "expandMessenger") {
           ResizeWindowToLogicalWidth(window, kExpandedMessengerWidth);
+          result->Success();
+        } else if (method == "showMessengerWindow") {
+          ShowWindow(window, SW_SHOWNORMAL);
+          SetForegroundWindow(window);
+          result->Success();
+        } else if (method == "openAzoomMessenger") {
+          StorePreAzoomWindowPlacement(window);
+          ResizeWindowToLogicalSize(window, kAzoomMessengerWidth,
+                                    kAzoomMessengerHeight);
+          result->Success();
+        } else if (method == "restoreMessengerFromAzoom") {
+          RestorePreAzoomWindowPlacement(window);
+          result->Success();
+        } else if (method == "setAzoomFullscreen") {
+          const auto* arguments = call.arguments();
+          const auto* map = arguments
+              ? std::get_if<flutter::EncodableMap>(arguments)
+              : nullptr;
+          const bool fullscreen =
+              map ? BoolArgument(*map, "fullscreen", false) : false;
+          SetAzoomFullscreen(window, fullscreen);
           result->Success();
         } else if (method == "setMessengerOpacity") {
           const auto* arguments = call.arguments();
@@ -8459,6 +8633,7 @@ bool FlutterWindow::OnCreate() {
           ShowNativeChatNotification(
               window_channel_.get(),
               StringArgument(*map, "roomId"),
+              StringArgument(*map, "roomTitle"),
               StringArgument(*map, "senderName"),
               StringArgument(*map, "senderNickname"),
               ColorArgument(*map, "avatarColor", RGB(122, 160, 106)),

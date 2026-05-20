@@ -579,6 +579,7 @@ class _ChatsPanelState extends ConsumerState<ChatsPanel> {
     final displayedRooms = _isSearching ? searchRooms : rooms;
     final showQuietTile =
         !_isSearching && activeFolderId == null && quietRooms.isNotEmpty;
+    final mobileLayout = MediaQuery.sizeOf(context).width <= 720;
 
     return Shortcuts(
       shortcuts: <ShortcutActivator, Intent>{
@@ -661,8 +662,13 @@ class _ChatsPanelState extends ConsumerState<ChatsPanel> {
                           ref
                               .read(focusedChatRoomIdProvider.notifier)
                               .focus(room);
+                          if (mobileLayout) {
+                            _openRoom(ref, room);
+                          }
                         },
-                        onDoubleTap: () => _openRoom(ref, room),
+                        onDoubleTap: mobileLayout
+                            ? () {}
+                            : () => _openRoom(ref, room),
                         onContextMenu: (position) =>
                             _showRoomContextMenu(context, ref, room, position),
                       );
@@ -3879,6 +3885,7 @@ class _RoomPreviewText extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final leadingIcon = _previewLeadingIcon(room.preview);
     final text = Text(
       room.preview,
       maxLines: maxLines,
@@ -3890,7 +3897,20 @@ class _RoomPreviewText extends StatelessWidget {
       ),
     );
     if (!room.previewIsSpoiler || room.preview.isEmpty) {
-      return text;
+      if (leadingIcon == null) {
+        return text;
+      }
+      return Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Padding(
+            padding: const EdgeInsets.only(top: 1),
+            child: Icon(leadingIcon, size: 13, color: const Color(0xFF6A737D)),
+          ),
+          const SizedBox(width: 3),
+          Expanded(child: text),
+        ],
+      );
     }
     return ClipRect(
       child: ImageFiltered(
@@ -3899,6 +3919,19 @@ class _RoomPreviewText extends StatelessWidget {
       ),
     );
   }
+}
+
+IconData? _previewLeadingIcon(String preview) {
+  if (preview.startsWith('[이미지]')) {
+    return Icons.image_outlined;
+  }
+  if (preview.startsWith('[동영상]')) {
+    return Icons.movie_outlined;
+  }
+  if (preview.startsWith('[파일]')) {
+    return Icons.insert_drive_file_outlined;
+  }
+  return null;
 }
 
 class _RoomTitleLine extends StatelessWidget {

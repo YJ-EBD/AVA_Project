@@ -9,4 +9,6 @@ import com.ava.backend.chat.entity.ChatMessageDocument;
 public interface ChatMessageRepository extends MongoRepository<ChatMessageDocument, String> {
 
 	List<ChatMessageDocument> findTop50ByRoomCodeOrderBySentAtDesc(String roomCode);
+
+	long deleteByRoomCode(String roomCode);
 }

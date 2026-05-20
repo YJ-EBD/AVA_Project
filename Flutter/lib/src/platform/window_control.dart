@@ -115,12 +115,32 @@ class WindowControl {
     await _invoke('close');
   }
 
+  static Future<void> setWindowTitle(String title) async {
+    await _invoke('setWindowTitle', {'title': title});
+  }
+
   static Future<void> compactMessenger() async {
     await _invoke('compactMessenger');
   }
 
   static Future<void> expandMessenger() async {
     await _invoke('expandMessenger');
+  }
+
+  static Future<void> showMessengerWindow() async {
+    await _invoke('showMessengerWindow');
+  }
+
+  static Future<void> openAzoomMessenger() async {
+    await _invoke('openAzoomMessenger');
+  }
+
+  static Future<void> restoreMessengerFromAzoom() async {
+    await _invoke('restoreMessengerFromAzoom');
+  }
+
+  static Future<void> setAzoomFullscreen(bool fullscreen) async {
+    await _invoke('setAzoomFullscreen', {'fullscreen': fullscreen});
   }
 
   static Future<void> setMessengerOpacity(double opacity) async {
@@ -177,6 +197,7 @@ class WindowControl {
 
   static Future<bool> showChatNotification({
     required String roomId,
+    required String roomTitle,
     required String senderName,
     required String senderNickname,
     required String avatarColor,
@@ -185,6 +206,7 @@ class WindowControl {
     try {
       final result = await _channel.invokeMethod<bool>('showChatNotification', {
         'roomId': roomId,
+        'roomTitle': roomTitle,
         'senderName': senderName,
         'senderNickname': senderNickname,
         'avatarColor': avatarColor,

@@ -7,6 +7,7 @@ public record LoginRequest(
 	@NotBlank @Email String email,
 	@NotBlank String password,
 	boolean rememberMe,
-	boolean autoLogin
+	boolean autoLogin,
+	boolean forceLogin
 ) {
 }

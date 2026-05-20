@@ -2,16 +2,22 @@ package com.ava.backend.auth.service;
 
 import java.time.Instant;
 
+import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import com.ava.backend.auth.dto.AccountFindResponse;
+import com.ava.backend.auth.dto.AuthRealtimeEvent;
 import com.ava.backend.auth.dto.AuthResponse;
 import com.ava.backend.auth.dto.LoginRequest;
 import com.ava.backend.auth.dto.RefreshTokenRequest;
 import com.ava.backend.auth.dto.SignupRequest;
+import com.ava.backend.auth.dto.SignupResponse;
+import com.ava.backend.auth.exception.DuplicateLoginException;
+import com.ava.backend.auth.exception.PendingApprovalException;
 import com.ava.backend.auth.security.AuthPrincipal;
+import com.ava.backend.company.CompanyScopeService;
 import com.ava.backend.user.dao.UserAccountDao;
 import com.ava.backend.user.entity.UserAccount;
 import com.ava.backend.user.entity.UserProfile;
@@ -24,6 +30,10 @@ public class AuthService {
 
 	private static final String ONLINE = "\uC628\uB77C\uC778";
 	private static final String OFFLINE = "\uC624\uD504\uB77C\uC778";
+	private static final String DUPLICATE_LOGIN_MESSAGE = "\uB2E4\uB978 \uAE30\uAE30\uC5D0\uC11C \uB85C\uADF8\uC778 \uC911\uC785\uB2C8\uB2E4.";
+	private static final String PENDING_APPROVAL_MESSAGE = "\uAD00\uB9AC\uC790 \uC2B9\uC778 \uD6C4 \uB85C\uADF8\uC778 \uAC00\uB2A5\uD569\uB2C8\uB2E4.";
+	private static final String FORCED_LOGOUT_MESSAGE =
+		"\uB2E4\uB978 \uAE30\uAE30\uC5D0\uC11C \uB85C\uADF8\uC778\uD574 \uB85C\uADF8\uC544\uC6C3\uB418\uC5C8\uC2B5\uB2C8\uB2E4.";
 
 	private final UserAccountDao userAccountDao;
 	private final UserProfileRepository profileRepository;
@@ -31,6 +41,9 @@ public class AuthService {
 	private final LoginSessionService loginSessionService;
 	private final TokenService tokenService;
 	private final UserMapper userMapper;
+	private final SimpMessagingTemplate messagingTemplate;
+	private final EmailVerificationService emailVerificationService;
+	private final CompanyScopeService companyScopeService;
 
 	public AuthService(
 		UserAccountDao userAccountDao,
@@ -38,7 +51,10 @@ public class AuthService {
 		PasswordEncoder passwordEncoder,
 		LoginSessionService loginSessionService,
 		TokenService tokenService,
-		UserMapper userMapper
+		UserMapper userMapper,
+		SimpMessagingTemplate messagingTemplate,
+		EmailVerificationService emailVerificationService,
+		CompanyScopeService companyScopeService
 	) {
 		this.userAccountDao = userAccountDao;
 		this.profileRepository = profileRepository;
@@ -46,45 +62,65 @@ public class AuthService {
 		this.loginSessionService = loginSessionService;
 		this.tokenService = tokenService;
 		this.userMapper = userMapper;
+		this.messagingTemplate = messagingTemplate;
+		this.emailVerificationService = emailVerificationService;
+		this.companyScopeService = companyScopeService;
 	}
 
 	@Transactional
-	public AuthResponse signup(SignupRequest request) {
+	public SignupResponse signup(SignupRequest request) {
 		String email = normalizeEmail(request.email());
 		if (userAccountDao.existsByEmail(email)) {
-			throw new IllegalArgumentException("이미 가입된 AVA 계정입니다.");
+			throw new IllegalArgumentException("\uC774\uBBF8 \uAC00\uC785\uB41C AVA \uACC4\uC815\uC785\uB2C8\uB2E4.");
 		}
+		emailVerificationService.verifyAndConsume(request.contactEmail(), request.emailVerificationCode());
 		UserAccount account = new UserAccount(
 			email,
 			passwordEncoder.encode(request.password()),
 			request.displayName().trim(),
 			UserRole.USER
 		);
+		account.setEnabled(false);
 		userAccountDao.save(account);
 		UserProfile profile = profileRepository.save(new UserProfile(
 			account,
-			blankToDefault(request.department(), "미지정"),
+			blankToDefault(request.department(), "\uBBF8\uC9C0\uC815"),
 			blankToDefault(request.nickname(), request.displayName().trim()),
 			blankToNull(request.phoneNumber()),
 			request.birthDate(),
-			"온라인",
+			OFFLINE,
 			"#7B61FF"
 		));
-		profile.setCompanyName("ABBA-S");
-		profile.setPosition("사원");
-		return issue(account, profile, false, true);
+		profile.setCompanyName(normalizeCompanyName(request.companyName()));
+		profile.setContactEmail(blankToNull(request.contactEmail()));
+		profile.setGender(blankToNull(request.gender()));
+		profile.setPosition("\uC0AC\uC6D0");
+		return new SignupResponse(
+			userMapper.toResponse(account, profile),
+			true,
+			PENDING_APPROVAL_MESSAGE
+		);
 	}
 
 	@Transactional
 	public AuthResponse login(LoginRequest request) {
 		UserAccount account = userAccountDao.findByEmail(normalizeEmail(request.email()))
-			.filter(UserAccount::isEnabled)
-			.orElseThrow(() -> new IllegalArgumentException("이메일 또는 비밀번호가 올바르지 않습니다."));
+			.orElseThrow(() -> new IllegalArgumentException("\uC774\uBA54\uC77C \uB610\uB294 \uBE44\uBC00\uBC88\uD638\uAC00 \uC62C\uBC14\uB974\uC9C0 \uC54A\uC2B5\uB2C8\uB2E4."));
 		if (!passwordEncoder.matches(request.password(), account.getPasswordHash())) {
-			throw new IllegalArgumentException("이메일 또는 비밀번호가 올바르지 않습니다.");
+			throw new IllegalArgumentException("\uC774\uBA54\uC77C \uB610\uB294 \uBE44\uBC00\uBC88\uD638\uAC00 \uC62C\uBC14\uB974\uC9C0 \uC54A\uC2B5\uB2C8\uB2E4.");
+		}
+		if (!account.isEnabled()) {
+			throw new PendingApprovalException(PENDING_APPROVAL_MESSAGE);
 		}
 		UserProfile profile = profileRepository.findByAccountId(account.getId())
-			.orElseThrow(() -> new IllegalStateException("프로필 데이터가 없습니다."));
+			.orElseThrow(() -> new IllegalStateException("\uD504\uB85C\uD544 \uB370\uC774\uD130\uAC00 \uC5C6\uC2B5\uB2C8\uB2E4."));
+		boolean hasActiveSession = loginSessionService.hasActiveSession(account.getId());
+		if (hasActiveSession && !request.forceLogin()) {
+			throw new DuplicateLoginException(DUPLICATE_LOGIN_MESSAGE);
+		}
+		if (hasActiveSession) {
+			publishForcedLogout(account);
+		}
 		return issue(account, profile, true, request.rememberMe() || request.autoLogin());
 	}
 
@@ -93,11 +129,11 @@ public class AuthService {
 		var claims = tokenService.parse(request.refreshToken())
 			.filter(TokenService.TokenClaims::isRefreshToken)
 			.filter(token -> loginSessionService.isCurrentSession(token.userId(), token.sessionId()))
-			.orElseThrow(() -> new IllegalArgumentException("갱신 토큰이 유효하지 않습니다."));
+			.orElseThrow(() -> new IllegalArgumentException("\uAC31\uC2E0 \uD1A0\uD070\uC774 \uC720\uD6A8\uD558\uC9C0 \uC54A\uC2B5\uB2C8\uB2E4."));
 		UserAccount account = userAccountDao.findById(claims.userId())
-			.orElseThrow(() -> new IllegalArgumentException("계정을 찾을 수 없습니다."));
+			.orElseThrow(() -> new IllegalArgumentException("\uACC4\uC815\uC744 \uCC3E\uC744 \uC218 \uC5C6\uC2B5\uB2C8\uB2E4."));
 		UserProfile profile = profileRepository.findByAccountId(account.getId())
-			.orElseThrow(() -> new IllegalStateException("프로필 데이터가 없습니다."));
+			.orElseThrow(() -> new IllegalStateException("\uD504\uB85C\uD544 \uB370\uC774\uD130\uAC00 \uC5C6\uC2B5\uB2C8\uB2E4."));
 		var tokens = tokenService.issue(account, claims.sessionId());
 		return new AuthResponse(
 			tokens.accessToken(),
@@ -139,6 +175,19 @@ public class AuthService {
 		);
 	}
 
+	private void publishForcedLogout(UserAccount account) {
+		messagingTemplate.convertAndSendToUser(
+			account.getEmail(),
+			"/queue/auth-events",
+			new AuthRealtimeEvent(
+				"forced_logout",
+				"duplicate_login",
+				FORCED_LOGOUT_MESSAGE,
+				Instant.now()
+			)
+		);
+	}
+
 	private String normalizeEmail(String email) {
 		return email.trim().toLowerCase();
 	}
@@ -149,6 +198,14 @@ public class AuthService {
 
 	private String blankToNull(String value) {
 		return value == null || value.isBlank() ? null : value.trim();
+	}
+
+	private String normalizeCompanyName(String companyName) {
+		String normalized = companyScopeService.normalizeCompany(companyName);
+		if (companyScopeService.isKnownCompany(normalized)) {
+			return normalized;
+		}
+		throw new IllegalArgumentException("\uC120\uD0DD\uD560 \uC218 \uC5C6\uB294 \uD68C\uC0AC\uC785\uB2C8\uB2E4.");
 	}
 
 	private String maskEmail(String email) {

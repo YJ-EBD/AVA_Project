@@ -31,7 +31,7 @@
     - 암호화
     - 계정 권한
     - ADMIN
-    - Docker
+    - Native Windows/local services
   - **FrontEnd**
     - Flutter
     - Desktop
@@ -75,7 +75,7 @@ mindmap
       Auth
       Roles
       Admin
-      Docker
+      Native Windows/local services
     FrontEnd
       Flutter
       Desktop

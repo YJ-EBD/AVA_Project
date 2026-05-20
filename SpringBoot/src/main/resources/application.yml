@@ -1,9 +1,6 @@
 spring:
   application:
     name: ava-backend
-  docker:
-    compose:
-      enabled: false
   servlet:
     multipart:
       max-file-size: ${AVA_MAX_FILE_SIZE:200MB}
@@ -18,6 +15,22 @@ spring:
     redis:
       host: ${AVA_REDIS_HOST:localhost}
       port: ${AVA_REDIS_PORT:6379}
+  mail:
+    host: ${NAVER_SMTP_HOST:smtp.naver.com}
+    port: ${NAVER_SMTP_PORT:465}
+    username: ${NAVER_SMTP_USER:}
+    password: ${NAVER_SMTP_PASS:}
+    properties:
+      mail:
+        smtp:
+          auth: ${NAVER_SMTP_AUTH:true}
+          connectiontimeout: ${NAVER_SMTP_CONNECTION_TIMEOUT_MS:10000}
+          timeout: ${NAVER_SMTP_TIMEOUT_MS:10000}
+          writetimeout: ${NAVER_SMTP_WRITE_TIMEOUT_MS:10000}
+          ssl:
+            enable: ${NAVER_SMTP_SSL_ENABLE:true}
+          starttls:
+            enable: ${NAVER_SMTP_STARTTLS_ENABLE:false}
   jpa:
     hibernate:
       ddl-auto: update
@@ -31,23 +44,56 @@ server:
   port: ${AVA_BACKEND_PORT:8080}
 
 ava:
+  runtime:
+    environment: ${AVA_RUNTIME_ENVIRONMENT:local}
+    production-fail-fast: ${AVA_PRODUCTION_FAIL_FAST:true}
   web:
     allowed-origins: ${AVA_ALLOWED_ORIGINS:*}
+  security:
+    auth-rate-limit-per-minute: ${AVA_AUTH_RATE_LIMIT_PER_MINUTE:60}
   chat:
     backup-directory: ${AVA_CHAT_BACKUP_DIR:ChatBackUp}
     attachment-directory: ${AVA_CHAT_ATTACHMENT_DIR:ChatUploads}
     mongo-enabled: ${AVA_CHAT_MONGO_ENABLED:true}
+  azoom:
+    require-livekit-in-production: ${AVA_AZOOM_REQUIRE_LIVEKIT_IN_PRODUCTION:false}
+    notiva:
+      base-url: ${AVA_NOTIVA_AI_BASE_URL:http://127.0.0.1:8091}
+      audio-directory: ${AVA_NOTIVA_AUDIO_DIR:NotivaAudio}
+    livekit:
+      url: ${AVA_LIVEKIT_URL:}
+      api-key: ${AVA_LIVEKIT_API_KEY:}
+      api-secret: ${AVA_LIVEKIT_API_SECRET:}
+      token-minutes: ${AVA_LIVEKIT_TOKEN_MINUTES:120}
+      signal-port: ${AVA_LIVEKIT_SIGNAL_PORT:7880}
+      signal-proxy:
+        enabled: ${AVA_LIVEKIT_SIGNAL_PROXY_ENABLED:true}
+        upstream-url: ${AVA_LIVEKIT_SIGNAL_PROXY_UPSTREAM_URL:}
   app-update:
     directory: ${AVA_APP_UPDATE_DIR:AppUpdates}
     windows:
-      latest-version: ${AVA_APP_WINDOWS_LATEST_VERSION:0.1.2}
-      file-name: ${AVA_APP_WINDOWS_FILE_NAME:ava-windows-${AVA_APP_WINDOWS_LATEST_VERSION:0.1.2}.zip}
+      latest-version: ${AVA_APP_WINDOWS_LATEST_VERSION:0.1.136}
+      file-name: ${AVA_APP_WINDOWS_FILE_NAME:ava-windows-${AVA_APP_WINDOWS_LATEST_VERSION:0.1.136}.zip}
       required: ${AVA_APP_WINDOWS_REQUIRED:false}
-      release-notes: ${AVA_APP_WINDOWS_RELEASE_NOTES:AVA desktop update}
+      release-notes: ${AVA_APP_WINDOWS_RELEASE_NOTES:Mobile AZOOM speaking border and Notiva verification update}
+    macos:
+      latest-version: ${AVA_APP_MACOS_LATEST_VERSION:0.1.26}
+      file-name: ${AVA_APP_MACOS_FILE_NAME:ava-macos-${AVA_APP_MACOS_LATEST_VERSION:0.1.26}.zip}
+      required: ${AVA_APP_MACOS_REQUIRED:false}
+      release-notes: ${AVA_APP_MACOS_RELEASE_NOTES:AVA macOS desktop update}
+    android:
+      latest-version: ${AVA_APP_ANDROID_LATEST_VERSION:0.1.136}
+      file-name: ${AVA_APP_ANDROID_FILE_NAME:ava-android-${AVA_APP_ANDROID_LATEST_VERSION:0.1.136}.apk}
+      required: ${AVA_APP_ANDROID_REQUIRED:false}
+      release-notes: ${AVA_APP_ANDROID_RELEASE_NOTES:Mobile AZOOM speaking border and Notiva verification update}
   ai:
     llm-base-url: ${AVA_AI_LLM_BASE_URL:http://127.0.0.1:8088/v1}
     model: ${AVA_AI_MODEL:ava-qwen3.5-27b-q4km}
     timeout-seconds: ${AVA_AI_TIMEOUT_SECONDS:180}
+    unavailable-retry-seconds: ${AVA_AI_UNAVAILABLE_RETRY_SECONDS:90}
+    local-server:
+      auto-start: ${AVA_AI_LOCAL_SERVER_AUTO_START:true}
+      script-path: ${AVA_AI_LOCAL_SERVER_SCRIPT_PATH:../LLM_Server/start_server.ps1}
     max-tokens: ${AVA_AI_MAX_TOKENS:1024}
     temperature: ${AVA_AI_TEMPERATURE:0.2}
     history-limit: ${AVA_AI_HISTORY_LIMIT:24}
@@ -58,12 +104,21 @@ ava:
     web-search-timeout-seconds: ${AVA_AI_WEB_SEARCH_TIMEOUT_SECONDS:12}
     google-search-api-key: ${AVA_AI_GOOGLE_SEARCH_API_KEY:}
     google-search-engine-id: ${AVA_AI_GOOGLE_SEARCH_ENGINE_ID:}
+    workspace:
+      root: ${AVA_AI_WORKSPACE_ROOT:F:/}
+      upload-directory: ${AVA_AI_WORKSPACE_UPLOAD_DIR:AVA_AI_Workspace}
   auth:
     jwt-secret: ${AVA_JWT_SECRET:ava-local-development-secret-change-me-please-2026}
     access-token-minutes: ${AVA_ACCESS_TOKEN_MINUTES:30}
     refresh-token-days: ${AVA_REFRESH_TOKEN_DAYS:30}
     session-hours: ${AVA_SESSION_HOURS:12}
     session-remember-days: ${AVA_SESSION_REMEMBER_DAYS:30}
+    email-verification:
+      code-minutes: ${AVA_EMAIL_VERIFICATION_CODE_MINUTES:5}
+      max-attempts: ${AVA_EMAIL_VERIFICATION_MAX_ATTEMPTS:5}
+      from: ${NAVER_SMTP_FROM:${NAVER_SMTP_USER:}}
+      brand-name: ${MAIL_BRAND_NAME:ABBA-S}
+      product-name: ${MAIL_PRODUCT_NAME:AVA}
 
 management:
   endpoints:

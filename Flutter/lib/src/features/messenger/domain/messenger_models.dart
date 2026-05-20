@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 
-enum MessengerTab { friends, chats, avaAi, more }
+enum MessengerTab { friends, chats, azoom, avaAi, more }
 
 class PersonProfile {
   const PersonProfile({

@@ -20,15 +20,19 @@ Set these on the production server:
 
 ```powershell
 AVA_BACKEND_PORT=8080
+AVA_RUNTIME_ENVIRONMENT=production
+AVA_PRODUCTION_FAIL_FAST=true
 AVA_POSTGRES_URL=jdbc:postgresql://localhost:5432/ava
 AVA_POSTGRES_USER=ava
-AVA_POSTGRES_PASSWORD=ava_password
+AVA_POSTGRES_PASSWORD=<use-a-strong-database-password>
 AVA_MONGODB_URI=mongodb://ava:ava_password@localhost:27017/ava?authSource=admin
 AVA_REDIS_HOST=localhost
 AVA_REDIS_PORT=6379
 AVA_ALLOWED_ORIGINS=https://<api-domain>
 AVA_JWT_SECRET=<use-a-long-random-secret>
 ```
+
+For production, set `spring.jpa.hibernate.ddl-auto=validate` or `none`; do not run with `update`, `create`, or `create-drop`. The backend exposes `GET /api/readiness` and fails fast when `AVA_RUNTIME_ENVIRONMENT=production` and unsafe production settings are detected.
 
 For desktop/mobile Flutter clients, CORS is less important than for browsers, but keep `AVA_ALLOWED_ORIGINS` strict if you also ship Flutter Web.
 

@@ -45,6 +45,13 @@ class MessengerSideNav extends ConsumerWidget {
           ),
           const SizedBox(height: 22),
           _NavIcon(
+            key: const ValueKey('side-nav-azoom-button'),
+            icon: Icons.videocam,
+            isActive: activeTab == MessengerTab.azoom,
+            onTap: () => _selectTab(ref, MessengerTab.azoom),
+          ),
+          const SizedBox(height: 22),
+          _NavIcon(
             icon: Icons.auto_awesome,
             isActive: activeTab == MessengerTab.avaAi,
             onTap: () => _selectTab(ref, MessengerTab.avaAi),
@@ -91,6 +98,7 @@ class MessengerSideNav extends ConsumerWidget {
 
 class _NavIcon extends StatelessWidget {
   const _NavIcon({
+    super.key,
     required this.icon,
     required this.isActive,
     required this.onTap,
