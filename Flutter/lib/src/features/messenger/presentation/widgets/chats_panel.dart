@@ -579,7 +579,9 @@ class _ChatsPanelState extends ConsumerState<ChatsPanel> {
     final displayedRooms = _isSearching ? searchRooms : rooms;
     final showQuietTile =
         !_isSearching && activeFolderId == null && quietRooms.isNotEmpty;
-    final mobileLayout = MediaQuery.sizeOf(context).width <= 720;
+    final mobileLayout =
+        (Platform.isAndroid || Platform.isIOS) &&
+        MediaQuery.sizeOf(context).width <= 720;
 
     return Shortcuts(
       shortcuts: <ShortcutActivator, Intent>{

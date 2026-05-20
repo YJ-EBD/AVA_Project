@@ -72,15 +72,15 @@ ava:
   app-update:
     directory: ${AVA_APP_UPDATE_DIR:AppUpdates}
     windows:
-      latest-version: ${AVA_APP_WINDOWS_LATEST_VERSION:0.1.136}
-      file-name: ${AVA_APP_WINDOWS_FILE_NAME:ava-windows-${AVA_APP_WINDOWS_LATEST_VERSION:0.1.136}.zip}
+      latest-version: ${AVA_APP_WINDOWS_LATEST_VERSION:0.1.137}
+      file-name: ${AVA_APP_WINDOWS_FILE_NAME:ava-windows-${AVA_APP_WINDOWS_LATEST_VERSION:0.1.137}.zip}
       required: ${AVA_APP_WINDOWS_REQUIRED:false}
-      release-notes: ${AVA_APP_WINDOWS_RELEASE_NOTES:Mobile AZOOM speaking border and Notiva verification update}
+      release-notes: ${AVA_APP_WINDOWS_RELEASE_NOTES:Restore desktop company and chat page layout}
     android:
-      latest-version: ${AVA_APP_ANDROID_LATEST_VERSION:0.1.136}
-      file-name: ${AVA_APP_ANDROID_FILE_NAME:ava-android-${AVA_APP_ANDROID_LATEST_VERSION:0.1.136}.apk}
+      latest-version: ${AVA_APP_ANDROID_LATEST_VERSION:0.1.137}
+      file-name: ${AVA_APP_ANDROID_FILE_NAME:ava-android-${AVA_APP_ANDROID_LATEST_VERSION:0.1.137}.apk}
       required: ${AVA_APP_ANDROID_REQUIRED:false}
-      release-notes: ${AVA_APP_ANDROID_RELEASE_NOTES:Mobile AZOOM speaking border and Notiva verification update}
+      release-notes: ${AVA_APP_ANDROID_RELEASE_NOTES:Restore desktop company and chat page layout}
   ai:
     llm-base-url: ${AVA_AI_LLM_BASE_URL:http://127.0.0.1:8088/v1}
     model: ${AVA_AI_MODEL:ava-qwen3.5-27b-q4km}

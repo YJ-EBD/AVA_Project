@@ -41,6 +41,8 @@ bool _isAzoomRoomCode(String roomCode) {
       roomCode.startsWith('azoom_');
 }
 
+bool _isMobileRuntime() => Platform.isAndroid || Platform.isIOS;
+
 final activeMessengerTabProvider =
     NotifierProvider<ActiveMessengerTab, MessengerTab>(ActiveMessengerTab.new);
 
@@ -1940,6 +1942,7 @@ class _MessengerPageState extends ConsumerState<MessengerPage>
     final dimNativePopup = ref.watch(nativePopupDimProvider);
     final visibleRoom = _visibleChatRoom;
     final rootMobileLayout =
+        _isMobileRuntime() &&
         MediaQuery.sizeOf(context).width <= _mobileMessengerBreakpoint;
     final fullPageTab =
         activeTab == MessengerTab.azoom ||
@@ -1956,6 +1959,7 @@ class _MessengerPageState extends ConsumerState<MessengerPage>
             child: LayoutBuilder(
               builder: (context, constraints) {
                 final mobileLayout =
+                    _isMobileRuntime() &&
                     constraints.maxWidth <= _mobileMessengerBreakpoint;
                 if (mobileLayout && !hideAzoomVoiceChrome) {
                   return _buildMobileLayout(
