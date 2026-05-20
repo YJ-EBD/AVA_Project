@@ -28,12 +28,10 @@ import com.ava.backend.update.repository.AppUpdateReleaseRepository;
 public class AppUpdateService {
 
 	private static final String WINDOWS_PLATFORM = "windows";
-	private static final String MACOS_PLATFORM = "macos";
 	private static final String ANDROID_PLATFORM = "android";
 
 	private final Path updateDirectory;
 	private final PlatformUpdateConfig windowsConfig;
-	private final PlatformUpdateConfig macosConfig;
 	private final PlatformUpdateConfig androidConfig;
 	private final AppUpdateReleaseRepository releaseRepository;
 
@@ -44,10 +42,6 @@ public class AppUpdateService {
 		@Value("${ava.app-update.windows.file-name:ava-windows-${ava.app-update.windows.latest-version:0.1.0}.zip}") String windowsFileName,
 		@Value("${ava.app-update.windows.required:false}") boolean windowsRequired,
 		@Value("${ava.app-update.windows.release-notes:AVA desktop update}") String windowsReleaseNotes,
-		@Value("${ava.app-update.macos.latest-version:0.1.0}") String latestMacosVersion,
-		@Value("${ava.app-update.macos.file-name:ava-macos-${ava.app-update.macos.latest-version:0.1.0}.zip}") String macosFileName,
-		@Value("${ava.app-update.macos.required:false}") boolean macosRequired,
-		@Value("${ava.app-update.macos.release-notes:AVA macOS desktop update}") String macosReleaseNotes,
 		@Value("${ava.app-update.android.latest-version:0.1.0}") String latestAndroidVersion,
 		@Value("${ava.app-update.android.file-name:ava-android-${ava.app-update.android.latest-version:0.1.0}.apk}") String androidFileName,
 		@Value("${ava.app-update.android.required:false}") boolean androidRequired,
@@ -63,14 +57,6 @@ public class AppUpdateService {
 			windowsReleaseNotes,
 			".zip"
 		);
-		this.macosConfig = buildConfig(
-			MACOS_PLATFORM,
-			latestMacosVersion,
-			macosFileName,
-			macosRequired,
-			macosReleaseNotes,
-			".zip"
-		);
 		this.androidConfig = buildConfig(
 			ANDROID_PLATFORM,
 			latestAndroidVersion,
@@ -83,10 +69,6 @@ public class AppUpdateService {
 
 	public AppUpdateManifestResponse windowsManifest(String currentVersion) {
 		return manifest(WINDOWS_PLATFORM, currentVersion);
-	}
-
-	public AppUpdateManifestResponse macosManifest(String currentVersion) {
-		return manifest(MACOS_PLATFORM, currentVersion);
 	}
 
 	public AppUpdateManifestResponse androidManifest(String currentVersion) {
@@ -147,10 +129,6 @@ public class AppUpdateService {
 		return packageFor(WINDOWS_PLATFORM, fileName);
 	}
 
-	public UpdatePackage macosPackage(String fileName) {
-		return packageFor(MACOS_PLATFORM, fileName);
-	}
-
 	public UpdatePackage androidPackage(String fileName) {
 		return packageFor(ANDROID_PLATFORM, fileName);
 	}
@@ -196,9 +174,6 @@ public class AppUpdateService {
 		String normalized = platform == null ? "" : platform.strip().toLowerCase(Locale.ROOT);
 		if (WINDOWS_PLATFORM.equals(normalized)) {
 			return windowsConfig;
-		}
-		if (MACOS_PLATFORM.equals(normalized)) {
-			return macosConfig;
 		}
 		if (ANDROID_PLATFORM.equals(normalized)) {
 			return androidConfig;

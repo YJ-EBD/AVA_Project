@@ -76,11 +76,6 @@ ava:
       file-name: ${AVA_APP_WINDOWS_FILE_NAME:ava-windows-${AVA_APP_WINDOWS_LATEST_VERSION:0.1.136}.zip}
       required: ${AVA_APP_WINDOWS_REQUIRED:false}
       release-notes: ${AVA_APP_WINDOWS_RELEASE_NOTES:Mobile AZOOM speaking border and Notiva verification update}
-    macos:
-      latest-version: ${AVA_APP_MACOS_LATEST_VERSION:0.1.26}
-      file-name: ${AVA_APP_MACOS_FILE_NAME:ava-macos-${AVA_APP_MACOS_LATEST_VERSION:0.1.26}.zip}
-      required: ${AVA_APP_MACOS_REQUIRED:false}
-      release-notes: ${AVA_APP_MACOS_RELEASE_NOTES:AVA macOS desktop update}
     android:
       latest-version: ${AVA_APP_ANDROID_LATEST_VERSION:0.1.136}
       file-name: ${AVA_APP_ANDROID_FILE_NAME:ava-android-${AVA_APP_ANDROID_LATEST_VERSION:0.1.136}.apk}

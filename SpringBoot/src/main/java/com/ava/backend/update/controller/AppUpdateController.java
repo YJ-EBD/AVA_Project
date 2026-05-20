@@ -32,13 +32,6 @@ public class AppUpdateController {
 		return appUpdateService.windowsManifest(currentVersion);
 	}
 
-	@GetMapping("/macos/latest")
-	public AppUpdateManifestResponse macosLatest(
-		@RequestParam(value = "currentVersion", required = false) String currentVersion
-	) {
-		return appUpdateService.macosManifest(currentVersion);
-	}
-
 	@GetMapping("/android/latest")
 	public AppUpdateManifestResponse androidLatest(
 		@RequestParam(value = "currentVersion", required = false) String currentVersion
@@ -57,12 +50,6 @@ public class AppUpdateController {
 	@GetMapping("/windows/download/{fileName}")
 	public ResponseEntity<Resource> windowsDownload(@PathVariable String fileName) {
 		AppUpdateService.UpdatePackage updatePackage = appUpdateService.windowsPackage(fileName);
-		return updatePackageResponse(updatePackage);
-	}
-
-	@GetMapping("/macos/download/{fileName}")
-	public ResponseEntity<Resource> macosDownload(@PathVariable String fileName) {
-		AppUpdateService.UpdatePackage updatePackage = appUpdateService.macosPackage(fileName);
 		return updatePackageResponse(updatePackage);
 	}
 

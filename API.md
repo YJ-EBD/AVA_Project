@@ -127,9 +127,9 @@ Requires `ADMIN`.
 ## App Updates
 
 - `GET /api/app-updates/windows/latest`
-- `GET /api/app-updates/macos/latest`
+- `GET /api/app-updates/android/latest`
 - `GET /api/app-updates/windows/download/{fileName}`
-- `GET /api/app-updates/macos/download/{fileName}`
+- `GET /api/app-updates/android/download/{fileName}`
 
 ## Error Shape
 

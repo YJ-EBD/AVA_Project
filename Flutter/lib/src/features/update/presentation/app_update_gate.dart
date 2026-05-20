@@ -37,8 +37,7 @@ class _AppUpdateGateState extends ConsumerState<AppUpdateGate> {
   bool _postUpdateCheckInProgress = false;
   bool _retryAfterCurrentCheck = false;
 
-  bool get _updatesSupported =>
-      io.Platform.isWindows || io.Platform.isMacOS || io.Platform.isAndroid;
+  bool get _updatesSupported => io.Platform.isWindows || io.Platform.isAndroid;
 
   @override
   void initState() {
@@ -304,13 +303,6 @@ class _AppUpdateGateState extends ConsumerState<AppUpdateGate> {
           io.Platform.environment['APPDATA'] ??
           io.Directory.systemTemp.path;
       return io.Directory('$base${io.Platform.pathSeparator}AVA');
-    }
-    if (io.Platform.isMacOS) {
-      final home =
-          io.Platform.environment['HOME'] ?? io.Directory.systemTemp.path;
-      return io.Directory(
-        '$home${io.Platform.pathSeparator}Library${io.Platform.pathSeparator}Application Support${io.Platform.pathSeparator}AVA',
-      );
     }
     return io.Directory(
       '${io.Directory.systemTemp.path}${io.Platform.pathSeparator}AVA',
@@ -618,9 +610,10 @@ class _AppUpdateDialogState extends ConsumerState<_AppUpdateDialog> {
         return;
       }
 
-      final scriptPath = io.Platform.isMacOS
-          ? await _writeMacosUpdaterScript(updateDir, packagePath)
-          : await _writeWindowsUpdaterScript(updateDir, packagePath);
+      final scriptPath = await _writeWindowsUpdaterScript(
+        updateDir,
+        packagePath,
+      );
       if (mounted) {
         setState(() {
           _phase = _UpdatePhase.restarting;
@@ -688,18 +681,6 @@ class _AppUpdateDialogState extends ConsumerState<_AppUpdateDialog> {
   }
 
   Future<String> _sha256(String path) async {
-    if (io.Platform.isMacOS) {
-      final result = await io.Process.run('/usr/bin/shasum', [
-        '-a',
-        '256',
-        path,
-      ]);
-      if (result.exitCode != 0) {
-        throw StateError('업데이트 파일 해시를 확인할 수 없습니다.');
-      }
-      return result.stdout.toString().trim().split(RegExp(r'\s+')).first;
-    }
-
     final result = await io.Process.run('powershell.exe', [
       '-NoProfile',
       '-Command',
@@ -728,18 +709,6 @@ class _AppUpdateDialogState extends ConsumerState<_AppUpdateDialog> {
   }
 
   Future<void> _launchUpdater(io.Directory updateDir, String scriptPath) async {
-    if (io.Platform.isMacOS) {
-      final chmod = await io.Process.run('/bin/chmod', ['+x', scriptPath]);
-      if (chmod.exitCode != 0) {
-        throw StateError('업데이트 설치 프로그램을 준비하지 못했습니다.');
-      }
-      await io.Process.start('/bin/sh', [
-        scriptPath,
-        io.pid.toString(),
-      ], mode: io.ProcessStartMode.detached);
-      return;
-    }
-
     final commandPath = await _writeWindowsUpdaterCommand(
       updateDir,
       scriptPath,
@@ -860,100 +829,6 @@ try {
     return scriptPath;
   }
 
-  Future<String> _writeMacosUpdaterScript(
-    io.Directory updateDir,
-    String zipPath,
-  ) async {
-    final executablePath = io.Platform.resolvedExecutable;
-    final appBundlePath = _macosAppBundlePath(executablePath);
-    final appParentPath = io.Directory(appBundlePath).parent.path;
-    final scriptPath =
-        '${updateDir.path}${io.Platform.pathSeparator}apply_update.sh';
-    final markerJson = jsonEncode({
-      'version': widget.manifest.latestVersion,
-      'previousVersion': AppVersion.name,
-      'releaseNotes': widget.manifest.releaseNotes,
-      'appliedAt': DateTime.now().toIso8601String(),
-    });
-    final script =
-        '''
-#!/bin/sh
-set -eu
-
-LAUNCHER_PID="\${1:-0}"
-PACKAGE_PATH=${_shellQuote(zipPath)}
-APP_BUNDLE=${_shellQuote(appBundlePath)}
-APP_PARENT=${_shellQuote(appParentPath)}
-WORK_DIR=${_shellQuote(updateDir.path)}
-EXTRACT_DIR="\$WORK_DIR/extracted"
-BACKUP_BUNDLE="\$WORK_DIR/backup.app"
-LOG_DIR="\$HOME/Library/Logs/AVA"
-LOG_PATH="\$LOG_DIR/update.log"
-STATE_DIR="\$HOME/Library/Application Support/AVA"
-MARKER_PATH="\$STATE_DIR/update-applied.json"
-MARKER_JSON=${_shellQuote(markerJson)}
-
-log() {
-  mkdir -p "\$LOG_DIR"
-  printf '[%s] %s\\n' "\$(date '+%Y-%m-%d %H:%M:%S')" "\$1" >> "\$LOG_PATH"
-}
-
-rollback() {
-  if [ -d "\$BACKUP_BUNDLE" ]; then
-    rm -rf "\$APP_BUNDLE"
-    mv "\$BACKUP_BUNDLE" "\$APP_BUNDLE"
-    log "Rollback attempted."
-    open "\$APP_BUNDLE" || true
-  fi
-}
-
-trap 'log "Update failed."; rollback' ERR
-
-log "Starting update. AppBundle=\$APP_BUNDLE Zip=\$PACKAGE_PATH LauncherPid=\$LAUNCHER_PID"
-if [ "\$LAUNCHER_PID" -gt 0 ] 2>/dev/null; then
-  COUNT=0
-  while kill -0 "\$LAUNCHER_PID" 2>/dev/null && [ "\$COUNT" -lt 150 ]; do
-    COUNT=\$((COUNT + 1))
-    sleep 0.1
-  done
-fi
-
-rm -rf "\$EXTRACT_DIR" "\$BACKUP_BUNDLE"
-mkdir -p "\$EXTRACT_DIR" "\$APP_PARENT"
-
-if command -v ditto >/dev/null 2>&1; then
-  ditto -x -k "\$PACKAGE_PATH" "\$EXTRACT_DIR"
-else
-  /usr/bin/unzip -q "\$PACKAGE_PATH" -d "\$EXTRACT_DIR"
-fi
-
-NEW_APP="\$(find "\$EXTRACT_DIR" -maxdepth 3 -name '*.app' -type d | head -n 1)"
-if [ -z "\$NEW_APP" ]; then
-  log "No .app bundle found in update package."
-  exit 1
-fi
-
-if [ -d "\$APP_BUNDLE" ]; then
-  mv "\$APP_BUNDLE" "\$BACKUP_BUNDLE"
-fi
-
-if command -v ditto >/dev/null 2>&1; then
-  ditto "\$NEW_APP" "\$APP_BUNDLE"
-else
-  cp -R "\$NEW_APP" "\$APP_BUNDLE"
-fi
-
-log "Update copied successfully. Restarting AVA."
-mkdir -p "\$STATE_DIR"
-printf '%s' "\$MARKER_JSON" > "\$MARKER_PATH"
-open "\$APP_BUNDLE"
-trap - ERR
-rm -rf "\$WORK_DIR"
-''';
-    await io.File(scriptPath).writeAsString(script);
-    return scriptPath;
-  }
-
   Future<String> _writeWindowsUpdaterCommand(
     io.Directory updateDir,
     String scriptPath,
@@ -978,25 +853,6 @@ exit /b %ERRORLEVEL%
 
   String _psQuote(String value) {
     return "'${value.replaceAll("'", "''")}'";
-  }
-
-  String _shellQuote(String value) {
-    return "'${value.replaceAll("'", "'\"'\"'")}'";
-  }
-
-  String _macosAppBundlePath(String executablePath) {
-    var directory = io.File(executablePath).parent;
-    for (var depth = 0; depth < 8; depth += 1) {
-      if (directory.path.endsWith('.app')) {
-        return directory.path;
-      }
-      final parent = directory.parent;
-      if (parent.path == directory.path) {
-        break;
-      }
-      directory = parent;
-    }
-    throw StateError('Mac 앱 번들 경로를 찾을 수 없습니다.');
   }
 }
 
