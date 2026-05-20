@@ -3838,7 +3838,10 @@ class _MobileAzoomRail extends StatelessWidget {
         right: false,
         child: Column(
           children: [
-            const SizedBox(height: 10),
+            const SizedBox(height: 8),
+            const _MobileRailLogo(),
+            const _MobileRailDivider(),
+            const SizedBox(height: 8),
             _MobileRailButton(
               key: const ValueKey('azoom-mobile-rail-transcripts'),
               icon: Icons.description_rounded,
@@ -3866,6 +3869,67 @@ class _MobileAzoomRail extends StatelessWidget {
           ],
         ),
       ),
+    );
+  }
+}
+
+class _MobileRailLogo extends StatelessWidget {
+  const _MobileRailLogo();
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      width: _mobileAzoomRailWidth,
+      height: 50,
+      child: Stack(
+        children: [
+          Positioned(
+            left: 0,
+            top: 9,
+            child: Container(
+              width: 4,
+              height: 30,
+              decoration: const BoxDecoration(
+                color: _discordSidebarText,
+                borderRadius: BorderRadius.horizontal(
+                  right: Radius.circular(3),
+                ),
+              ),
+            ),
+          ),
+          Center(
+            child: Container(
+              width: 48,
+              height: 48,
+              decoration: BoxDecoration(
+                color: const Color(0xFF0D62BF),
+                borderRadius: BorderRadius.circular(15),
+              ),
+              alignment: Alignment.center,
+              child: Image.asset(
+                'assets/images/ava_app_icon.png',
+                width: 29,
+                height: 29,
+                fit: BoxFit.contain,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _MobileRailDivider extends StatelessWidget {
+  const _MobileRailDivider();
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: 34,
+      height: 1,
+      margin: const EdgeInsets.only(top: 6, bottom: 4),
+      color: const Color(0xFF2B2D31),
     );
   }
 }
