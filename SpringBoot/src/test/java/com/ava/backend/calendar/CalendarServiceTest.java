@@ -153,7 +153,7 @@ class CalendarServiceTest {
 		List<CalendarDtos.EventResponse> expanded = calendarService.events(start.minus(1, ChronoUnit.HOURS), start.plus(4, ChronoUnit.DAYS), null, null, null, null, null, owner);
 		assertTrue(expanded.size() >= 3);
 		assertEquals(1, calendarService.event(created.id(), owner).attendees().size());
-		assertEquals(1, calendarService.event(created.id(), owner).reminders().size());
+		assertEquals(3, calendarService.event(created.id(), owner).reminders().size());
 		assertThrows(AccessDeniedException.class, () -> calendarService.delete(created.id(), "ALL", other));
 	}
 

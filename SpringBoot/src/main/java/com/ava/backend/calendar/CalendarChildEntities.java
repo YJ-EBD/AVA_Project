@@ -49,6 +49,7 @@ class CalendarEventReminderEntity {
 	CalendarEventReminderEntity(UUID eventId, CalendarDtos.ReminderRequest request) { this.id = UUID.randomUUID(); this.eventId = eventId; apply(request); }
 	@PrePersist void prePersist() { if (id == null) id = UUID.randomUUID(); if (createdAt == null) createdAt = Instant.now(); }
 	void apply(CalendarDtos.ReminderRequest request) { this.remindBeforeMinutes = request.remindBeforeMinutes(); this.reminderType = request.reminderType() == null ? CalendarReminderType.IN_APP : request.reminderType(); this.targetType = request.targetType() == null ? CalendarReminderTargetType.OWNER : request.targetType(); this.targetId = request.targetId(); }
+	void markSent(Instant sentAt) { this.sent = true; this.sentAt = sentAt == null ? Instant.now() : sentAt; }
 	UUID getId() { return id; } UUID getEventId() { return eventId; } int getRemindBeforeMinutes() { return remindBeforeMinutes; } CalendarReminderType getReminderType() { return reminderType; } CalendarReminderTargetType getTargetType() { return targetType; } String getTargetId() { return targetId; } boolean isSent() { return sent; } Instant getSentAt() { return sentAt; } Instant getCreatedAt() { return createdAt; }
 }
 

@@ -1,6 +1,7 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../data/chat_api.dart';
+import '../../notification/data/notification_api.dart';
 
 final notificationCenterRevisionProvider =
     NotifierProvider<NotificationCenterRevision, int>(
@@ -35,18 +36,24 @@ class NotificationCenterRevision extends Notifier<int> {
 class NotificationCenterCacheState {
   const NotificationCenterCacheState({
     this.notifications = const [],
+    this.appNotifications = const [],
+    this.appUnreadCount = 0,
     this.hasLoaded = false,
     this.loading = false,
     this.error,
   });
 
   final List<ChatMentionNotificationDto> notifications;
+  final List<NotificationDto> appNotifications;
+  final int appUnreadCount;
   final bool hasLoaded;
   final bool loading;
   final Object? error;
 
   NotificationCenterCacheState copyWith({
     List<ChatMentionNotificationDto>? notifications,
+    List<NotificationDto>? appNotifications,
+    int? appUnreadCount,
     bool? hasLoaded,
     bool? loading,
     Object? error,
@@ -54,6 +61,8 @@ class NotificationCenterCacheState {
   }) {
     return NotificationCenterCacheState(
       notifications: notifications ?? this.notifications,
+      appNotifications: appNotifications ?? this.appNotifications,
+      appUnreadCount: appUnreadCount ?? this.appUnreadCount,
       hasLoaded: hasLoaded ?? this.hasLoaded,
       loading: loading ?? this.loading,
       error: clearError ? null : error ?? this.error,
@@ -79,11 +88,31 @@ class NotificationCenterCache extends Notifier<NotificationCenterCacheState> {
     if (!ref.mounted) {
       return;
     }
-    state = NotificationCenterCacheState(
+    state = state.copyWith(
       notifications: List<ChatMentionNotificationDto>.unmodifiable(
         notifications,
       ),
       hasLoaded: true,
+      loading: false,
+      clearError: true,
+    );
+  }
+
+  void setAppNotifications(
+    List<NotificationDto> notifications, {
+    int? unreadCount,
+  }) {
+    if (!ref.mounted) {
+      return;
+    }
+    state = state.copyWith(
+      appNotifications: List<NotificationDto>.unmodifiable(notifications),
+      appUnreadCount:
+          unreadCount ??
+          notifications.where((notification) => !notification.read).length,
+      hasLoaded: true,
+      loading: false,
+      clearError: true,
     );
   }
 
@@ -112,6 +141,26 @@ class NotificationCenterCache extends Notifier<NotificationCenterCacheState> {
       next.insert(0, notification);
     }
     setNotifications(next);
+  }
+
+  void upsertApp(NotificationDto notification) {
+    if (!ref.mounted) {
+      return;
+    }
+    final next = <NotificationDto>[];
+    var inserted = false;
+    for (final item in state.appNotifications) {
+      if (item.id == notification.id) {
+        next.add(notification);
+        inserted = true;
+      } else {
+        next.add(item);
+      }
+    }
+    if (!inserted) {
+      next.insert(0, notification);
+    }
+    setAppNotifications(next);
   }
 }
 

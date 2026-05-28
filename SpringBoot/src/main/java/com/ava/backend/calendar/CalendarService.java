@@ -32,6 +32,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 @Transactional
 public class CalendarService {
 	private static final ZoneId DEFAULT_ZONE = ZoneId.of("Asia/Seoul");
+	private static final List<Integer> DEFAULT_REMINDER_MINUTES = List.of(1440, 0);
 	private static final List<DefaultCategory> DEFAULT_CATEGORIES = List.of(
 		new DefaultCategory("개인 일정", "#4F7CFF", "person"),
 		new DefaultCategory("회사 일정", "#22A06B", "business"),
@@ -144,6 +145,7 @@ public class CalendarService {
 		}
 		event = eventRepository.save(event);
 		replaceChildren(event.getId(), request);
+		ensureDefaultDayReminders(event.getId());
 		audit(event.getId(), "CREATE", principal, null, toResponse(event, event.getStartAt(), event.getEndAt(), principal), request.source());
 		notificationService.eventChanged(event, "CREATE", principal);
 		return event(event.getId(), principal);
@@ -163,6 +165,7 @@ public class CalendarService {
 		event.apply(request.toEventRequest(), principal.userId());
 		eventRepository.save(event);
 		replacePatchChildren(event.getId(), request);
+		ensureDefaultDayReminders(event.getId());
 		audit(event.getId(), "UPDATE", principal, before, toResponse(event, event.getStartAt(), event.getEndAt(), principal), request.source());
 		notificationService.eventChanged(event, "UPDATE", principal);
 		return event(event.getId(), principal);
@@ -643,6 +646,27 @@ public class CalendarService {
 		recurrenceRepository.deleteByEventId(eventId);
 		if (recurrence != null && recurrence.recurrenceType() != null && recurrence.recurrenceType() != CalendarRecurrenceType.NONE) {
 			recurrenceRepository.save(new CalendarEventRecurrenceEntity(eventId, recurrence));
+		}
+	}
+
+	private void ensureDefaultDayReminders(UUID eventId) {
+		for (int minutes : DEFAULT_REMINDER_MINUTES) {
+			if (!reminderRepository.existsByEventIdAndRemindBeforeMinutesAndReminderTypeAndTargetType(
+				eventId,
+				minutes,
+				CalendarReminderType.IN_APP,
+				CalendarReminderTargetType.OWNER
+			)) {
+				reminderRepository.save(new CalendarEventReminderEntity(
+					eventId,
+					new CalendarDtos.ReminderRequest(
+						minutes,
+						CalendarReminderType.IN_APP,
+						CalendarReminderTargetType.OWNER,
+						null
+					)
+				));
+			}
 		}
 	}
 

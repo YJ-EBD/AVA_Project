@@ -2,9 +2,12 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 
 import '../../../../platform/window_control.dart';
 import '../../../auth/application/auth_controller.dart';
+import '../../../calendar/application/calendar_controller.dart';
+import '../../../notification/data/notification_api.dart';
 import '../../application/notification_center_controller.dart';
 import '../../data/chat_api.dart';
 import '../../domain/messenger_models.dart';
@@ -50,6 +53,9 @@ class _NotificationCenterPanelState
       ref
           .read(notificationCenterCacheProvider.notifier)
           .setNotifications(const []);
+      ref
+          .read(notificationCenterCacheProvider.notifier)
+          .setAppNotifications(const []);
       return;
     }
 
@@ -64,12 +70,21 @@ class _NotificationCenterPanelState
         status: 'all',
         limit: 120,
       );
+      final appNotifications = await ref
+          .read(notificationApiProvider)
+          .list(accessToken: session.accessToken);
       if (!mounted) {
         return;
       }
       ref
           .read(notificationCenterCacheProvider.notifier)
           .setNotifications(notifications);
+      ref
+          .read(notificationCenterCacheProvider.notifier)
+          .setAppNotifications(
+            appNotifications.items,
+            unreadCount: appNotifications.unreadCount,
+          );
     } on Object catch (error) {
       if (!mounted) {
         return;
@@ -106,17 +121,30 @@ class _NotificationCenterPanelState
     };
   }
 
+  List<NotificationDto> _visibleAppItems(List<NotificationDto> items) {
+    return switch (_filter) {
+      _NotificationFilter.all => items,
+      _NotificationFilter.requested =>
+        items.where((item) => !item.read).toList(growable: false),
+      _NotificationFilter.checked =>
+        items.where((item) => item.read).toList(growable: false),
+    };
+  }
+
   int _requestedCount(
     List<AzoomVoiceStartNotification> azoomItems,
     List<_MentionNotificationItem> mentionItems,
+    List<NotificationDto> appItems,
   ) {
     return mentionItems.where((item) => !item.notification.checked).length +
-        azoomItems.where((item) => item.active && !item.checked).length;
+        azoomItems.where((item) => item.active && !item.checked).length +
+        appItems.where((item) => !item.read).length;
   }
 
   List<_NotificationListItem> _sortedVisibleItems(
     List<AzoomVoiceStartNotification> azoomNotifications,
     List<_MentionNotificationItem> mentionItems,
+    List<NotificationDto> appNotifications,
   ) {
     final visibleMentionItems = _visibleMentionItems(mentionItems);
     final mentionCountsByRoom = <String, int>{};
@@ -129,6 +157,8 @@ class _NotificationCenterPanelState
         _NotificationListItem.azoom(item),
       for (final item in visibleMentionItems)
         _NotificationListItem.mention(item),
+      for (final item in _visibleAppItems(appNotifications))
+        _NotificationListItem.app(item),
     ];
     visibleItems.sort((a, b) {
       if (_sortMode == _NotificationSortMode.mentionCount) {
@@ -219,6 +249,15 @@ class _NotificationCenterPanelState
           );
           ref.read(notificationCenterCacheProvider.notifier).upsert(checked);
         }
+        final appResult = await ref
+            .read(notificationApiProvider)
+            .markAllRead(accessToken: session.accessToken);
+        ref
+            .read(notificationCenterCacheProvider.notifier)
+            .setAppNotifications(
+              appResult.items,
+              unreadCount: appResult.unreadCount,
+            );
         await ref
             .read(chatRoomsProvider.notifier)
             .refreshFromServer(force: true);
@@ -277,6 +316,36 @@ class _NotificationCenterPanelState
     await WindowControl.showMessengerWindow();
   }
 
+  Future<void> _openAppNotification(NotificationDto item) async {
+    final session = ref.read(authControllerProvider).value?.session;
+    if (session != null &&
+        session.accessToken.isNotEmpty &&
+        item.id.isNotEmpty &&
+        !item.read) {
+      try {
+        final checked = await ref
+            .read(notificationApiProvider)
+            .markRead(
+              accessToken: session.accessToken,
+              notificationId: item.id,
+            );
+        ref.read(notificationCenterCacheProvider.notifier).upsertApp(checked);
+      } on Object {
+        // The target page is still useful even if read-state sync is delayed.
+      }
+    }
+    if (item.sourceType == 'CALENDAR_EVENT') {
+      ref
+          .read(activeMessengerTabProvider.notifier)
+          .setTab(MessengerTab.calendar);
+      unawaited(ref.read(calendarControllerProvider.notifier).refresh());
+      await WindowControl.expandMessenger();
+      if (mounted) {
+        context.go('/calendar');
+      }
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     ref.listen<int>(notificationCenterRevisionProvider, (_, _) {
@@ -287,9 +356,18 @@ class _NotificationCenterPanelState
       for (final notification in notificationCache.notifications)
         _MentionNotificationItem.fromDto(notification),
     ];
+    final appNotifications = notificationCache.appNotifications;
     final azoomNotifications = ref.watch(azoomVoiceStartNotificationsProvider);
-    final requestedCount = _requestedCount(azoomNotifications, mentionItems);
-    final visibleItems = _sortedVisibleItems(azoomNotifications, mentionItems);
+    final requestedCount = _requestedCount(
+      azoomNotifications,
+      mentionItems,
+      appNotifications,
+    );
+    final visibleItems = _sortedVisibleItems(
+      azoomNotifications,
+      mentionItems,
+      appNotifications,
+    );
     final showLoading =
         notificationCache.loading &&
         !notificationCache.hasLoaded &&
@@ -418,11 +496,18 @@ class _NotificationCenterPanelState
                             onTap: () => unawaited(_openNotification(mention)),
                           );
                         }
-                        final azoom = item.azoom!;
-                        return _AzoomVoiceStartNotificationCard(
-                          item: azoom,
-                          onTap: () =>
-                              unawaited(_openAzoomVoiceNotification(azoom)),
+                        final azoom = item.azoom;
+                        if (azoom != null) {
+                          return _AzoomVoiceStartNotificationCard(
+                            item: azoom,
+                            onTap: () =>
+                                unawaited(_openAzoomVoiceNotification(azoom)),
+                          );
+                        }
+                        final app = item.app!;
+                        return _AppNotificationCard(
+                          item: app,
+                          onTap: () => unawaited(_openAppNotification(app)),
                         );
                       },
                     ),
@@ -439,6 +524,7 @@ class _NotificationListItem {
     required this.sortAt,
     this.mention,
     this.azoom,
+    this.app,
   });
 
   factory _NotificationListItem.mention(_MentionNotificationItem item) {
@@ -453,9 +539,17 @@ class _NotificationListItem {
     return _NotificationListItem._(sortAt: item.startedAt, azoom: item);
   }
 
+  factory _NotificationListItem.app(NotificationDto item) {
+    return _NotificationListItem._(
+      sortAt: item.createdAt ?? DateTime.fromMillisecondsSinceEpoch(0),
+      app: item,
+    );
+  }
+
   final DateTime sortAt;
   final _MentionNotificationItem? mention;
   final AzoomVoiceStartNotification? azoom;
+  final NotificationDto? app;
 
   int mentionCount(Map<String, int> countsByRoom) {
     final item = mention;
@@ -760,6 +854,112 @@ class _AzoomVoiceStartNotificationCard extends StatelessWidget {
                       color: Colors.white,
                       size: 25,
                     ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _AppNotificationCard extends StatelessWidget {
+  const _AppNotificationCard({required this.item, required this.onTap});
+
+  final NotificationDto item;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final icon = item.sourceType == 'CALENDAR_EVENT'
+        ? Icons.calendar_month_rounded
+        : Icons.notifications_rounded;
+    return Material(
+      color: item.read ? const Color(0xFFFAFAFA) : const Color(0xFFF4F8FF),
+      child: InkWell(
+        onTap: onTap,
+        splashColor: const Color(0xFFEAF5FF),
+        highlightColor: const Color(0xFFEAF5FF),
+        hoverColor: const Color(0xFFF0F6FC),
+        child: DecoratedBox(
+          decoration: const BoxDecoration(
+            border: Border(bottom: BorderSide(color: Color(0xFFE5E5E5))),
+          ),
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(minHeight: 116),
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(18, 13, 17, 13),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          item.title.isEmpty ? 'AVA 알림' : item.title,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                            color: Colors.black,
+                            fontSize: 18,
+                            height: 1.2,
+                            fontWeight: FontWeight.w800,
+                            letterSpacing: 0,
+                          ),
+                        ),
+                        const SizedBox(height: 8),
+                        Text(
+                          item.body,
+                          maxLines: 3,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                            color: Colors.black,
+                            fontSize: 16,
+                            height: 1.25,
+                            fontWeight: FontWeight.w500,
+                            letterSpacing: 0,
+                          ),
+                        ),
+                        const SizedBox(height: 12),
+                        Row(
+                          children: [
+                            const Icon(
+                              Icons.access_time,
+                              size: 17,
+                              color: Color(0xFF9C9C9C),
+                            ),
+                            const SizedBox(width: 7),
+                            Expanded(
+                              child: Text(
+                                _formatKoreanDateTime(item.createdAt),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: const TextStyle(
+                                  color: Color(0xFF333333),
+                                  fontSize: 15,
+                                  fontWeight: FontWeight.w500,
+                                  height: 1.2,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Container(
+                    width: 43,
+                    height: 43,
+                    alignment: Alignment.center,
+                    decoration: const BoxDecoration(
+                      color: Color(0xFF4663CF),
+                      shape: BoxShape.circle,
+                    ),
+                    child: Icon(icon, color: Colors.white, size: 24),
                   ),
                 ],
               ),

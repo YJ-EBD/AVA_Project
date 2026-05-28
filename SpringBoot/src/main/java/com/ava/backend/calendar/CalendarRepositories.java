@@ -65,6 +65,16 @@ interface CalendarEventReminderRepository extends JpaRepository<CalendarEventRem
 	void deleteByEventId(UUID eventId);
 }
 
+interface CalendarReminderDeliveryRepository extends JpaRepository<CalendarReminderDeliveryEntity, UUID> {
+	boolean existsByEventIdAndOccurrenceStartAtAndTargetUserIdAndRemindBeforeMinutesAndReminderType(
+		UUID eventId,
+		Instant occurrenceStartAt,
+		UUID targetUserId,
+		int remindBeforeMinutes,
+		CalendarReminderType reminderType
+	);
+}
+
 interface CalendarEventRecurrenceRepository extends JpaRepository<CalendarEventRecurrenceEntity, UUID> {
 	Optional<CalendarEventRecurrenceEntity> findByEventId(UUID eventId);
 	void deleteByEventId(UUID eventId);
