@@ -14,6 +14,7 @@ import '../../../shared/ava_dialog.dart';
 import '../../../shared/ava_toast.dart';
 import '../../auth/application/auth_controller.dart';
 import '../../auth/data/auth_api.dart';
+import '../../calendar/application/calendar_controller.dart';
 import '../../messenger/data/chat_api.dart';
 import '../data/ava_ai_api.dart';
 
@@ -394,6 +395,7 @@ class _AvaAiPageState extends ConsumerState<AvaAiPage> {
       if (!mounted) {
         return;
       }
+      final calendarWorkspace = exchange.calendarWorkspace;
       setState(() {
         _messages.removeWhere((message) => message.id == tempUser.id);
         _messages
@@ -415,14 +417,17 @@ class _AvaAiPageState extends ConsumerState<AvaAiPage> {
           exchange.workspaceStatus,
           exchange.agentTask,
         );
-        if (exchange.calendarWorkspace.hasSignal) {
-          _calendarWorkspace = exchange.calendarWorkspace;
+        if (calendarWorkspace.hasSignal) {
+          _calendarWorkspace = calendarWorkspace;
           _workspaceMode = _AvaAiWorkspaceMode.schedule;
         }
         _sending = false;
         _workspaceBusy = false;
         _thinkingStatus = '';
       });
+      if (calendarWorkspace.mutation) {
+        unawaited(_refreshCalendarFromAiWorkspace(calendarWorkspace));
+      }
       _scrollToBottom();
     } on Object catch (error) {
       if (!mounted) {
@@ -451,6 +456,20 @@ class _AvaAiPageState extends ConsumerState<AvaAiPage> {
         });
       }
     }
+  }
+
+  Future<void> _refreshCalendarFromAiWorkspace(
+    AvaAiCalendarWorkspaceDto workspace,
+  ) async {
+    final event = workspace.selectedEvent();
+    await ref
+        .read(calendarControllerProvider.notifier)
+        .refreshFromExternalMutation(
+          focusDate: event?.startAt?.toLocal(),
+          selectedEventId: (event?.id.isNotEmpty == true
+              ? event!.id
+              : workspace.selectedEventId),
+        );
   }
 
   bool _shouldUseNotionTool(String text) {

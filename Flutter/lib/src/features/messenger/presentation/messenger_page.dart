@@ -23,6 +23,7 @@ import '../../auth/data/auth_models.dart';
 import '../../azoom/data/azoom_api.dart';
 import '../../azoom/presentation/azoom_page.dart';
 import '../../ava_stock/presentation/ava_stock_page.dart';
+import '../../calendar/application/calendar_controller.dart';
 import '../../calendar/domain/calendar_models.dart';
 import '../../calendar/presentation/calendar_page.dart';
 import '../../ai/presentation/ava_ai_page.dart';
@@ -3536,6 +3537,9 @@ class _MessengerPageState extends ConsumerState<MessengerPage>
         unawaited(
           ref.read(chatRoomsProvider.notifier).refreshFromServer(force: true),
         );
+      }
+      if (next == MessengerTab.calendar) {
+        unawaited(ref.read(calendarControllerProvider.notifier).refresh());
       }
       _syncWindowTitle(next);
       if (next == MessengerTab.azoom) {

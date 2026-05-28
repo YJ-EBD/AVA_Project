@@ -188,6 +188,34 @@ class CalendarController extends Notifier<CalendarState> {
     }
   }
 
+  Future<void> refreshFromExternalMutation({
+    DateTime? focusDate,
+    String? selectedEventId,
+  }) async {
+    if (focusDate != null) {
+      final normalized = DateTime(
+        focusDate.year,
+        focusDate.month,
+        focusDate.day,
+      );
+      state = state.copyWith(
+        focusedDate: normalized,
+        selectedDate: normalized,
+        selectedEventId: selectedEventId == null || selectedEventId.isEmpty
+            ? state.selectedEventId
+            : selectedEventId,
+      );
+    } else if (selectedEventId != null && selectedEventId.isNotEmpty) {
+      state = state.copyWith(selectedEventId: selectedEventId);
+    }
+    await refresh();
+    if (selectedEventId != null &&
+        selectedEventId.isNotEmpty &&
+        state.events.any((event) => event.id == selectedEventId)) {
+      state = state.copyWith(selectedEventId: selectedEventId);
+    }
+  }
+
   void setViewMode(CalendarViewMode mode) {
     state = state.copyWith(viewMode: mode);
     unawaited(refresh());

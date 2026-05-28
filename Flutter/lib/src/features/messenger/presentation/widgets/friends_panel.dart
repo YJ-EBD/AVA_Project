@@ -4,6 +4,7 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter/services.dart';
+import 'package:go_router/go_router.dart';
 import 'package:image_picker/image_picker.dart';
 
 import '../../../../platform/window_control.dart';
@@ -25,7 +26,6 @@ const _away = '\uC790\uB9AC\uBE44\uC6C0';
 const _selfChatLabel = '\uB098\uC640\uC758 \uCC44\uD305';
 const _directChatLabel = '1:1 \uCC44\uD305';
 const _profileEditLabel = '\uD504\uB85C\uD544 \uD3B8\uC9D1';
-const _multiProfileLabel = '\uBA40\uD2F0\uD504\uB85C\uD544 +';
 const _scheduleLabel = '\uC77C\uC815\uD45C';
 const _defaultCompanyName = 'ABBA-S';
 const _mobileProfileGalleryBackground = Color(0xFF84919A);
@@ -1103,33 +1103,44 @@ class _MyProfile extends StatelessWidget {
         ),
         _StatusMessageBubble(message: profile.statusMessage),
         const SizedBox(width: 8),
-        OutlinedButton(
-          onPressed: () {},
-          style: OutlinedButton.styleFrom(
-            foregroundColor: Colors.black,
-            side: const BorderSide(color: Color(0xFFE3E3E3)),
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(20),
-            ),
-            padding: const EdgeInsets.symmetric(horizontal: 13, vertical: 8),
-            textStyle: const TextStyle(
-              fontSize: 11,
-              fontWeight: FontWeight.w700,
-            ),
-          ),
-          child: mobileLayout
-              ? const Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Icon(Icons.calendar_month_outlined, size: 14),
-                    SizedBox(width: 5),
-                    Text(_scheduleLabel),
-                  ],
-                )
-              : const Text(_multiProfileLabel),
+        Consumer(
+          builder: (context, ref, _) {
+            return OutlinedButton(
+              onPressed: () => _openSchedulePage(context, ref),
+              style: OutlinedButton.styleFrom(
+                foregroundColor: Colors.black,
+                side: const BorderSide(color: Color(0xFFE3E3E3)),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(20),
+                ),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 13,
+                  vertical: 8,
+                ),
+                textStyle: const TextStyle(
+                  fontSize: 11,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+              child: const Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(Icons.calendar_month_outlined, size: 14),
+                  SizedBox(width: 5),
+                  Text(_scheduleLabel),
+                ],
+              ),
+            );
+          },
         ),
       ],
     );
+  }
+
+  void _openSchedulePage(BuildContext context, WidgetRef ref) {
+    ref.read(activeMessengerTabProvider.notifier).setTab(MessengerTab.calendar);
+    WindowControl.expandMessenger();
+    context.go('/calendar');
   }
 }
 
