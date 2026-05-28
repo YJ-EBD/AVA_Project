@@ -79,7 +79,9 @@ public class ChatController {
 		@Valid @RequestBody DirectChatRoomRequest request,
 		@AuthenticationPrincipal AuthPrincipal principal
 	) {
-		return chatService.startDirectRoom(request, principal);
+		ChatRoomResponse response = chatService.startDirectRoom(request, principal);
+		publishRoomState(response);
+		return response;
 	}
 
 	@PostMapping("/group-rooms")
@@ -94,7 +96,9 @@ public class ChatController {
 
 	@PostMapping("/self-room")
 	public ChatRoomResponse selfRoom(@AuthenticationPrincipal AuthPrincipal principal) {
-		return chatService.startSelfRoom(principal);
+		ChatRoomResponse response = chatService.startSelfRoom(principal);
+		publishRoomState(response);
+		return response;
 	}
 
 	@PostMapping("/rooms/{roomCode}/members")

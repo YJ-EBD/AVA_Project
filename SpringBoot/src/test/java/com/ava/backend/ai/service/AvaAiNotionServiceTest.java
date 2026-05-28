@@ -41,35 +41,39 @@ class AvaAiNotionServiceTest {
 	@Test
 	void extractsQuotedTitleAndTodayRangeForDevelopmentStatusCommand() throws Exception {
 		AvaAiNotionService service = service();
+		LocalDate today = LocalDate.now();
+		LocalDate juneTenth = relativeExpectedDate(today, 6, 10);
 		String command = "노션의 연구소 페이지에서 개발 진행사항에 \"재고앱 개발\"제목으로 오늘부터 6월10일까지로 작성해줘 상태는 예정이야";
 
 		assertTrue(isMutationCommand(service, command));
 		assertEquals("재고앱 개발", mutationTitle(service, command));
 		Object range = extractDateRange(service, command);
-		assertEquals(LocalDate.of(2026, 5, 28), dateComponent(range, "startDate"));
-		assertEquals(LocalDate.of(2026, 6, 10), dateComponent(range, "endDate"));
+		assertEquals(today, dateComponent(range, "startDate"));
+		assertEquals(juneTenth, dateComponent(range, "endDate"));
 		Map<?, ?> payload = dateRangePayload(service, range);
 		Map<?, ?> date = (Map<?, ?>) payload.get("date");
-		assertEquals("2026-05-28", date.get("start"));
-		assertEquals("2026-06-10", date.get("end"));
+		assertEquals(today.toString(), date.get("start"));
+		assertEquals(juneTenth.toString(), date.get("end"));
 	}
 
 	@Test
 	void understandsDevelopmentStatusWriteCommandsAcrossNaturalLanguageVariants() throws Exception {
 		AvaAiNotionService service = service();
+		LocalDate today = LocalDate.now();
+		LocalDate juneTenth = relativeExpectedDate(today, 6, 10);
 		CommandCase[] cases = {
 			new CommandCase(
 				"노션의 연구소 페이지에서 개발 진행사항에 \"재고앱 개발\"제목으로 오늘부터 6월10일까지로 작성해줘 상태는 예정이야",
 				"재고앱 개발",
-				LocalDate.of(2026, 5, 28),
-				LocalDate.of(2026, 6, 10),
+				today,
+				juneTenth,
 				"예정"
 			),
 			new CommandCase(
 				"개발 진행사항에 재고앱 개발 제목으로 오늘부터 6/10까지 상태는 예정으로 추가해줘",
 				"재고앱 개발",
-				LocalDate.of(2026, 5, 28),
-				LocalDate.of(2026, 6, 10),
+				today,
+				juneTenth,
 				"예정"
 			),
 			new CommandCase(
@@ -299,6 +303,11 @@ class AvaAiNotionServiceTest {
 		Method method = range.getClass().getDeclaredMethod(name);
 		method.setAccessible(true);
 		return (LocalDate) method.invoke(range);
+	}
+
+	private LocalDate relativeExpectedDate(LocalDate baseDate, int month, int day) {
+		LocalDate date = LocalDate.of(baseDate.getYear(), month, day);
+		return date.isBefore(baseDate.minusDays(1)) ? date.plusYears(1) : date;
 	}
 
 	@SuppressWarnings("unchecked")

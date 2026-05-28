@@ -952,12 +952,9 @@ class _FriendsPanelState extends ConsumerState<FriendsPanel> {
   }
 
   void _openRoomInSidePane(WidgetRef ref, ChatRoom room) {
-    final hadOpenRoom = ref.read(selectedChatRoomProvider) != null;
     ref.read(focusedChatRoomIdProvider.notifier).focus(room);
     ref.read(selectedChatRoomProvider.notifier).open(room);
-    if (!hadOpenRoom) {
-      WindowControl.expandMessenger();
-    }
+    WindowControl.expandMessenger();
   }
 
   String _directRequestKey(PersonProfile user) {

@@ -2888,7 +2888,7 @@ class _MessengerPageState extends ConsumerState<MessengerPage>
   }
 
   Future<void> _resizeWindowForTab(MessengerTab tab) async {
-    if (_visibleChatRoom != null && tab == MessengerTab.chats) {
+    if (_visibleChatRoom != null && _tabShowsSideChatPanel(tab)) {
       await _applyDesktopWindowMode('expanded');
       return;
     }
@@ -2912,6 +2912,20 @@ class _MessengerPageState extends ConsumerState<MessengerPage>
           await _applyDesktopWindowMode('compact');
         }
     }
+  }
+
+  bool _tabShowsSideChatPanel(MessengerTab tab) {
+    return switch (tab) {
+      MessengerTab.friends || MessengerTab.chats => true,
+      MessengerTab.more => !_isAdminMoreSession(
+        ref.read(authControllerProvider).value?.session,
+      ),
+      MessengerTab.azoom ||
+      MessengerTab.calendar ||
+      MessengerTab.avaAi ||
+      MessengerTab.avaStock ||
+      MessengerTab.notifications => false,
+    };
   }
 
   Future<void> _applyDesktopWindowMode(String mode) async {
@@ -3205,7 +3219,7 @@ class _MessengerPageState extends ConsumerState<MessengerPage>
       return;
     }
     _inboxEventReconcileTimer = Timer(
-      const Duration(milliseconds: 1200),
+      const Duration(milliseconds: 300),
       () => unawaited(_reconcileInboxRooms()),
     );
   }
@@ -3517,6 +3531,11 @@ class _MessengerPageState extends ConsumerState<MessengerPage>
         if (selectedRoom != null) {
           _openChatPanel(selectedRoom);
         }
+      }
+      if (next == MessengerTab.chats) {
+        unawaited(
+          ref.read(chatRoomsProvider.notifier).refreshFromServer(force: true),
+        );
       }
       _syncWindowTitle(next);
       if (next == MessengerTab.azoom) {

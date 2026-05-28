@@ -34,7 +34,6 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
 
 import com.ava.backend.ai.dto.AvaAiWorkspaceFileRequest;
@@ -58,6 +57,7 @@ import com.ava.backend.chat.entity.ChatTalkDrawerMediaType;
 import com.ava.backend.chat.repository.ChatMessageJpaRepository;
 import com.ava.backend.chat.repository.ChatMentionNotificationRepository;
 import com.ava.backend.chat.service.ChatService;
+import com.ava.backend.push.service.MobilePushService;
 import com.ava.backend.user.dto.UserProfileResponse;
 
 @Service
@@ -499,6 +499,7 @@ public class AvaAiWorkspaceService {
 	private final AzoomMeetingTranscriptRepository transcriptRepository;
 	private final AzoomMeetingUtteranceRepository utteranceRepository;
 	private final SimpMessagingTemplate messagingTemplate;
+	private final MobilePushService mobilePushService;
 
 	public AvaAiWorkspaceService(
 		ChatService chatService,
@@ -508,6 +509,7 @@ public class AvaAiWorkspaceService {
 		AzoomMeetingTranscriptRepository transcriptRepository,
 		AzoomMeetingUtteranceRepository utteranceRepository,
 		SimpMessagingTemplate messagingTemplate,
+		MobilePushService mobilePushService,
 		@Value("${ava.ai.workspace.root:F:/}") String root,
 		@Value("${ava.ai.workspace.upload-directory:AVA_AI_Workspace}") String uploadDirectory,
 		@Value("${ava.chat.attachment-directory:ChatUploads}") String chatAttachmentDirectory
@@ -522,6 +524,7 @@ public class AvaAiWorkspaceService {
 		this.transcriptRepository = transcriptRepository;
 		this.utteranceRepository = utteranceRepository;
 		this.messagingTemplate = messagingTemplate;
+		this.mobilePushService = mobilePushService;
 	}
 
 	public WorkspaceActionResult inspectPrompt(
@@ -1483,7 +1486,6 @@ public class AvaAiWorkspaceService {
 		}
 	}
 
-	@Transactional
 	public SendResult sendToChat(AvaAiWorkspaceSendRequest request, AuthPrincipal principal) {
 		List<String> paths = request.paths() == null ? List.of() : request.paths();
 		if (paths.isEmpty()) {
@@ -1689,9 +1691,15 @@ public class AvaAiWorkspaceService {
 	private void publishRoomEvent(ChatRoomResponse room, ChatMessageResponse message) {
 		ChatRoomResponse latestRoom = chatService.room(room.code());
 		messagingTemplate.convertAndSend("/topic/rooms/" + latestRoom.code(), message);
-		ChatRealtimeEvent event = new ChatRealtimeEvent("message", latestRoom, message);
 		for (UserProfileResponse member : latestRoom.members()) {
+			ChatRoomResponse recipientRoom = member.id() == null
+				? latestRoom
+				: chatService.roomForMember(latestRoom.code(), member.id());
+			ChatRealtimeEvent event = new ChatRealtimeEvent("message", recipientRoom, message);
 			messagingTemplate.convertAndSendToUser(member.email(), "/queue/chat-events", event);
+		}
+		if (mobilePushService != null) {
+			mobilePushService.sendChatMessage(latestRoom.code(), message);
 		}
 	}
 

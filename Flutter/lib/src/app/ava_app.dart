@@ -141,6 +141,9 @@ class _AvaTrayLifecycleGateState extends ConsumerState<_AvaTrayLifecycleGate> {
           final session = ref.read(authControllerProvider).value?.session;
           if (context != null && context.mounted && session != null) {
             context.go('/messenger');
+            await WidgetsBinding.instance.endOfFrame;
+            await WindowControl.expandMessenger();
+            await WindowControl.showMessengerWindow();
           }
         }
         break;
@@ -277,7 +280,9 @@ class _AvaLockOverlay extends StatelessWidget {
           constraints: const BoxConstraints(maxWidth: 360),
           child: AvaDialog(
             title: '잠금모드',
-            subtitle: displayName.isEmpty ? 'AVA가 잠겨 있습니다.' : '$displayName님, 비밀번호를 입력해주세요.',
+            subtitle: displayName.isEmpty
+                ? 'AVA가 잠겨 있습니다.'
+                : '$displayName님, 비밀번호를 입력해주세요.',
             icon: const Icon(
               Icons.lock_outline_rounded,
               color: Color(0xFF4F65C8),

@@ -24,8 +24,9 @@ import com.ava.backend.user.repository.UserProfileRepository;
 @Configuration
 public class DemoDataSeeder {
 
-	private static final String SUPERUSER_EMAIL = "admin@ava.admin";
-	private static final String SUPERUSER_PASSWORD = "Ava1234!";
+	private static final String ADMIN_EMAIL = "admin@ava.admin";
+	private static final String SUPERUSER_EMAIL = "amos5105@naver.com";
+	private static final String SYSTEM_ACCOUNT_PASSWORD = "Ava1234!";
 	private static final List<String> DEMO_ROOM_CODES = List.of(
 		"ra-team",
 		"research-lab",
@@ -49,7 +50,7 @@ public class DemoDataSeeder {
 			ensureAvaAiConversationScopeConstraint(jdbcTemplate);
 			removeDemoData(jdbcTemplate, mongoMessageRepository);
 			normalizeCompanies(profileRepository, companyScopeService);
-			ensureSuperuser(accountRepository, profileRepository, passwordEncoder);
+			ensurePrivilegedAccounts(accountRepository, profileRepository, passwordEncoder);
 			ensureAbbaDepartmentDemoUsers(accountRepository, profileRepository, passwordEncoder);
 			allStaffChatService.ensureKnownCompanyRoomsAndMemberships();
 		};
@@ -230,40 +231,77 @@ public class DemoDataSeeder {
 		}
 	}
 
-	private void ensureSuperuser(
+	private void ensurePrivilegedAccounts(
 		UserAccountRepository accountRepository,
 		UserProfileRepository profileRepository,
 		PasswordEncoder passwordEncoder
 	) {
-		UserAccount account = accountRepository.findByEmailIgnoreCase(SUPERUSER_EMAIL)
+		UserAccount adminAccount = accountRepository.findByEmailIgnoreCase(ADMIN_EMAIL)
 			.orElseGet(() -> new UserAccount(
-				SUPERUSER_EMAIL,
-				passwordEncoder.encode(SUPERUSER_PASSWORD),
-				"Superuser",
-				UserRole.SUPERUSER
+				ADMIN_EMAIL,
+				passwordEncoder.encode(SYSTEM_ACCOUNT_PASSWORD),
+				"박주한",
+				UserRole.ADMIN
 			));
-		account.setPasswordHash(passwordEncoder.encode(SUPERUSER_PASSWORD));
-		account.setDisplayName("Superuser");
-		account.setRole(UserRole.SUPERUSER);
-		account.setEnabled(true);
-		account = accountRepository.save(account);
+		adminAccount.setPasswordHash(passwordEncoder.encode(SYSTEM_ACCOUNT_PASSWORD));
+		adminAccount.setDisplayName("박주한");
+		adminAccount.setRole(UserRole.ADMIN);
+		adminAccount.setEnabled(true);
+		adminAccount = accountRepository.save(adminAccount);
 
-		final UserAccount savedAccount = account;
-		UserProfile profile = profileRepository.findByAccountId(savedAccount.getId())
+		final UserAccount savedAdminAccount = adminAccount;
+		UserProfile adminProfile = profileRepository.findByAccountId(savedAdminAccount.getId())
 			.orElseGet(() -> new UserProfile(
-				savedAccount,
+				savedAdminAccount,
 				"Management",
-				"Superuser",
+				"박주한",
 				"010-0000-0000",
 				null,
 				"\uC624\uD504\uB77C\uC778",
 				"#0F1530"
 			));
-		profile.setCompanyName(CompanyScopeService.DEFAULT_COMPANY);
-		profile.setDepartment("Management");
-		profile.setPosition("Superuser");
-		profile.setNickname("Superuser");
-		profileRepository.save(profile);
+		adminProfile.setCompanyName(CompanyScopeService.DEFAULT_COMPANY);
+		adminProfile.setDepartment("Management");
+		adminProfile.setPosition("Admin");
+		adminProfile.setNickname("박주한");
+		profileRepository.save(adminProfile);
+
+		UserAccount superuserAccount = accountRepository.findByEmailIgnoreCase(SUPERUSER_EMAIL)
+			.orElseGet(() -> new UserAccount(
+				SUPERUSER_EMAIL,
+				passwordEncoder.encode(SYSTEM_ACCOUNT_PASSWORD),
+				"amos5105",
+				UserRole.SUPERUSER
+			));
+		if (superuserAccount.getDisplayName() == null || superuserAccount.getDisplayName().isBlank()) {
+			superuserAccount.setDisplayName("amos5105");
+		}
+		superuserAccount.setRole(UserRole.SUPERUSER);
+		superuserAccount.setEnabled(true);
+		superuserAccount = accountRepository.save(superuserAccount);
+
+		final UserAccount savedSuperuserAccount = superuserAccount;
+		UserProfile superuserProfile = profileRepository.findByAccountId(savedSuperuserAccount.getId())
+			.orElseGet(() -> new UserProfile(
+				savedSuperuserAccount,
+				"Management",
+				savedSuperuserAccount.getDisplayName(),
+				"010-0000-0000",
+				null,
+				"\uC624\uD504\uB77C\uC778",
+				"#0F1530"
+			));
+		superuserProfile.setCompanyName(CompanyScopeService.DEFAULT_COMPANY);
+		if (superuserProfile.getDepartment() == null || superuserProfile.getDepartment().isBlank()) {
+			superuserProfile.setDepartment("Management");
+		}
+		if (superuserProfile.getPosition() == null || superuserProfile.getPosition().isBlank()) {
+			superuserProfile.setPosition("Superuser");
+		}
+		if (superuserProfile.getNickname() == null || superuserProfile.getNickname().isBlank()) {
+			superuserProfile.setNickname(savedSuperuserAccount.getDisplayName());
+		}
+		profileRepository.save(superuserProfile);
 	}
 
 	private void ensureAbbaDepartmentDemoUsers(

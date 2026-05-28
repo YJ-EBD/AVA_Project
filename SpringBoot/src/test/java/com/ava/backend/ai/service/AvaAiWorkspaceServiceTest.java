@@ -377,6 +377,7 @@ class AvaAiWorkspaceServiceTest {
 			null,
 			null,
 			null,
+			null,
 			nasRoot.toString(),
 			"AVA_AI_Workspace",
 			nasRoot.resolve("ChatUploads").toString()
@@ -522,6 +523,7 @@ class AvaAiWorkspaceServiceTest {
 			null,
 			null,
 			null,
+			null,
 			workspaceRoot.toString(),
 			"AVA_AI_Workspace",
 			workspaceRoot.resolve("ChatUploads").toString()
@@ -530,6 +532,7 @@ class AvaAiWorkspaceServiceTest {
 
 	private AvaAiWorkspaceService serviceForNasRoot(Path nasRoot) {
 		return new AvaAiWorkspaceService(
+			null,
 			null,
 			null,
 			null,
