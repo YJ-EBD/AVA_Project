@@ -42,6 +42,13 @@ public class AzoomChannelEntity {
 	@Column(nullable = false, length = 20)
 	private AzoomChannelType type;
 
+	@Enumerated(EnumType.STRING)
+	@Column(name = "access_mode", length = 24)
+	private AzoomChannelAccessMode accessMode = AzoomChannelAccessMode.ALL;
+
+	@Column(name = "allowed_departments", columnDefinition = "text")
+	private String allowedDepartments;
+
 	@Column(name = "sort_order", nullable = false)
 	private int sortOrder;
 
@@ -117,6 +124,14 @@ public class AzoomChannelEntity {
 		return type;
 	}
 
+	public AzoomChannelAccessMode getAccessMode() {
+		return accessMode == null ? AzoomChannelAccessMode.ALL : accessMode;
+	}
+
+	public String getAllowedDepartments() {
+		return allowedDepartments;
+	}
+
 	public int getSortOrder() {
 		return sortOrder;
 	}
@@ -131,6 +146,11 @@ public class AzoomChannelEntity {
 
 	public void setSortOrder(int sortOrder) {
 		this.sortOrder = sortOrder;
+	}
+
+	public void setAccess(AzoomChannelAccessMode accessMode, String allowedDepartments) {
+		this.accessMode = accessMode == null ? AzoomChannelAccessMode.ALL : accessMode;
+		this.allowedDepartments = allowedDepartments;
 	}
 
 	public void archive() {

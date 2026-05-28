@@ -18,6 +18,15 @@ void main() {
     status: '온라인',
   );
 
+  test('adds SpringBoot LiveKit signal proxy as a media fallback', () {
+    final candidates = liveKitConnectUrlCandidatesForTest(
+      'ws://127.0.0.1:7880',
+      apiBaseUrl: 'http://10.0.2.2:8080',
+    );
+
+    expect(candidates, contains('ws://10.0.2.2:8080'));
+  });
+
   testWidgets('renders AZOOM discord-style layout at desktop size', (
     tester,
   ) async {
@@ -41,11 +50,10 @@ void main() {
     expect(find.byKey(const ValueKey('azoom-page')), findsOneWidget);
     expect(find.text('AZOOM'), findsOneWidget);
     expect(find.text('전직원 회의'), findsWidgets);
-    expect(find.text('RA 회의'), findsOneWidget);
-    expect(find.text('연구소 회의'), findsOneWidget);
-    expect(find.text('전 직원'), findsOneWidget);
     expect(find.text('RA 팀'), findsOneWidget);
     expect(find.text('연구소'), findsOneWidget);
+    expect(find.text('채팅 채널'), findsNothing);
+    expect(find.text('음성 채널'), findsOneWidget);
     expect(find.text('업춘식'), findsNothing);
     expect(find.text('노래'), findsNothing);
     expect(find.text('0군'), findsNothing);
@@ -69,18 +77,18 @@ void main() {
           .data,
       '온라인',
     );
-    expect(find.text('#전직원 회의에 메시지 보내기'), findsOneWidget);
-    expect(find.text('전직원 회의 검색'), findsOneWidget);
+    expect(find.text('#전직원 회의에 메시지 보내기'), findsNothing);
+    expect(find.text('전직원 회의 검색'), findsNothing);
 
     expect(
       tester.widget<ColoredBox>(find.byKey(const ValueKey('azoom-page'))).color,
-      const Color(0xFF313338),
+      const Color(0xFFF4F9FE),
     );
     expect(
       tester
           .widget<Container>(find.byKey(const ValueKey('azoom-server-rail')))
           .color,
-      const Color(0xFF232428),
+      const Color(0xFFEAF3FB),
     );
     expect(
       tester
@@ -88,7 +96,7 @@ void main() {
             find.byKey(const ValueKey('azoom-channel-sidebar')),
           )
           .color,
-      const Color(0xFF2B2D31),
+      const Color(0xFFF6FAFE),
     );
 
     expect(
@@ -100,53 +108,6 @@ void main() {
       290,
     );
     expect(find.byKey(const ValueKey('azoom-playlist-preview')), findsNothing);
-
-    final composerBottom = tester.getBottomLeft(
-      find.byKey(const ValueKey('azoom-composer-bar')),
-    );
-    expect(composerBottom.dy, 688);
-
-    final composerInput = tester.widget<Container>(
-      find.byKey(const ValueKey('azoom-composer-input')),
-    );
-    expect(
-      (composerInput.decoration! as BoxDecoration).color,
-      const Color(0xFF383A40),
-    );
-  });
-
-  testWidgets('updates AZOOM chat chrome when a meeting channel is selected', (
-    tester,
-  ) async {
-    tester.view.devicePixelRatio = 1;
-    tester.view.physicalSize = const Size(1280, 688);
-    addTearDown(tester.view.resetPhysicalSize);
-    addTearDown(tester.view.resetDevicePixelRatio);
-
-    await tester.pumpWidget(
-      const ProviderScope(
-        child: MaterialApp(
-          home: SizedBox(
-            width: 1280,
-            height: 688,
-            child: AzoomPage(currentUser: testProfile),
-          ),
-        ),
-      ),
-    );
-
-    await tester.tap(find.byKey(const ValueKey('azoom-text-channel-연구소 회의')));
-    await tester.pump();
-
-    expect(
-      tester
-          .widget<Text>(find.byKey(const ValueKey('azoom-channel-title')))
-          .data,
-      '연구소 회의',
-    );
-    expect(find.text('연구소 회의 검색'), findsOneWidget);
-    expect(find.text('#연구소 회의에 메시지 보내기'), findsOneWidget);
-    expect(find.text('연구소 회의 채널을 초기화했습니다.'), findsOneWidget);
   });
 
   testWidgets('uses Discord voice surface inside AZOOM before fullscreen', (
@@ -180,7 +141,7 @@ void main() {
 
     expect(
       tester.widget<ColoredBox>(find.byKey(const ValueKey('azoom-page'))).color,
-      const Color(0xFF313338),
+      const Color(0xFFF4F9FE),
     );
     expect(find.byKey(const ValueKey('azoom-server-rail')), findsOneWidget);
     expect(find.byKey(const ValueKey('azoom-channel-sidebar')), findsOneWidget);
@@ -188,7 +149,7 @@ void main() {
       tester
           .widget<ColoredBox>(find.byKey(const ValueKey('azoom-voice-surface')))
           .color,
-      Colors.black,
+      const Color(0xFFF2F8FD),
     );
     expect(find.byKey(const ValueKey('azoom-voice-title')), findsOneWidget);
     expect(
@@ -199,6 +160,207 @@ void main() {
       find.byKey(const ValueKey('azoom-ava-dark-activity-art')),
       findsOneWidget,
     );
+  });
+
+  testWidgets('renders mobile AZOOM with AVA light surfaces', (tester) async {
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(390, 844);
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    await tester.pumpWidget(
+      const ProviderScope(
+        child: MaterialApp(
+          home: SizedBox(
+            width: 390,
+            height: 844,
+            child: AzoomPage(currentUser: testProfile),
+          ),
+        ),
+      ),
+    );
+
+    expect(find.byKey(const ValueKey('azoom-mobile-page')), findsOneWidget);
+    expect(
+      tester
+          .widget<Container>(
+            find.byKey(const ValueKey('azoom-mobile-channel-list')),
+          )
+          .color,
+      const Color(0xFFF6FAFE),
+    );
+    expect(
+      (tester
+                  .widget<Container>(
+                    find.byKey(const ValueKey('azoom-mobile-bottom-nav')),
+                  )
+                  .decoration
+              as BoxDecoration)
+          .color,
+      const Color(0xFFEAF3FB),
+    );
+
+    final voiceChannel = find.byWidgetPredicate((widget) {
+      final key = widget.key;
+      return key is ValueKey<String> &&
+          key.value.startsWith('azoom-mobile-voice-');
+    }).first;
+
+    await tester.tap(voiceChannel);
+    await tester.pumpAndSettle();
+
+    final joinSheetDecoration =
+        tester
+                .widget<Container>(
+                  find.byKey(const ValueKey('azoom-mobile-voice-join-sheet')),
+                )
+                .decoration
+            as BoxDecoration;
+    expect(joinSheetDecoration.color, const Color(0xFFFFFFFF));
+  });
+
+  testWidgets('shows Konfetti-style firework from mobile voice dock', (
+    tester,
+  ) async {
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(390, 844);
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    await tester.pumpWidget(
+      const ProviderScope(
+        child: MaterialApp(
+          home: SizedBox(
+            width: 390,
+            height: 844,
+            child: AzoomPage(currentUser: testProfile),
+          ),
+        ),
+      ),
+    );
+
+    final voiceChannel = find.byWidgetPredicate((widget) {
+      final key = widget.key;
+      return key is ValueKey<String> &&
+          key.value.startsWith('azoom-mobile-voice-');
+    }).first;
+
+    await tester.tap(voiceChannel);
+    await tester.pumpAndSettle();
+    await tester.tap(
+      find.byKey(const ValueKey('azoom-mobile-voice-join-button')),
+    );
+    await tester.pumpAndSettle();
+
+    expect(
+      find.byKey(const ValueKey('azoom-mobile-firework-button')),
+      findsOneWidget,
+    );
+    await tester.tap(
+      find.byKey(const ValueKey('azoom-mobile-firework-button')),
+    );
+    await tester.pump(const Duration(milliseconds: 32));
+
+    expect(
+      find.byKey(const ValueKey('azoom-firework-overlay')),
+      findsOneWidget,
+    );
+    await tester.pump(const Duration(milliseconds: 2200));
+  });
+
+  testWidgets('hides mobile voice mini card while voice room is open', (
+    tester,
+  ) async {
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(390, 844);
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    await tester.pumpWidget(
+      const ProviderScope(
+        child: MaterialApp(
+          home: SizedBox(
+            width: 390,
+            height: 844,
+            child: AzoomPage(currentUser: testProfile),
+          ),
+        ),
+      ),
+    );
+
+    final voiceChannel = find.byWidgetPredicate((widget) {
+      final key = widget.key;
+      return key is ValueKey<String> &&
+          key.value.startsWith('azoom-mobile-voice-');
+    }).first;
+
+    await tester.tap(voiceChannel);
+    await tester.pumpAndSettle();
+    await tester.tap(
+      find.byKey(const ValueKey('azoom-mobile-voice-join-button')),
+    );
+    await tester.pumpAndSettle();
+
+    expect(
+      find.byKey(const ValueKey('azoom-mobile-floating-voice-card')),
+      findsNothing,
+    );
+
+    await tester.tap(find.byKey(const ValueKey('azoom-mobile-voice-collapse')));
+    await tester.pumpAndSettle();
+
+    expect(
+      find.byKey(const ValueKey('azoom-mobile-floating-voice-card')),
+      findsOneWidget,
+    );
+  });
+
+  testWidgets('keeps the latest mobile firework alive after repeated taps', (
+    tester,
+  ) async {
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(390, 844);
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    await tester.pumpWidget(
+      const ProviderScope(
+        child: MaterialApp(
+          home: SizedBox(
+            width: 390,
+            height: 844,
+            child: AzoomPage(currentUser: testProfile),
+          ),
+        ),
+      ),
+    );
+
+    final voiceChannel = find.byWidgetPredicate((widget) {
+      final key = widget.key;
+      return key is ValueKey<String> &&
+          key.value.startsWith('azoom-mobile-voice-');
+    }).first;
+
+    await tester.tap(voiceChannel);
+    await tester.pumpAndSettle();
+    await tester.tap(
+      find.byKey(const ValueKey('azoom-mobile-voice-join-button')),
+    );
+    await tester.pumpAndSettle();
+
+    final fireworkButton = find.byKey(
+      const ValueKey('azoom-mobile-firework-button'),
+    );
+    await tester.tap(fireworkButton);
+    await tester.pump(const Duration(milliseconds: 1000));
+    await tester.tap(fireworkButton);
+    await tester.pump(const Duration(milliseconds: 1200));
+
+    expect(
+      find.byKey(const ValueKey('azoom-firework-overlay')),
+      findsOneWidget,
+    );
+    await tester.pump(const Duration(milliseconds: 2200));
   });
 
   testWidgets('renders Discord-style AZOOM voice sidebar controls', (
@@ -270,6 +432,21 @@ void main() {
       find.byKey(const ValueKey('azoom-sidebar-participant-deafened-icon')),
       findsNothing,
     );
+    expect(
+      find.byKey(const ValueKey('azoom-sidebar-firework-button')),
+      findsOneWidget,
+    );
+
+    await tester.tap(
+      find.byKey(const ValueKey('azoom-sidebar-firework-button')),
+    );
+    await tester.pump(const Duration(milliseconds: 32));
+
+    expect(
+      find.byKey(const ValueKey('azoom-firework-overlay')),
+      findsOneWidget,
+    );
+    await tester.pump(const Duration(milliseconds: 2200));
   });
 
   testWidgets('keeps AZOOM voice overlay controls raised and stable on hover', (

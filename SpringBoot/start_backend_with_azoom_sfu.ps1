@@ -54,7 +54,7 @@ $pidPath = Join-Path $logsDir 'bootRun-azoom.pid'
 
 $gradle = Join-Path $PSScriptRoot 'gradlew.bat'
 $process = Start-Process -FilePath $gradle `
-	-ArgumentList @('bootRun') `
+	-ArgumentList @('--no-daemon', 'bootRun') `
 	-WorkingDirectory $PSScriptRoot `
 	-RedirectStandardOutput $stdout `
 	-RedirectStandardError $stderr `

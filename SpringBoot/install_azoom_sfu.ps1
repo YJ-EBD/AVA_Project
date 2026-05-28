@@ -106,7 +106,6 @@ rtc:
   port_range_start: $RtcUdpStart
   port_range_end: $RtcUdpEnd
   use_external_ip: false
-  node_ip: $PublicIp
   allow_tcp_fallback: true
   stun_servers:
     - stun.l.google.com:19302

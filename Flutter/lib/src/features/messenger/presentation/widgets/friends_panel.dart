@@ -4,6 +4,7 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter/services.dart';
+import 'package:image_picker/image_picker.dart';
 
 import '../../../../platform/window_control.dart';
 import '../../../../shared/ava_toast.dart';
@@ -20,11 +21,58 @@ import 'profile_avatar.dart';
 const _online = '\uC628\uB77C\uC778';
 const _background = '\uBC31\uADF8\uB77C\uC6B4\uB4DC';
 const _offline = '\uC624\uD504\uB77C\uC778';
+const _away = '\uC790\uB9AC\uBE44\uC6C0';
 const _selfChatLabel = '\uB098\uC640\uC758 \uCC44\uD305';
 const _directChatLabel = '1:1 \uCC44\uD305';
 const _profileEditLabel = '\uD504\uB85C\uD544 \uD3B8\uC9D1';
 const _multiProfileLabel = '\uBA40\uD2F0\uD504\uB85C\uD544 +';
+const _scheduleLabel = '\uC77C\uC815\uD45C';
 const _defaultCompanyName = 'ABBA-S';
+const _mobileProfileGalleryBackground = Color(0xFF84919A);
+
+bool _isMobileCompanyRuntime() => Platform.isAndroid || Platform.isIOS;
+
+final Map<String, ImageProvider> _mobileProfileImageCache = {};
+
+final profileFavoritesProvider =
+    NotifierProvider<ProfileFavorites, Set<String>>(ProfileFavorites.new);
+
+class ProfileFavorites extends Notifier<Set<String>> {
+  @override
+  Set<String> build() => <String>{};
+
+  bool isFavorite(PersonProfile profile) => state.contains(profile.identityKey);
+
+  void toggle(PersonProfile profile) {
+    final key = profile.identityKey;
+    if (state.contains(key)) {
+      state = {...state}..remove(key);
+    } else {
+      state = {...state, key};
+    }
+  }
+}
+
+final profileImageHistoryProvider =
+    NotifierProvider<ProfileImageHistory, Map<String, List<String>>>(
+      ProfileImageHistory.new,
+    );
+
+class ProfileImageHistory extends Notifier<Map<String, List<String>>> {
+  @override
+  Map<String, List<String>> build() => const {};
+
+  void add(PersonProfile profile, String? imageUrl) {
+    final value = imageUrl?.trim();
+    if (value == null || value.isEmpty) {
+      return;
+    }
+    final key = profile.identityKey;
+    final current = state[key] ?? const <String>[];
+    final next = <String>[value, ...current.where((item) => item != value)];
+    state = {...state, key: next.take(12).toList(growable: false)};
+  }
+}
 
 class _CompanySearchIntent extends Intent {
   const _CompanySearchIntent();
@@ -56,6 +104,7 @@ class FriendsPanel extends ConsumerStatefulWidget {
 class _FriendsPanelState extends ConsumerState<FriendsPanel> {
   final TextEditingController _searchController = TextEditingController();
   final FocusNode _searchFocusNode = FocusNode();
+  final Map<String, Future<ChatRoom>> _directRoomRequests = {};
   bool _isSearching = false;
 
   @override
@@ -109,6 +158,15 @@ class _FriendsPanelState extends ConsumerState<FriendsPanel> {
     final updatedProfiles = ref.watch(updatedUserProfilesProvider);
     final profilesState = ref.watch(userProfilesProvider);
     final activeCompany = ref.watch(activeCompanyProvider);
+    final mobileLayout = _isMobileCompanyRuntime();
+    final favoriteKeys = ref.watch(profileFavoritesProvider);
+    final favoriteProfiles = [
+      for (final profile in allProfiles)
+        if (favoriteKeys.contains(profile.identityKey)) profile,
+    ];
+    final highlightedProfiles = mobileLayout
+        ? favoriteProfiles
+        : updatedProfiles;
     final companyName =
         activeCompany ?? _companyTitle(currentProfile, allProfiles);
     final isSuperuser = _isSuperuser(ref);
@@ -166,82 +224,105 @@ class _FriendsPanelState extends ConsumerState<FriendsPanel> {
                     onClose: _closeSearch,
                   ),
                 Expanded(
-                  child: _isSearching
-                      ? ListView(
-                          padding: const EdgeInsets.fromLTRB(22, 8, 14, 16),
-                          children: [
-                            _MyProfile(
-                              profile: currentProfile,
-                              onAvatarTap: () => _showSelfProfile(
-                                context,
-                                ref,
-                                currentProfile,
-                              ),
-                            ),
-                            const SizedBox(height: 14),
-                            const Divider(height: 1, color: Color(0xFFEDEDED)),
-                            _SearchResultSection(
-                              count: searchResults.length,
-                              users: searchResults,
-                              onUserTap: (user) =>
-                                  _showUserProfile(context, ref, user),
-                            ),
-                          ],
-                        )
-                      : ListView(
-                          padding: const EdgeInsets.fromLTRB(22, 10, 22, 16),
-                          children: [
-                            _MyProfile(
-                              profile: currentProfile,
-                              onAvatarTap: () => _showSelfProfile(
-                                context,
-                                ref,
-                                currentProfile,
-                              ),
-                            ),
-                            const SizedBox(height: 14),
-                            const Divider(height: 1, color: Color(0xFFEDEDED)),
-                            _StaticSection(
-                              title:
-                                  '\uC5C5\uB370\uC774\uD2B8\uD55C \uC720\uC800',
-                              count: updatedProfiles.length,
-                              child: _UpdatedUsersStrip(
-                                users: updatedProfiles,
-                                onUserTap: (user) =>
-                                    _showUserProfile(context, ref, user),
-                              ),
-                            ),
-                            if (profilesState.isLoading)
-                              const Padding(
-                                padding: EdgeInsets.symmetric(vertical: 12),
-                                child: Text(
-                                  '\uD504\uB85C\uD544\uC744 \uBD88\uB7EC\uC624\uB294 \uC911\uC785\uB2C8\uB2E4.',
-                                  style: TextStyle(
-                                    color: Color(0xFF767676),
-                                    fontSize: 12,
+                  child: Stack(
+                    children: [
+                      _isSearching
+                          ? ListView(
+                              padding: const EdgeInsets.fromLTRB(22, 8, 14, 16),
+                              children: [
+                                _MyProfile(
+                                  profile: currentProfile,
+                                  mobileLayout: mobileLayout,
+                                  onAvatarTap: () => _showSelfProfile(
+                                    context,
+                                    ref,
+                                    currentProfile,
                                   ),
                                 ),
-                              ),
-                            for (final group in groups)
-                              _CollapsibleSection(
-                                title: group.title,
-                                count: group.users.length,
-                                isExpanded: ref.watch(
-                                  friendGroupExpansionProvider.select(
-                                    (groups) => groups[group.title] ?? true,
-                                  ),
+                                const SizedBox(height: 14),
+                                const Divider(
+                                  height: 1,
+                                  color: Color(0xFFEDEDED),
                                 ),
-                                onToggle: () => ref
-                                    .read(friendGroupExpansionProvider.notifier)
-                                    .toggle(group.title),
-                                child: _UserList(
-                                  users: group.users,
+                                _SearchResultSection(
+                                  count: searchResults.length,
+                                  users: searchResults,
                                   onUserTap: (user) =>
                                       _showUserProfile(context, ref, user),
                                 ),
+                              ],
+                            )
+                          : ListView(
+                              padding: const EdgeInsets.fromLTRB(
+                                22,
+                                10,
+                                22,
+                                16,
                               ),
-                          ],
-                        ),
+                              children: [
+                                _MyProfile(
+                                  profile: currentProfile,
+                                  mobileLayout: mobileLayout,
+                                  onAvatarTap: () => _showSelfProfile(
+                                    context,
+                                    ref,
+                                    currentProfile,
+                                  ),
+                                ),
+                                const SizedBox(height: 14),
+                                const Divider(
+                                  height: 1,
+                                  color: Color(0xFFEDEDED),
+                                ),
+                                _StaticSection(
+                                  title: mobileLayout
+                                      ? '\uC990\uACA8\uCC3E\uAE30'
+                                      : '\uC5C5\uB370\uC774\uD2B8\uD55C \uC720\uC800',
+                                  count: highlightedProfiles.length,
+                                  child: mobileLayout
+                                      ? _FavoriteUsersStrip(
+                                          users: highlightedProfiles,
+                                          onUserTap: (user) => _showUserProfile(
+                                            context,
+                                            ref,
+                                            user,
+                                          ),
+                                        )
+                                      : _UpdatedUsersStrip(
+                                          users: highlightedProfiles,
+                                          onUserTap: (user) => _showUserProfile(
+                                            context,
+                                            ref,
+                                            user,
+                                          ),
+                                        ),
+                                ),
+                                for (final group in groups)
+                                  _CollapsibleSection(
+                                    title: group.title,
+                                    count: group.users.length,
+                                    isExpanded: ref.watch(
+                                      friendGroupExpansionProvider.select(
+                                        (groups) => groups[group.title] ?? true,
+                                      ),
+                                    ),
+                                    onToggle: () => ref
+                                        .read(
+                                          friendGroupExpansionProvider.notifier,
+                                        )
+                                        .toggle(group.title),
+                                    child: _UserList(
+                                      users: group.users,
+                                      onUserTap: (user) =>
+                                          _showUserProfile(context, ref, user),
+                                    ),
+                                  ),
+                              ],
+                            ),
+                      if (profilesState.isLoading)
+                        const _CompanyProfileLoadingOverlay(),
+                    ],
+                  ),
                 ),
               ],
             ),
@@ -572,6 +653,20 @@ class _FriendsPanelState extends ConsumerState<FriendsPanel> {
     WidgetRef ref,
     PersonProfile profile,
   ) async {
+    if (_isMobileCompanyRuntime()) {
+      await Navigator.of(context).push<void>(
+        _mobileProfileRoute(
+          profile: profile,
+          isSelf: true,
+          onChat: () {
+            Navigator.of(context).pop();
+            _openSelfChat(ref, ref.read(currentUserProfileProvider));
+          },
+        ),
+      );
+      return;
+    }
+
     if (!Platform.isWindows) {
       await showDialog<void>(
         context: context,
@@ -639,6 +734,20 @@ class _FriendsPanelState extends ConsumerState<FriendsPanel> {
         ref,
         ref.read(currentUserProfileProvider),
       );
+    }
+
+    if (_isMobileCompanyRuntime()) {
+      await Navigator.of(context).push<void>(
+        _mobileProfileRoute(
+          profile: user,
+          isSelf: false,
+          onChat: () {
+            Navigator.of(context).pop();
+            _openDirectChat(ref, user);
+          },
+        ),
+      );
+      return;
     }
 
     if (!Platform.isWindows) {
@@ -766,12 +875,7 @@ class _FriendsPanelState extends ConsumerState<FriendsPanel> {
     final existingRoom = _existingSelfRoom(ref);
     final room = existingRoom ?? selfChatRoomFor(profile);
 
-    if (ref.read(selectedChatRoomProvider) != null) {
-      ref.read(selectedChatRoomProvider.notifier).open(room);
-    } else {
-      ref.read(selectedChatRoomProvider.notifier).open(room);
-      WindowControl.expandMessenger();
-    }
+    _openRoomInSidePane(ref, room);
   }
 
   ChatRoom? _existingSelfRoom(WidgetRef ref) {
@@ -785,14 +889,87 @@ class _FriendsPanelState extends ConsumerState<FriendsPanel> {
 
   Future<void> _openDirectChat(WidgetRef ref, PersonProfile user) async {
     final existingRoom = _existingDirectRoom(ref, user);
-    final room = existingRoom ?? directChatRoomFor(user);
+    if (existingRoom != null) {
+      _openRoomInSidePane(ref, existingRoom);
+      return;
+    }
 
-    if (ref.read(selectedChatRoomProvider) != null) {
-      ref.read(selectedChatRoomProvider.notifier).open(room);
-    } else {
-      ref.read(selectedChatRoomProvider.notifier).open(room);
+    final draftRoom = directChatRoomFor(user);
+    _openRoomInSidePane(ref, draftRoom);
+
+    final session = ref.read(authControllerProvider).value?.session;
+    if (session == null || session.accessToken.isEmpty) {
+      return;
+    }
+
+    final requestKey = _directRequestKey(user);
+    final request =
+        _directRoomRequests[requestKey] ??
+        _resolveRemoteDirectRoom(
+          ref,
+          user: user,
+          accessToken: session.accessToken,
+        );
+    _directRoomRequests[requestKey] = request;
+
+    try {
+      final resolvedRoom = await request;
+      if (!mounted) {
+        return;
+      }
+      ref.read(chatRoomsProvider.notifier).upsert(resolvedRoom);
+      _openRoomInSidePane(ref, resolvedRoom);
+    } on Object catch (error) {
+      if (mounted) {
+        showAvaToast(context, authErrorMessage(error));
+      }
+    } finally {
+      if (identical(_directRoomRequests[requestKey], request)) {
+        _directRoomRequests.remove(requestKey);
+      }
+    }
+  }
+
+  Future<ChatRoom> _resolveRemoteDirectRoom(
+    WidgetRef ref, {
+    required PersonProfile user,
+    required String accessToken,
+  }) async {
+    final remoteRoom = await ref
+        .read(chatApiProvider)
+        .startDirectRoom(
+          accessToken: accessToken,
+          targetName: user.name,
+          targetUserId: user.id,
+          targetEmail: user.email,
+        );
+    if (remoteRoom.code.isEmpty) {
+      throw StateError('Direct chat room was not created.');
+    }
+    return ref
+        .read(chatRoomsProvider.notifier)
+        .roomFromRemoteRoom(remoteRoom, members: [user]);
+  }
+
+  void _openRoomInSidePane(WidgetRef ref, ChatRoom room) {
+    final hadOpenRoom = ref.read(selectedChatRoomProvider) != null;
+    ref.read(focusedChatRoomIdProvider.notifier).focus(room);
+    ref.read(selectedChatRoomProvider.notifier).open(room);
+    if (!hadOpenRoom) {
       WindowControl.expandMessenger();
     }
+  }
+
+  String _directRequestKey(PersonProfile user) {
+    final id = user.id?.trim();
+    if (id != null && id.isNotEmpty) {
+      return 'id:${id.toLowerCase()}';
+    }
+    final email = user.email?.trim();
+    if (email != null && email.isNotEmpty) {
+      return 'email:${email.toLowerCase()}';
+    }
+    return 'name:${user.name.trim().toLowerCase()}';
   }
 
   ChatRoom? _existingDirectRoom(WidgetRef ref, PersonProfile user) {
@@ -840,10 +1017,15 @@ class _FriendsPanelState extends ConsumerState<FriendsPanel> {
 }
 
 class _MyProfile extends StatelessWidget {
-  const _MyProfile({required this.profile, required this.onAvatarTap});
+  const _MyProfile({
+    required this.profile,
+    required this.onAvatarTap,
+    required this.mobileLayout,
+  });
 
   final PersonProfile profile;
   final VoidCallback onAvatarTap;
+  final bool mobileLayout;
 
   @override
   Widget build(BuildContext context) {
@@ -938,9 +1120,42 @@ class _MyProfile extends StatelessWidget {
               fontWeight: FontWeight.w700,
             ),
           ),
-          child: const Text(_multiProfileLabel),
+          child: mobileLayout
+              ? const Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(Icons.calendar_month_outlined, size: 14),
+                    SizedBox(width: 5),
+                    Text(_scheduleLabel),
+                  ],
+                )
+              : const Text(_multiProfileLabel),
         ),
       ],
+    );
+  }
+}
+
+class _CompanyProfileLoadingOverlay extends StatelessWidget {
+  const _CompanyProfileLoadingOverlay();
+
+  @override
+  Widget build(BuildContext context) {
+    return const Positioned.fill(
+      child: IgnorePointer(
+        child: Center(
+          child: SizedBox(
+            width: 42,
+            height: 42,
+            child: CircularProgressIndicator(
+              strokeWidth: 4.5,
+              strokeCap: StrokeCap.round,
+              color: Color(0xFF4F63D7),
+              backgroundColor: Color(0x224E41A9),
+            ),
+          ),
+        ),
+      ),
     );
   }
 }
@@ -1301,6 +1516,35 @@ class _UpdatedUsersStrip extends StatelessWidget {
   }
 }
 
+class _FavoriteUsersStrip extends StatelessWidget {
+  const _FavoriteUsersStrip({required this.users, required this.onUserTap});
+
+  final List<PersonProfile> users;
+  final ValueChanged<PersonProfile> onUserTap;
+
+  @override
+  Widget build(BuildContext context) {
+    if (users.isEmpty) {
+      return const SizedBox(
+        height: 38,
+        child: Center(
+          child: Text(
+            '\uC990\uACA8\uCC3E\uAE30\uC5D0 \uC544\uBB34\uB3C4 \uC5C6\uC2B5\uB2C8\uB2E4.',
+            textAlign: TextAlign.center,
+            style: TextStyle(
+              color: Color(0xFF9A9A9A),
+              fontSize: 12,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+        ),
+      );
+    }
+
+    return _UpdatedUsersStrip(users: users, onUserTap: onUserTap);
+  }
+}
+
 class _UpdatedUserChip extends StatelessWidget {
   const _UpdatedUserChip({required this.user, required this.onTap, super.key});
 
@@ -1481,6 +1725,7 @@ class _PresenceLabel extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final normalizedStatus = _normalizePresenceStatus(status);
     return Row(
       mainAxisSize: MainAxisSize.max,
       children: [
@@ -1488,14 +1733,14 @@ class _PresenceLabel extends StatelessWidget {
           width: 7,
           height: 7,
           decoration: BoxDecoration(
-            color: _presenceColor,
+            color: _presenceColor(normalizedStatus),
             shape: BoxShape.circle,
           ),
         ),
         const SizedBox(width: 6),
         Flexible(
           child: Text(
-            status,
+            normalizedStatus,
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
             style: const TextStyle(color: Color(0xFF666666), fontSize: 12),
@@ -1505,7 +1750,31 @@ class _PresenceLabel extends StatelessWidget {
     );
   }
 
-  Color get _presenceColor {
+  String _normalizePresenceStatus(String value) {
+    final trimmed = value.trim();
+    if (trimmed.isEmpty) {
+      return _offline;
+    }
+    if (trimmed == _online || trimmed == _background || trimmed == _offline) {
+      return trimmed;
+    }
+    if (trimmed == _away) {
+      return _background;
+    }
+    switch (trimmed.toLowerCase()) {
+      case 'online':
+        return _online;
+      case 'background':
+      case 'away':
+      case 'idle':
+        return _background;
+      case 'offline':
+        return _offline;
+    }
+    return _offline;
+  }
+
+  Color _presenceColor(String status) {
     if (status == _online) {
       return const Color(0xFF2CBF6D);
     }
@@ -1515,7 +1784,7 @@ class _PresenceLabel extends StatelessWidget {
     if (status == _offline) {
       return const Color(0xFFB8B8B8);
     }
-    return const Color(0xFF2CBF6D);
+    return const Color(0xFFB8B8B8);
   }
 }
 
@@ -2247,6 +2516,432 @@ class _EmployeeButton extends StatelessWidget {
   }
 }
 
+PageRouteBuilder<void> _mobileProfileRoute({
+  required PersonProfile profile,
+  required bool isSelf,
+  required VoidCallback onChat,
+}) {
+  return PageRouteBuilder<void>(
+    opaque: true,
+    transitionDuration: const Duration(milliseconds: 280),
+    reverseTransitionDuration: const Duration(milliseconds: 240),
+    pageBuilder: (context, animation, secondaryAnimation) {
+      return _MobileProfilePage(
+        profile: profile,
+        isSelf: isSelf,
+        onChat: onChat,
+      );
+    },
+    transitionsBuilder: (context, animation, secondaryAnimation, child) {
+      final curved = CurvedAnimation(
+        parent: animation,
+        curve: Curves.easeOutCubic,
+        reverseCurve: Curves.easeInCubic,
+      );
+      return SlideTransition(
+        position: Tween<Offset>(
+          begin: const Offset(1, 0),
+          end: Offset.zero,
+        ).animate(curved),
+        child: child,
+      );
+    },
+  );
+}
+
+class _MobileProfilePage extends ConsumerStatefulWidget {
+  const _MobileProfilePage({
+    required this.profile,
+    required this.isSelf,
+    required this.onChat,
+  });
+
+  final PersonProfile profile;
+  final bool isSelf;
+  final VoidCallback onChat;
+
+  @override
+  ConsumerState<_MobileProfilePage> createState() => _MobileProfilePageState();
+}
+
+class _MobileProfilePageState extends ConsumerState<_MobileProfilePage> {
+  String? _backgroundImageUrl;
+  bool _isSavingBackground = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _backgroundImageUrl = widget.profile.profileBackgroundImageUrl;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final watchedProfile = widget.isSelf
+        ? ref.watch(currentUserProfileProvider)
+        : widget.profile;
+    final backgroundImageUrl = _backgroundImageUrl?.trim().isNotEmpty == true
+        ? _backgroundImageUrl
+        : (watchedProfile.profileBackgroundImageUrl?.trim().isNotEmpty == true
+              ? watchedProfile.profileBackgroundImageUrl
+              : watchedProfile.imageUrl);
+    final profile = _profileWith(
+      watchedProfile,
+      profileBackgroundImageUrl: backgroundImageUrl,
+    );
+    final backgroundProvider = _cachedMobileProfileImageProvider(
+      profile.profileBackgroundImageUrl,
+    );
+    final baseColor = profile.profileBackgroundColor ?? const Color(0xFF87939D);
+    final history =
+        ref.watch(profileImageHistoryProvider)[profile.identityKey] ??
+        const <String>[];
+    final galleryImages = _profileGalleryImages(profile, history);
+    final showGallery = backgroundProvider != null && galleryImages.isNotEmpty;
+    final isFavorite = ref.watch(
+      profileFavoritesProvider.select(
+        (items) => items.contains(profile.identityKey),
+      ),
+    );
+
+    return AnnotatedRegion<SystemUiOverlayStyle>(
+      value: SystemUiOverlayStyle.light.copyWith(
+        statusBarColor: Colors.transparent,
+        systemNavigationBarColor: showGallery
+            ? _mobileProfileGalleryBackground
+            : baseColor,
+      ),
+      child: Scaffold(
+        backgroundColor: showGallery
+            ? _mobileProfileGalleryBackground
+            : baseColor,
+        body: LayoutBuilder(
+          builder: (context, constraints) {
+            final height = constraints.maxHeight;
+            final galleryHeight = showGallery
+                ? (height * 0.37).clamp(250.0, 330.0)
+                : 0.0;
+            final infoTop = showGallery
+                ? height - galleryHeight - 185
+                : height * 0.425;
+
+            return Stack(
+              fit: StackFit.expand,
+              children: [
+                Positioned(
+                  top: 0,
+                  left: 0,
+                  right: 0,
+                  bottom: showGallery ? galleryHeight : 0,
+                  child: GestureDetector(
+                    behavior: HitTestBehavior.opaque,
+                    onTap: widget.isSelf ? _changeBackground : null,
+                    child: DecoratedBox(
+                      decoration: BoxDecoration(
+                        color: baseColor,
+                        image: backgroundProvider == null
+                            ? null
+                            : DecorationImage(
+                                image: backgroundProvider,
+                                fit: BoxFit.cover,
+                              ),
+                      ),
+                    ),
+                  ),
+                ),
+                Positioned.fill(
+                  bottom: showGallery ? galleryHeight : 0,
+                  child: IgnorePointer(
+                    child: DecoratedBox(
+                      decoration: BoxDecoration(
+                        gradient: LinearGradient(
+                          begin: Alignment.topCenter,
+                          end: Alignment.bottomCenter,
+                          colors: [
+                            Colors.black.withValues(alpha: 0.06),
+                            Colors.black.withValues(alpha: 0.08),
+                            Colors.black.withValues(alpha: 0.24),
+                          ],
+                          stops: const [0, 0.54, 1],
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+                if (showGallery)
+                  Positioned(
+                    left: 0,
+                    right: 0,
+                    bottom: 0,
+                    height: galleryHeight,
+                    child: _MobileProfileGallery(images: galleryImages),
+                  ),
+                _MobileProfileTopBar(
+                  isFavorite: isFavorite,
+                  saving: _isSavingBackground,
+                  onToggleFavorite: () => ref
+                      .read(profileFavoritesProvider.notifier)
+                      .toggle(profile),
+                ),
+                Positioned(
+                  left: 12,
+                  right: 12,
+                  top: infoTop,
+                  child: _MobileProfileIdentity(
+                    profile: profile,
+                    onChat: widget.onChat,
+                  ),
+                ),
+                if (!showGallery)
+                  Positioned(
+                    left: 0,
+                    right: 0,
+                    top: infoTop + 206,
+                    child: const Text(
+                      '\uC544\uC9C1 \uCE5C\uAD6C\uAC00 \uB0A8\uAE34 \uC18C\uC2DD\uC774 \uC5C6\uC5B4\uC694',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontSize: 13,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ),
+              ],
+            );
+          },
+        ),
+      ),
+    );
+  }
+
+  Future<void> _changeBackground() async {
+    if (_isSavingBackground) {
+      return;
+    }
+    final pickedPath = await _pickImagePath(context);
+    if (pickedPath == null || pickedPath.isEmpty) {
+      return;
+    }
+    final file = File(pickedPath);
+    final bytes = await file.readAsBytes();
+    if (bytes.length > 1_000_000) {
+      if (!mounted) {
+        return;
+      }
+      showAvaToast(
+        context,
+        '\uBC30\uACBD \uC774\uBBF8\uC9C0\uB294 1MB \uC774\uD558\uB85C \uC120\uD0DD\uD574\uC8FC\uC138\uC694.',
+      );
+      return;
+    }
+    final imageUrl = _dataImageUrlFromPath(pickedPath, bytes);
+    final provider = _cachedMobileProfileImageProvider(imageUrl);
+    if (provider != null && mounted) {
+      await precacheImage(provider, context);
+    }
+    final session = ref.read(authControllerProvider).value?.session;
+    if (session == null || session.accessToken.isEmpty) {
+      return;
+    }
+
+    setState(() {
+      _isSavingBackground = true;
+      _backgroundImageUrl = imageUrl;
+    });
+    try {
+      await ref
+          .read(chatApiProvider)
+          .updateProfile(
+            accessToken: session.accessToken,
+            profileBackgroundImageUrl: imageUrl,
+          );
+      ref
+          .read(profileImageHistoryProvider.notifier)
+          .add(ref.read(currentUserProfileProvider), imageUrl);
+      ref.invalidate(userProfilesProvider);
+    } on Object catch (error) {
+      if (!mounted) {
+        return;
+      }
+      showAvaToast(context, authErrorMessage(error));
+    } finally {
+      if (mounted) {
+        setState(() => _isSavingBackground = false);
+      }
+    }
+  }
+}
+
+class _MobileProfileTopBar extends StatelessWidget {
+  const _MobileProfileTopBar({
+    required this.isFavorite,
+    required this.saving,
+    required this.onToggleFavorite,
+  });
+
+  final bool isFavorite;
+  final bool saving;
+  final VoidCallback onToggleFavorite;
+
+  @override
+  Widget build(BuildContext context) {
+    final top = MediaQuery.paddingOf(context).top + 10;
+    return Positioned(
+      left: 8,
+      right: 8,
+      top: top,
+      child: Row(
+        children: [
+          _MobileProfileCircleButton(
+            icon: Icons.arrow_back_ios_new,
+            onTap: () => Navigator.of(context).pop(),
+          ),
+          const Spacer(),
+          _MobileProfileCircleButton(
+            icon: saving
+                ? Icons.hourglass_empty
+                : (isFavorite ? Icons.star : Icons.star_border),
+            onTap: onToggleFavorite,
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _MobileProfileCircleButton extends StatelessWidget {
+  const _MobileProfileCircleButton({required this.icon, required this.onTap});
+
+  final IconData icon;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTap: onTap,
+      child: Container(
+        width: 34,
+        height: 34,
+        decoration: BoxDecoration(
+          color: Colors.white.withValues(alpha: 0.23),
+          shape: BoxShape.circle,
+        ),
+        child: Icon(icon, color: Colors.white, size: 18),
+      ),
+    );
+  }
+}
+
+class _MobileProfileIdentity extends StatelessWidget {
+  const _MobileProfileIdentity({required this.profile, required this.onChat});
+
+  final PersonProfile profile;
+  final VoidCallback onChat;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        ProfileAvatar(profile: profile, size: 56),
+        const SizedBox(height: 11),
+        Text(
+          profile.name,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: const TextStyle(
+            color: Colors.white,
+            fontSize: 22,
+            fontWeight: FontWeight.w900,
+            height: 1.06,
+          ),
+        ),
+        const SizedBox(height: 15),
+        _MobileProfileActionBar(onTap: onChat),
+      ],
+    );
+  }
+}
+
+class _MobileProfileActionBar extends StatelessWidget {
+  const _MobileProfileActionBar({required this.onTap});
+
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTap: onTap,
+      child: Container(
+        height: 42,
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(5),
+          border: Border.all(color: Colors.white.withValues(alpha: 0.54)),
+          color: Colors.white.withValues(alpha: 0.06),
+        ),
+        child: const Center(
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(Icons.chat_bubble_outline, color: Colors.white, size: 18),
+              SizedBox(width: 7),
+              Text(
+                _directChatLabel,
+                style: TextStyle(
+                  color: Colors.white,
+                  fontSize: 13,
+                  fontWeight: FontWeight.w800,
+                  height: 1,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _MobileProfileGallery extends StatelessWidget {
+  const _MobileProfileGallery({required this.images});
+
+  final List<String> images;
+
+  @override
+  Widget build(BuildContext context) {
+    return ColoredBox(
+      color: _mobileProfileGalleryBackground,
+      child: GridView.builder(
+        padding: EdgeInsets.zero,
+        physics: const ClampingScrollPhysics(),
+        gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+          crossAxisCount: 3,
+          crossAxisSpacing: 0,
+          mainAxisSpacing: 0,
+        ),
+        itemCount: images.length,
+        itemBuilder: (context, index) {
+          final provider = _cachedMobileProfileImageProvider(images[index]);
+          if (provider == null) {
+            return const ColoredBox(color: _mobileProfileGalleryBackground);
+          }
+          return RepaintBoundary(
+            child: Image(
+              image: provider,
+              fit: BoxFit.cover,
+              gaplessPlayback: true,
+              filterQuality: FilterQuality.medium,
+            ),
+          );
+        },
+      ),
+    );
+  }
+}
+
 class _SelfProfileDialog extends ConsumerStatefulWidget {
   const _SelfProfileDialog({
     required this.profile,
@@ -2347,6 +3042,9 @@ class _SelfProfileDialogState extends ConsumerState<_SelfProfileDialog> {
             accessToken: session.accessToken,
             profileBackgroundImageUrl: imageUrl,
           );
+      ref
+          .read(profileImageHistoryProvider.notifier)
+          .add(ref.read(currentUserProfileProvider), imageUrl);
       ref.invalidate(userProfilesProvider);
     } on Object catch (error) {
       if (!mounted) {
@@ -2811,14 +3509,8 @@ class _ProfileEditDialogState extends ConsumerState<_ProfileEditDialog> {
       return;
     }
 
-    final extension = pickedPath.split('.').last.toLowerCase();
-    final mime = switch (extension) {
-      'jpg' || 'jpeg' => 'image/jpeg',
-      'webp' => 'image/webp',
-      _ => 'image/png',
-    };
     setState(() {
-      _avatarImageUrl = 'data:$mime;base64,${base64Encode(bytes)}';
+      _avatarImageUrl = _dataImageUrlFromPath(pickedPath, bytes);
     });
   }
 
@@ -2841,6 +3533,9 @@ class _ProfileEditDialogState extends ConsumerState<_ProfileEditDialog> {
             statusMessage: _statusController.text,
             avatarImageUrl: _avatarImageUrl,
           );
+      ref
+          .read(profileImageHistoryProvider.notifier)
+          .add(widget.profile, _avatarImageUrl);
       ref.invalidate(userProfilesProvider);
       if (!mounted) {
         return;
@@ -3027,12 +3722,73 @@ ImageProvider? _imageProvider(String? imageUrl) {
   return null;
 }
 
+ImageProvider? _cachedMobileProfileImageProvider(String? imageUrl) {
+  final value = imageUrl?.trim();
+  if (value == null || value.isEmpty) {
+    return null;
+  }
+  final cached = _mobileProfileImageCache[value];
+  if (cached != null) {
+    return cached;
+  }
+  final provider = _imageProvider(value);
+  if (provider == null) {
+    return null;
+  }
+  _mobileProfileImageCache[value] = provider;
+  if (_mobileProfileImageCache.length > 40) {
+    _mobileProfileImageCache.remove(_mobileProfileImageCache.keys.first);
+  }
+  return provider;
+}
+
+String _dataImageUrlFromPath(String path, List<int> bytes) {
+  final extension = path.split('.').last.toLowerCase();
+  final mime = switch (extension) {
+    'jpg' || 'jpeg' => 'image/jpeg',
+    'webp' => 'image/webp',
+    _ => 'image/png',
+  };
+  return 'data:$mime;base64,${base64Encode(bytes)}';
+}
+
+List<String> _profileGalleryImages(
+  PersonProfile profile,
+  List<String> history,
+) {
+  final values = <String>[];
+  void add(String? imageUrl) {
+    final value = imageUrl?.trim();
+    if (value == null || value.isEmpty || values.contains(value)) {
+      return;
+    }
+    values.add(value);
+  }
+
+  for (final image in history) {
+    add(image);
+  }
+  add(profile.imageUrl);
+  add(profile.profileBackgroundImageUrl);
+  return values;
+}
+
 Future<String?> _pickImagePath(BuildContext context) async {
   if (!Platform.isWindows) {
-    showAvaToast(
-      context,
-      '\uC774\uBBF8\uC9C0 \uC120\uD0DD\uC740 \uD604\uC7AC Windows \uB370\uC2A4\uD06C\uD1B1\uC5D0\uC11C \uC9C0\uC6D0\uB429\uB2C8\uB2E4.',
-    );
+    try {
+      final picked = await ImagePicker().pickImage(
+        source: ImageSource.gallery,
+        imageQuality: 88,
+      );
+      return picked?.path;
+    } on Object {
+      if (context.mounted) {
+        showAvaToast(
+          context,
+          '\uC774\uBBF8\uC9C0\uB97C \uC120\uD0DD\uD558\uC9C0 \uBABB\uD588\uC2B5\uB2C8\uB2E4.',
+        );
+      }
+    }
     return null;
   }
 

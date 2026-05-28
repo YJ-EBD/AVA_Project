@@ -12,6 +12,7 @@ import com.ava.backend.admin.dto.AdminOverviewResponse;
 import com.ava.backend.admin.dto.AdminUserResponse;
 import com.ava.backend.admin.dto.AdminUserUpdateRequest;
 import com.ava.backend.auth.security.AuthPrincipal;
+import com.ava.backend.chat.service.CompanyAllStaffChatService;
 import com.ava.backend.chat.repository.ChatMessageJpaRepository;
 import com.ava.backend.chat.repository.ChatRoomRepository;
 import com.ava.backend.company.CompanyScopeService;
@@ -33,6 +34,7 @@ public class AdminService {
 	private final NotificationRepository notificationRepository;
 	private final NotificationService notificationService;
 	private final CompanyScopeService companyScopeService;
+	private final CompanyAllStaffChatService allStaffChatService;
 
 	public AdminService(
 		UserAccountRepository accountRepository,
@@ -41,7 +43,8 @@ public class AdminService {
 		ChatMessageJpaRepository chatMessageRepository,
 		NotificationRepository notificationRepository,
 		NotificationService notificationService,
-		CompanyScopeService companyScopeService
+		CompanyScopeService companyScopeService,
+		CompanyAllStaffChatService allStaffChatService
 	) {
 		this.accountRepository = accountRepository;
 		this.profileRepository = profileRepository;
@@ -50,6 +53,7 @@ public class AdminService {
 		this.notificationRepository = notificationRepository;
 		this.notificationService = notificationService;
 		this.companyScopeService = companyScopeService;
+		this.allStaffChatService = allStaffChatService;
 	}
 
 	@Transactional(readOnly = true)
@@ -98,6 +102,10 @@ public class AdminService {
 		boolean selfUpdate = actor.userId().equals(account.getId());
 		UserRole previousRole = account.getRole();
 		boolean previousEnabled = account.isEnabled();
+		String previousCompany = profileRepository.findByAccountId(account.getId())
+			.map(UserProfile::getCompanyName)
+			.map(companyScopeService::normalizeCompany)
+			.orElse(CompanyScopeService.DEFAULT_COMPANY);
 		if (request.displayName() != null && !request.displayName().isBlank()) {
 			account.setDisplayName(limit(request.displayName(), 80));
 		}
@@ -141,6 +149,14 @@ public class AdminService {
 				account.getId().toString()
 			);
 		}
+		String currentCompany = profileRepository.findByAccountId(account.getId())
+			.map(UserProfile::getCompanyName)
+			.map(companyScopeService::normalizeCompany)
+			.orElse(previousCompany);
+		allStaffChatService.syncApprovedMembers(previousCompany);
+		if (!previousCompany.equalsIgnoreCase(currentCompany)) {
+			allStaffChatService.syncApprovedMembers(currentCompany);
+		}
 		return toResponse(account);
 	}
 
@@ -160,6 +176,7 @@ public class AdminService {
 				account.getId().toString()
 			);
 		}
+		allStaffChatService.syncMembershipForAccount(account);
 		return toResponse(account);
 	}
 

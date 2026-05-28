@@ -16,6 +16,8 @@ Thumbs.db
 *.tmp
 *.bak
 *.local
+*.sha1
+*.sha256
 .env
 .env.*
 !.env.example
@@ -26,6 +28,7 @@ Flutter/.pub-cache/
 Flutter/.pub/
 Flutter/build/
 Flutter/coverage/
+Flutter/perf_logs/
 Flutter/android/app/debug/
 Flutter/android/app/profile/
 Flutter/android/app/release/
@@ -50,6 +53,7 @@ SpringBoot/.settings/
 SpringBoot/ChatBackUp/
 SpringBoot/ChatUploads/
 SpringBoot/LiveKit/
+SpringBoot/Backups/
 SpringBoot/AppUpdates/*.zip
 SpringBoot/AppUpdates/*.apk
 !SpringBoot/AppUpdates/README.md
@@ -82,5 +86,8 @@ FlutterFlow/generated/
 *.dmg
 *.pkg
 *.exe
+178_downloaded.mp4
+desktop_perf_results*.json
+_desktop_launch_check/
 !LLM_Server/*.cmd
 !Flutter/*.cmd

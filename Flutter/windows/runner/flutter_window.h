@@ -25,6 +25,22 @@ class FlutterWindow : public Win32Window {
                          LPARAM const lparam) noexcept override;
 
  private:
+  void AddTrayIcon();
+  void RemoveTrayIcon();
+  void ShowTrayMenu();
+  void ShowMainWindowFromTray();
+  void HideToTray();
+  void ShowTrayBalloon();
+  void InvokeTrayAction(const std::string& action);
+  void RegisterQuickAvaAiHotkey();
+  void UnregisterQuickAvaAiHotkey();
+  void StoreNormalWindowPlacement();
+  void RestoreNormalWindowPlacement();
+  void ShowQuickAvaAiWindow();
+  void HideQuickAvaAiWindow();
+  void InvokeQuickAvaAi();
+  void ExitFromTray();
+
   // The project to run.
   flutter::DartProject project_;
 
@@ -38,6 +54,14 @@ class FlutterWindow : public Win32Window {
   bool file_drop_window_registered_ = false;
   bool file_drop_view_registered_ = false;
   HWND file_drop_view_window_ = nullptr;
+  bool tray_icon_added_ = false;
+  bool exit_requested_ = false;
+  bool tray_balloon_shown_ = false;
+  bool quick_hotkey_registered_ = false;
+  bool quick_ai_window_mode_ = false;
+  bool quick_ai_enabled_ = false;
+  bool has_normal_window_placement_ = false;
+  WINDOWPLACEMENT normal_window_placement_{};
 };
 
 #endif  // RUNNER_FLUTTER_WINDOW_H_

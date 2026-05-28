@@ -1,6 +1,7 @@
 package com.ava.backend.chat.dto;
 
 import java.time.Instant;
+import java.util.List;
 import java.util.UUID;
 
 public record ChatMessageResponse(
@@ -17,7 +18,9 @@ public record ChatMessageResponse(
 	boolean systemMessage,
 	boolean silent,
 	boolean spoiler,
-	ChatAttachmentResponse attachment
+	boolean deletedForEveryone,
+	ChatAttachmentResponse attachment,
+	List<ChatMentionResponse> mentions
 ) {
 	public static ChatMessageResponse local(String roomCode, UUID senderId, String senderName, String content) {
 		return new ChatMessageResponse(
@@ -34,7 +37,9 @@ public record ChatMessageResponse(
 			false,
 			false,
 			false,
-			null
+			false,
+			null,
+			List.of()
 		);
 	}
 }

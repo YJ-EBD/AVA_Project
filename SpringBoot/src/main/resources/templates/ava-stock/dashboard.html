@@ -1,0 +1,138 @@
+<!doctype html>
+<html lang="ko">
+<head>
+	<meta charset="utf-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1">
+	<title>AVA_stock | Stock Dashboard</title>
+	<link rel="stylesheet" href="/ava-stock-web/ava-stock.css">
+	<script defer src="/ava-stock-web/ava-stock.js"></script>
+</head>
+<body data-page="dashboard">
+	<div class="stock-shell stock-shell-dark">
+		<aside class="stock-rail">
+			<div class="stock-logo">AVA</div>
+			<a class="stock-rail-link active" href="/stock" title="대시보드">재고</a>
+			<a class="stock-rail-link" href="/stock/admin" title="마스터 관리">관리</a>
+		</aside>
+
+		<main class="stock-main">
+			<section class="stock-hero">
+				<div>
+					<p class="stock-kicker">AVA_stock</p>
+					<h1>입출고 현황 및 재고 현황</h1>
+					<p>생산, 부품 사용, 출고, A/S 재고 흐름을 한 화면에서 확인합니다.</p>
+				</div>
+				<div class="stock-auth" data-auth-panel>
+					<input data-auth-email type="email" placeholder="관리자 이메일">
+					<input data-auth-password type="password" placeholder="비밀번호">
+					<button type="button" data-auth-login>로그인</button>
+					<span data-auth-state>API 조회를 위해 로그인하세요.</span>
+				</div>
+			</section>
+
+			<section class="stock-grid stock-summary-grid">
+				<article class="stock-stat">
+					<span>총 재고</span>
+					<strong data-summary="totalStock">0</strong>
+				</article>
+				<article class="stock-stat">
+					<span>출고 가능</span>
+					<strong data-summary="shippable">0</strong>
+				</article>
+				<article class="stock-stat">
+					<span>배송중</span>
+					<strong data-summary="shipping">0</strong>
+				</article>
+				<article class="stock-stat">
+					<span>점검/수리</span>
+					<strong data-summary="inspectionRepair">0</strong>
+				</article>
+			</section>
+
+			<section class="stock-content-grid">
+				<article class="stock-card stock-card-wide">
+					<header>
+						<div>
+							<h2>제품별 재고</h2>
+							<p>반제품, A/S, 출고가능, 배송중 수량</p>
+						</div>
+						<button type="button" data-refresh-dashboard>새로고침</button>
+					</header>
+					<div class="stock-bars" data-stock-bars></div>
+					<div class="stock-table-wrap">
+						<table>
+							<thead>
+								<tr>
+									<th>모델</th>
+									<th>반제품</th>
+									<th>A/S</th>
+									<th>출고가능</th>
+									<th>배송중</th>
+									<th>출고완료</th>
+								</tr>
+							</thead>
+							<tbody data-stock-table>
+								<tr><td colspan="6">로그인 후 조회됩니다.</td></tr>
+							</tbody>
+						</table>
+					</div>
+				</article>
+
+				<article class="stock-card">
+					<header>
+						<div>
+							<h2>부품 재고</h2>
+							<p>movement 원장 합산 기준</p>
+						</div>
+					</header>
+					<div class="stock-list" data-part-inventory></div>
+				</article>
+
+				<article class="stock-card stock-card-wide">
+					<header>
+						<div>
+							<h2>최근 출고</h2>
+							<p>어떤 제품이 언제 어디로 출고됐는지 추적합니다.</p>
+						</div>
+					</header>
+					<div class="stock-table-wrap">
+						<table>
+							<thead>
+								<tr>
+									<th>출고일</th>
+									<th>납품처</th>
+									<th>출고방법</th>
+									<th>상태</th>
+								</tr>
+							</thead>
+							<tbody data-shipment-table>
+								<tr><td colspan="4">로그인 후 조회됩니다.</td></tr>
+							</tbody>
+						</table>
+					</div>
+				</article>
+
+				<article class="stock-card">
+					<header>
+						<div>
+							<h2>부품 사용 이력</h2>
+							<p>제조 사용 / A/S 사용과 제품, 납품처 추적</p>
+						</div>
+					</header>
+					<div class="stock-list" data-part-usage></div>
+				</article>
+
+				<article class="stock-card">
+					<header>
+						<div>
+							<h2>최근 7일 변동</h2>
+							<p>출고일 기준 입출고 흐름</p>
+						</div>
+					</header>
+					<div class="stock-list" data-seven-day-changes></div>
+				</article>
+			</section>
+		</main>
+	</div>
+</body>
+</html>

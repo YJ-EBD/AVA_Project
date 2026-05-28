@@ -6,7 +6,6 @@ public record AzoomChannelsResponse(
 	String companyName,
 	boolean liveKitEnabled,
 	String liveKitUrl,
-	List<AzoomTextChannelResponse> textChannels,
 	List<AzoomVoiceChannelResponse> voiceChannels
 ) {
 }

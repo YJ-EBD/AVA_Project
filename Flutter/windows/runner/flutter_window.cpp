@@ -35,6 +35,8 @@ namespace {
 constexpr int kCompactMessengerWidth = 460;
 constexpr int kCompactMessengerHeight = 720;
 constexpr int kExpandedMessengerWidth = 960;
+constexpr int kQuickAvaAiWidth = 430;
+constexpr int kQuickAvaAiHeight = 680;
 constexpr int kAzoomMessengerWidth = 1344;
 constexpr int kAzoomMessengerHeight = 722;
 constexpr wchar_t kNotificationClassName[] = L"AVA_CHAT_NOTIFICATION";
@@ -120,6 +122,15 @@ constexpr UINT kQuietMenuRead = 6103;
 constexpr UINT kQuietMenuFloating = 6104;
 constexpr UINT kQuietMenuUnquiet = 6105;
 constexpr UINT kQuietMenuLeave = 6106;
+constexpr UINT kTrayIconId = 7001;
+constexpr UINT kTrayIconMessage = WM_APP + 701;
+constexpr UINT kTrayMenuOpen = 7101;
+constexpr UINT kTrayMenuLock = 7102;
+constexpr UINT kTrayMenuLogout = 7103;
+constexpr UINT kTrayMenuExit = 7104;
+constexpr int kQuickAvaAiHotkeyId = 7201;
+constexpr wchar_t kAvaShowMainWindowMessageName[] =
+    L"ABBA-S.AVA.ShowMainWindow";
 
 HWND g_active_notification = nullptr;
 HWND g_active_profile_popup = nullptr;
@@ -139,6 +150,11 @@ ULONG_PTR g_gdiplus_token = 0;
 bool g_media_foundation_started = false;
 bool g_media_foundation_attempted = false;
 bool g_ole_initialized = false;
+
+UINT AvaShowMainWindowMessage() {
+  static UINT message = ::RegisterWindowMessageW(kAvaShowMainWindowMessageName);
+  return message;
+}
 
 struct NotificationState {
   std::string room_id;
@@ -895,13 +911,26 @@ void DrawNotification(NotificationState* state, HWND hwnd) {
   LineTo(hdc, kNotificationWidth - 20, 17);
   DeleteObject(close_pen);
 
-  HBRUSH avatar_brush = CreateSolidBrush(state->avatar_color);
-  SelectObject(hdc, avatar_brush);
-  HPEN avatar_pen = CreatePen(PS_SOLID, 1, state->avatar_color);
-  SelectObject(hdc, avatar_pen);
-  Ellipse(hdc, 18, 32, 54, 68);
-  DeleteObject(avatar_brush);
-  DeleteObject(avatar_pen);
+  EnsureGdiplus();
+  if (g_gdiplus_token != 0) {
+    Gdiplus::Graphics graphics(hdc);
+    graphics.SetSmoothingMode(Gdiplus::SmoothingModeAntiAlias);
+    graphics.SetPixelOffsetMode(Gdiplus::PixelOffsetModeHighQuality);
+    Gdiplus::SolidBrush avatar_fill(Gdiplus::Color(
+        255, GetRValue(state->avatar_color), GetGValue(state->avatar_color),
+        GetBValue(state->avatar_color)));
+    graphics.FillEllipse(&avatar_fill, 18.0f, 32.0f, 36.0f, 36.0f);
+  } else {
+    HBRUSH avatar_brush = CreateSolidBrush(state->avatar_color);
+    HPEN avatar_pen = CreatePen(PS_SOLID, 1, state->avatar_color);
+    HGDIOBJ avatar_old_brush = SelectObject(hdc, avatar_brush);
+    HGDIOBJ avatar_old_pen = SelectObject(hdc, avatar_pen);
+    Ellipse(hdc, 18, 32, 54, 68);
+    SelectObject(hdc, avatar_old_brush);
+    SelectObject(hdc, avatar_old_pen);
+    DeleteObject(avatar_brush);
+    DeleteObject(avatar_pen);
+  }
 
   std::wstring initial = state->sender_nickname.empty()
       ? L"?"
@@ -972,6 +1001,37 @@ void ResizeWindowToLogicalSize(HWND window, int logical_width, int logical_heigh
 
   SetWindowPos(window, nullptr, rect.left, rect.top, width, height,
                SWP_NOZORDER | SWP_NOACTIVATE);
+}
+
+void PositionQuickAvaAiWindow(HWND window) {
+  if (!window) {
+    return;
+  }
+  if (IsZoomed(window)) {
+    ShowWindow(window, SW_RESTORE);
+  }
+
+  HMONITOR monitor = MonitorFromWindow(window, MONITOR_DEFAULTTONEAREST);
+  MONITORINFO monitor_info{};
+  monitor_info.cbSize = sizeof(monitor_info);
+  if (!GetMonitorInfo(monitor, &monitor_info)) {
+    return;
+  }
+
+  const UINT dpi = GetDpiForWindow(window);
+  const int margin = MulDiv(16, dpi, 96);
+  int width = MulDiv(kQuickAvaAiWidth, dpi, 96);
+  int height = MulDiv(kQuickAvaAiHeight, dpi, 96);
+  const RECT work = monitor_info.rcWork;
+  const int work_width = work.right - work.left;
+  const int work_height = work.bottom - work.top;
+  width = std::min(width, std::max(320, work_width - (margin * 2)));
+  height = std::min(height, std::max(420, work_height - (margin * 2)));
+  const int x = work.right - width - margin;
+  const int y = work.bottom - height - margin;
+
+  SetWindowPos(window, HWND_TOPMOST, x, y, width, height,
+               SWP_NOACTIVATE | SWP_HIDEWINDOW);
 }
 
 void StorePreAzoomWindowPlacement(HWND window) {
@@ -1606,8 +1666,8 @@ void ShowNativeChatNotification(
 
   RECT work_area{};
   SystemParametersInfo(SPI_GETWORKAREA, 0, &work_area, 0);
-  int x = work_area.right - kNotificationWidth - kNotificationMargin;
-  int y = work_area.bottom - kNotificationHeight - kNotificationMargin;
+  int x = work_area.right - kNotificationWidth;
+  int y = work_area.bottom - kNotificationHeight;
 
   auto* state = new NotificationState();
   state->room_id = room_id;
@@ -1623,7 +1683,7 @@ void ShowNativeChatNotification(
       WS_EX_TOPMOST | WS_EX_TOOLWINDOW,
       kNotificationClassName,
       L"AVA",
-      WS_POPUP | WS_BORDER,
+      WS_POPUP,
       x,
       y,
       kNotificationWidth,
@@ -8353,6 +8413,253 @@ FlutterWindow::FlutterWindow(const flutter::DartProject& project)
 
 FlutterWindow::~FlutterWindow() {}
 
+void FlutterWindow::AddTrayIcon() {
+  if (tray_icon_added_) {
+    return;
+  }
+  HWND window = GetHandle();
+  if (!window) {
+    return;
+  }
+  NOTIFYICONDATAW data{};
+  data.cbSize = sizeof(data);
+  data.hWnd = window;
+  data.uID = kTrayIconId;
+  data.uFlags = NIF_MESSAGE | NIF_ICON | NIF_TIP;
+  data.uCallbackMessage = kTrayIconMessage;
+  data.hIcon = LoadIcon(GetModuleHandle(nullptr), MAKEINTRESOURCE(IDI_APP_ICON));
+  wcscpy_s(data.szTip, L"AVA");
+  tray_icon_added_ = Shell_NotifyIconW(NIM_ADD, &data) == TRUE;
+  if (tray_icon_added_) {
+    data.uVersion = NOTIFYICON_VERSION_4;
+    Shell_NotifyIconW(NIM_SETVERSION, &data);
+  }
+}
+
+void FlutterWindow::RemoveTrayIcon() {
+  if (!tray_icon_added_) {
+    return;
+  }
+  HWND window = GetHandle();
+  if (!window) {
+    tray_icon_added_ = false;
+    return;
+  }
+  NOTIFYICONDATAW data{};
+  data.cbSize = sizeof(data);
+  data.hWnd = window;
+  data.uID = kTrayIconId;
+  Shell_NotifyIconW(NIM_DELETE, &data);
+  tray_icon_added_ = false;
+}
+
+void FlutterWindow::ShowTrayBalloon() {
+  HWND window = GetHandle();
+  if (!window || !tray_icon_added_) {
+    return;
+  }
+  NOTIFYICONDATAW data{};
+  data.cbSize = sizeof(data);
+  data.hWnd = window;
+  data.uID = kTrayIconId;
+  data.uFlags = NIF_INFO;
+  data.dwInfoFlags = NIIF_INFO;
+  wcscpy_s(data.szInfoTitle, L"AVA \xC2E4\xD589 \xC911");
+  wcscpy_s(data.szInfo,
+           L"\xCC3D\xC744 \xB2EB\xC544\xB3C4 \xC2DC\xC2A4\xD15C "
+           L"\xD2B8\xB808\xC774\xC5D0\xC11C \xACC4\xC18D "
+           L"\xC2E4\xD589\xB429\xB2C8\xB2E4.");
+  Shell_NotifyIconW(NIM_MODIFY, &data);
+}
+
+void FlutterWindow::ShowMainWindowFromTray() {
+  HWND window = GetHandle();
+  if (!window) {
+    return;
+  }
+  if (quick_ai_window_mode_) {
+    RestoreNormalWindowPlacement();
+    quick_ai_window_mode_ = false;
+  }
+  SetWindowPos(window, HWND_NOTOPMOST, 0, 0, 0, 0,
+               SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
+  ShowWindow(window, IsIconic(window) ? SW_RESTORE : SW_SHOWNORMAL);
+  SetForegroundWindow(window);
+}
+
+void FlutterWindow::HideToTray() {
+  HWND window = GetHandle();
+  if (!window) {
+    return;
+  }
+  if (!quick_ai_window_mode_) {
+    StoreNormalWindowPlacement();
+  }
+  AddTrayIcon();
+  ShowWindow(window, SW_HIDE);
+  if (!tray_balloon_shown_) {
+    ShowTrayBalloon();
+    tray_balloon_shown_ = true;
+  }
+}
+
+void FlutterWindow::ShowTrayMenu() {
+  HWND window = GetHandle();
+  if (!window) {
+    return;
+  }
+  HMENU menu = CreatePopupMenu();
+  if (!menu) {
+    return;
+  }
+  AppendMenuW(menu, MF_STRING, kTrayMenuOpen, L"\xC5F4\xAE30");
+  AppendMenuW(menu, MF_STRING, kTrayMenuLock,
+              L"\xC7A0\xAE08\xBAA8\xB4DC \xC124\xC815");
+  AppendMenuW(menu, MF_STRING, kTrayMenuLogout,
+              L"\xB85C\xADF8\xC544\xC6C3");
+  AppendMenuW(menu, MF_SEPARATOR, 0, nullptr);
+  AppendMenuW(menu, MF_STRING, kTrayMenuExit, L"\xC885\xB8CC");
+
+  POINT cursor{};
+  GetCursorPos(&cursor);
+  SetForegroundWindow(window);
+  UINT command = TrackPopupMenu(menu,
+                                TPM_RETURNCMD | TPM_RIGHTBUTTON | TPM_NONOTIFY,
+                                cursor.x, cursor.y, 0, window, nullptr);
+  DestroyMenu(menu);
+  PostMessage(window, WM_NULL, 0, 0);
+
+  switch (command) {
+    case kTrayMenuOpen:
+      ShowMainWindowFromTray();
+      InvokeTrayAction("open");
+      break;
+    case kTrayMenuLock:
+      ShowMainWindowFromTray();
+      InvokeTrayAction("lock");
+      break;
+    case kTrayMenuLogout:
+      ShowMainWindowFromTray();
+      InvokeTrayAction("logout");
+      break;
+    case kTrayMenuExit:
+      ExitFromTray();
+      break;
+    default:
+      break;
+  }
+}
+
+void FlutterWindow::InvokeTrayAction(const std::string& action) {
+  if (!window_channel_) {
+    return;
+  }
+  flutter::EncodableMap arguments;
+  arguments[flutter::EncodableValue("action")] =
+      flutter::EncodableValue(action);
+  window_channel_->InvokeMethod(
+      "trayMenuAction", std::make_unique<flutter::EncodableValue>(arguments));
+}
+
+void FlutterWindow::RegisterQuickAvaAiHotkey() {
+  if (quick_hotkey_registered_) {
+    return;
+  }
+  HWND window = GetHandle();
+  if (!window) {
+    return;
+  }
+  quick_hotkey_registered_ =
+      RegisterHotKey(window, kQuickAvaAiHotkeyId, MOD_CONTROL | MOD_NOREPEAT,
+                     'Q') == TRUE;
+}
+
+void FlutterWindow::UnregisterQuickAvaAiHotkey() {
+  if (!quick_hotkey_registered_) {
+    return;
+  }
+  HWND window = GetHandle();
+  if (window) {
+    UnregisterHotKey(window, kQuickAvaAiHotkeyId);
+  }
+  quick_hotkey_registered_ = false;
+}
+
+void FlutterWindow::StoreNormalWindowPlacement() {
+  HWND window = GetHandle();
+  if (!window) {
+    return;
+  }
+  WINDOWPLACEMENT placement{};
+  placement.length = sizeof(WINDOWPLACEMENT);
+  if (!GetWindowPlacement(window, &placement)) {
+    return;
+  }
+  normal_window_placement_ = placement;
+  has_normal_window_placement_ = true;
+}
+
+void FlutterWindow::RestoreNormalWindowPlacement() {
+  HWND window = GetHandle();
+  if (!window) {
+    return;
+  }
+  if (has_normal_window_placement_) {
+    WINDOWPLACEMENT placement = normal_window_placement_;
+    placement.length = sizeof(WINDOWPLACEMENT);
+    SetWindowPlacement(window, &placement);
+    return;
+  }
+  ResizeWindowToLogicalSize(window, kCompactMessengerWidth,
+                            kCompactMessengerHeight);
+}
+
+void FlutterWindow::ShowQuickAvaAiWindow() {
+  HWND window = GetHandle();
+  if (!window) {
+    return;
+  }
+  if (!quick_ai_window_mode_) {
+    StoreNormalWindowPlacement();
+  }
+  PositionQuickAvaAiWindow(window);
+  quick_ai_window_mode_ = true;
+  if (!AnimateWindow(window, 180, AW_ACTIVATE | AW_SLIDE | AW_VER_NEGATIVE)) {
+    ShowWindow(window, SW_SHOWNORMAL);
+  }
+  SetForegroundWindow(window);
+}
+
+void FlutterWindow::HideQuickAvaAiWindow() {
+  HWND window = GetHandle();
+  if (!window) {
+    return;
+  }
+  if (IsWindowVisible(window)) {
+    if (!AnimateWindow(window, 180, AW_HIDE | AW_SLIDE | AW_VER_POSITIVE)) {
+      ShowWindow(window, SW_HIDE);
+    }
+  } else {
+    ShowWindow(window, SW_HIDE);
+  }
+}
+
+void FlutterWindow::InvokeQuickAvaAi() {
+  if (!window_channel_) {
+    return;
+  }
+  window_channel_->InvokeMethod("quickAvaAiRequested", nullptr);
+}
+
+void FlutterWindow::ExitFromTray() {
+  exit_requested_ = true;
+  RemoveTrayIcon();
+  HWND window = GetHandle();
+  if (window) {
+    DestroyWindow(window);
+  }
+}
+
 bool FlutterWindow::OnCreate() {
   if (!Win32Window::OnCreate()) {
     return false;
@@ -8416,8 +8723,18 @@ bool FlutterWindow::OnCreate() {
           ResizeWindowToLogicalWidth(window, kExpandedMessengerWidth);
           result->Success();
         } else if (method == "showMessengerWindow") {
-          ShowWindow(window, SW_SHOWNORMAL);
-          SetForegroundWindow(window);
+          ShowMainWindowFromTray();
+          result->Success();
+        } else if (method == "showQuickAvaAiWindow") {
+          ShowQuickAvaAiWindow();
+          result->Success();
+        } else if (method == "setQuickAvaAiEnabled") {
+          const auto* arguments = call.arguments();
+          const auto* map = arguments
+              ? std::get_if<flutter::EncodableMap>(arguments)
+              : nullptr;
+          quick_ai_enabled_ =
+              map ? BoolArgument(*map, "enabled", false) : false;
           result->Success();
         } else if (method == "openAzoomMessenger") {
           StorePreAzoomWindowPlacement(window);
@@ -8668,6 +8985,8 @@ bool FlutterWindow::OnCreate() {
           result->NotImplemented();
         }
       });
+  AddTrayIcon();
+  RegisterQuickAvaAiHotkey();
   HWND flutter_view_window = flutter_controller_->view()->GetNativeWindow();
   SetChildContent(flutter_view_window);
   file_drop_window_registered_ =
@@ -8689,6 +9008,8 @@ bool FlutterWindow::OnCreate() {
 }
 
 void FlutterWindow::OnDestroy() {
+  UnregisterQuickAvaAiHotkey();
+  RemoveTrayIcon();
   if (file_drop_view_registered_ && file_drop_view_window_) {
     RevokeDragDrop(file_drop_view_window_);
     file_drop_view_registered_ = false;
@@ -8763,6 +9084,41 @@ LRESULT
 FlutterWindow::MessageHandler(HWND hwnd, UINT const message,
                               WPARAM const wparam,
                               LPARAM const lparam) noexcept {
+  if (message == AvaShowMainWindowMessage()) {
+    ShowMainWindowFromTray();
+    InvokeTrayAction("open");
+    return 0;
+  }
+  if (message == WM_CLOSE && !exit_requested_) {
+    HideToTray();
+    return 0;
+  }
+  if (message == kTrayIconMessage) {
+    const UINT tray_event = LOWORD(lparam);
+    if (tray_event == WM_RBUTTONUP || tray_event == WM_CONTEXTMENU) {
+      ShowTrayMenu();
+      return 0;
+    }
+    if (tray_event == WM_LBUTTONDBLCLK || tray_event == NIN_SELECT ||
+        tray_event == WM_LBUTTONUP) {
+      ShowMainWindowFromTray();
+      InvokeTrayAction("open");
+      return 0;
+    }
+  }
+  if (message == WM_HOTKEY && static_cast<int>(wparam) == kQuickAvaAiHotkeyId) {
+    if (quick_ai_window_mode_ && IsWindowVisible(hwnd)) {
+      HideQuickAvaAiWindow();
+    } else if (quick_ai_enabled_) {
+      ShowQuickAvaAiWindow();
+      InvokeQuickAvaAi();
+    } else {
+      ShowMainWindowFromTray();
+      InvokeQuickAvaAi();
+    }
+    return 0;
+  }
+
   // Give Flutter, including plugins, an opportunity to handle window messages.
   if (flutter_controller_) {
     std::optional<LRESULT> result =

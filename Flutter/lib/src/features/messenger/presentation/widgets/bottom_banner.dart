@@ -14,6 +14,7 @@ class BottomBanner extends StatelessWidget {
         height: 104,
         width: double.infinity,
         child: Image(
+          key: ValueKey('bottom-banner-image'),
           image: AssetImage('assets/images/ava_bottom_banner.png'),
           fit: BoxFit.cover,
           alignment: Alignment.center,

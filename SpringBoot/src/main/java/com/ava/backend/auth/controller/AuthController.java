@@ -19,6 +19,7 @@ import com.ava.backend.auth.dto.EmailVerificationConfirmResponse;
 import com.ava.backend.auth.dto.EmailVerificationRequest;
 import com.ava.backend.auth.dto.EmailVerificationResponse;
 import com.ava.backend.auth.dto.LoginRequest;
+import com.ava.backend.auth.dto.PasswordVerificationRequest;
 import com.ava.backend.auth.dto.RefreshTokenRequest;
 import com.ava.backend.auth.dto.SignupRequest;
 import com.ava.backend.auth.dto.SignupResponse;
@@ -76,6 +77,15 @@ public class AuthController {
 	@GetMapping("/session")
 	public AuthSessionStatusResponse session(@AuthenticationPrincipal AuthPrincipal principal) {
 		return new AuthSessionStatusResponse(principal != null);
+	}
+
+	@PostMapping("/verify-password")
+	public ResponseEntity<Map<String, String>> verifyPassword(
+		@AuthenticationPrincipal AuthPrincipal principal,
+		@Valid @RequestBody PasswordVerificationRequest request
+	) {
+		authService.verifyPassword(principal, request);
+		return ResponseEntity.ok(Map.of("status", "verified"));
 	}
 
 	@GetMapping("/find-account")

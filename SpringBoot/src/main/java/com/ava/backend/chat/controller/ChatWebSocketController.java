@@ -20,6 +20,7 @@ import com.ava.backend.chat.dto.ChatRoomResponse;
 import com.ava.backend.chat.dto.ChatTypingEvent;
 import com.ava.backend.chat.dto.ChatTypingRequest;
 import com.ava.backend.chat.service.ChatService;
+import com.ava.backend.push.service.MobilePushService;
 
 @Controller
 public class ChatWebSocketController {
@@ -28,17 +29,20 @@ public class ChatWebSocketController {
 	private final SimpMessagingTemplate messagingTemplate;
 	private final TokenService tokenService;
 	private final LoginSessionService loginSessionService;
+	private final MobilePushService mobilePushService;
 
 	public ChatWebSocketController(
 		ChatService chatService,
 		SimpMessagingTemplate messagingTemplate,
 		TokenService tokenService,
-		LoginSessionService loginSessionService
+		LoginSessionService loginSessionService,
+		MobilePushService mobilePushService
 	) {
 		this.chatService = chatService;
 		this.messagingTemplate = messagingTemplate;
 		this.tokenService = tokenService;
 		this.loginSessionService = loginSessionService;
+		this.mobilePushService = mobilePushService;
 	}
 
 	@MessageMapping("/rooms/{roomCode}/send")
@@ -56,6 +60,7 @@ public class ChatWebSocketController {
 		ChatMessageResponse response = chatService.send(roomCode, request, authPrincipal);
 		messagingTemplate.convertAndSend("/topic/rooms/" + roomCode, response);
 		publishRoomEvent(roomCode, response);
+		mobilePushService.sendChatMessage(roomCode, response);
 	}
 
 	@MessageMapping("/rooms/{roomCode}/typing")
@@ -85,8 +90,11 @@ public class ChatWebSocketController {
 
 	private void publishRoomEvent(String roomCode, ChatMessageResponse message) {
 		ChatRoomResponse room = chatService.room(roomCode);
-		ChatRealtimeEvent event = new ChatRealtimeEvent("message", room, message);
 		for (var member : room.members()) {
+			ChatRoomResponse recipientRoom = member.id() == null
+				? room
+				: chatService.roomForMember(roomCode, member.id());
+			ChatRealtimeEvent event = new ChatRealtimeEvent("message", recipientRoom, message);
 			messagingTemplate.convertAndSendToUser(member.email(), "/queue/chat-events", event);
 		}
 	}
@@ -113,7 +121,7 @@ public class ChatWebSocketController {
 
 	private void assertRegularChatRoomCode(String roomCode) {
 		if (chatService.isAzoomRoomCode(roomCode)) {
-			throw new IllegalArgumentException("AZOOM chat rooms must use the AZOOM API.");
+			throw new IllegalArgumentException("AZOOM text chat rooms are no longer supported.");
 		}
 	}
 }

@@ -137,6 +137,17 @@ class AuthApi {
     );
   }
 
+  Future<void> verifyPassword({
+    required String accessToken,
+    required String password,
+  }) async {
+    await _dio.post<void>(
+      '/api/auth/verify-password',
+      data: {'password': password},
+      options: Options(headers: {'Authorization': 'Bearer $accessToken'}),
+    );
+  }
+
   Future<void> updatePresence({
     required String accessToken,
     required String status,

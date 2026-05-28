@@ -1,6 +1,9 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../../platform/window_control.dart';
 import '../../../shared/ava_dialog.dart';
@@ -17,7 +20,10 @@ class LoginPage extends ConsumerStatefulWidget {
 }
 
 class _LoginPageState extends ConsumerState<LoginPage> {
-  final _emailController = TextEditingController(text: 'amos5105@naver.com');
+  static const _rememberedLoginIdKey = 'ava.auth.remembered_login_id';
+  static const _rememberedAutoLoginKey = 'ava.auth.remembered_auto_login';
+
+  final _emailController = TextEditingController();
   final _passwordController = TextEditingController();
   bool _autoLogin = true;
 
@@ -27,6 +33,7 @@ class _LoginPageState extends ConsumerState<LoginPage> {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       WindowControl.setWindowTitle('AVA');
       WindowControl.compactMessenger();
+      unawaited(_restoreRememberedLoginId());
     });
   }
 
@@ -45,7 +52,8 @@ class _LoginPageState extends ConsumerState<LoginPage> {
       }
       final error = next.error;
       if (error != null && mounted) {
-        if (isDuplicateLoginRequired(error) || isPendingApprovalRequired(error)) {
+        if (isDuplicateLoginRequired(error) ||
+            isPendingApprovalRequired(error)) {
           return;
         }
         showAvaToast(context, authErrorMessage(error));
@@ -80,6 +88,7 @@ class _LoginPageState extends ConsumerState<LoginPage> {
                       _LoginTextField(
                         controller: _emailController,
                         keyboardType: TextInputType.emailAddress,
+                        hintText: '아이디',
                         suffixIcon: Icons.arrow_drop_down,
                         onSubmitted: (_) => _login(),
                       ),
@@ -162,7 +171,7 @@ class _LoginPageState extends ConsumerState<LoginPage> {
                           ),
                           const SizedBox(width: 6),
                           Tooltip(
-                            message: '토큰을 로컬 세션 파일에 저장해 다음 실행 때 로그인합니다.',
+                            message: '자동 로그인을 켜면 다음 실행 때 아이디와 로그인 상태를 기억합니다.',
                             child: Icon(
                               Icons.info_outline,
                               size: 16,
@@ -202,7 +211,7 @@ class _LoginPageState extends ConsumerState<LoginPage> {
     final email = _emailController.text.trim();
     final password = _passwordController.text;
     if (email.isEmpty || password.isEmpty) {
-      showAvaToast(context, '이메일과 비밀번호를 입력해주세요.');
+      showAvaToast(context, '아이디와 비밀번호를 입력해주세요.');
       return;
     }
 
@@ -215,6 +224,7 @@ class _LoginPageState extends ConsumerState<LoginPage> {
             autoLogin: _autoLogin,
             forceLogin: forceLogin,
           );
+      await _saveRememberedLoginId(email);
     } on DuplicateLoginRequiredException {
       if (!mounted || forceLogin) {
         return;
@@ -228,6 +238,40 @@ class _LoginPageState extends ConsumerState<LoginPage> {
         return;
       }
       await _showPendingApprovalDialog(error.message);
+    }
+  }
+
+  Future<void> _restoreRememberedLoginId() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final rememberedId = prefs.getString(_rememberedLoginIdKey) ?? '';
+      final rememberedAutoLogin =
+          prefs.getBool(_rememberedAutoLoginKey) ?? _autoLogin;
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        if (_emailController.text.trim().isEmpty) {
+          _emailController.text = rememberedId;
+        }
+        _autoLogin = rememberedAutoLogin;
+      });
+    } on Object {
+      // Tests and unsupported platforms can run without the preferences plugin.
+    }
+  }
+
+  Future<void> _saveRememberedLoginId(String email) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setBool(_rememberedAutoLoginKey, _autoLogin);
+      if (_autoLogin) {
+        await prefs.setString(_rememberedLoginIdKey, email);
+      } else {
+        await prefs.remove(_rememberedLoginIdKey);
+      }
+    } on Object {
+      // Remembering the id must never block login itself.
     }
   }
 

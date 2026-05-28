@@ -21,12 +21,18 @@ import org.springframework.web.multipart.MultipartFile;
 import com.ava.backend.ai.dto.AvaAiChatResponse;
 import com.ava.backend.ai.dto.AvaAiMessageRequest;
 import com.ava.backend.ai.dto.AvaAiMessageResponse;
+import com.ava.backend.ai.dto.AvaAiNotionCommandRequest;
+import com.ava.backend.ai.dto.AvaAiNotionCommandResponse;
+import com.ava.backend.ai.dto.AvaAiNotionPageResponse;
 import com.ava.backend.ai.dto.AvaAiWorkspaceFileRequest;
 import com.ava.backend.ai.dto.AvaAiWorkspaceItemResponse;
 import com.ava.backend.ai.dto.AvaAiWorkspaceSendRequest;
+import com.ava.backend.ai.service.AvaAiNotionService;
 import com.ava.backend.ai.service.AvaAiService;
 import com.ava.backend.ai.service.AvaAiWorkspaceService;
 import com.ava.backend.auth.security.AuthPrincipal;
+import com.ava.backend.calendar.CalendarAiCommandService;
+import com.ava.backend.calendar.CalendarAiWorkspaceResponse;
 
 import jakarta.validation.Valid;
 
@@ -36,10 +42,19 @@ public class AvaAiController {
 
 	private final AvaAiService avaAiService;
 	private final AvaAiWorkspaceService workspaceService;
+	private final AvaAiNotionService notionService;
+	private final CalendarAiCommandService calendarAiCommandService;
 
-	public AvaAiController(AvaAiService avaAiService, AvaAiWorkspaceService workspaceService) {
+	public AvaAiController(
+		AvaAiService avaAiService,
+		AvaAiWorkspaceService workspaceService,
+		AvaAiNotionService notionService,
+		CalendarAiCommandService calendarAiCommandService
+	) {
 		this.avaAiService = avaAiService;
 		this.workspaceService = workspaceService;
+		this.notionService = notionService;
+		this.calendarAiCommandService = calendarAiCommandService;
 	}
 
 	@GetMapping("/messages")
@@ -140,5 +155,82 @@ public class AvaAiController {
 		@AuthenticationPrincipal AuthPrincipal principal
 	) {
 		return workspaceService.sendToChat(request, principal);
+	}
+
+	@GetMapping("/calendar/workspace")
+	public CalendarAiWorkspaceResponse calendarWorkspace(
+		@RequestParam(value = "mode", required = false, defaultValue = "today") String mode,
+		@AuthenticationPrincipal AuthPrincipal principal
+	) {
+		return calendarAiCommandService.snapshot(mode, principal);
+	}
+
+	@GetMapping("/notion/search")
+	public List<AvaAiNotionPageResponse> notionSearch(
+		@RequestParam(value = "query", required = false) String query,
+		@AuthenticationPrincipal AuthPrincipal principal
+	) {
+		return notionService.search(query == null ? "" : query);
+	}
+
+	@GetMapping("/notion/pages/{id}")
+	public AvaAiNotionPageResponse notionPage(
+		@org.springframework.web.bind.annotation.PathVariable("id") String id,
+		@RequestParam(value = "object", required = false, defaultValue = "page") String object,
+		@AuthenticationPrincipal AuthPrincipal principal
+	) {
+		return notionService.open(id, object);
+	}
+
+	@PostMapping("/notion/command")
+	public AvaAiNotionCommandResponse notionCommand(
+		@RequestBody AvaAiNotionCommandRequest request,
+		@AuthenticationPrincipal AuthPrincipal principal
+	) {
+		AvaAiNotionCommandResponse response = notionService.command(request, principal);
+		recordNotionExchange(request, response, principal);
+		return response;
+	}
+
+	@PostMapping(
+		value = "/notion/uploads",
+		consumes = MediaType.MULTIPART_FORM_DATA_VALUE
+	)
+	public AvaAiNotionCommandResponse notionUpload(
+		@RequestParam("targetId") String targetId,
+		@RequestParam("files") List<MultipartFile> files,
+		@RequestParam(value = "approved", required = false, defaultValue = "false") boolean approved,
+		@AuthenticationPrincipal AuthPrincipal principal
+	) {
+		AvaAiNotionCommandResponse response = notionService.upload(targetId, files, approved, principal);
+		if (approved) {
+			avaAiService.recordToolExchange(
+				"Notion 파일 업로드: " + targetId,
+				response.answer().isBlank() ? response.status() : response.answer(),
+				response.executionMode(),
+				principal
+			);
+		}
+		return response;
+	}
+
+	private void recordNotionExchange(
+		AvaAiNotionCommandRequest request,
+		AvaAiNotionCommandResponse response,
+		AuthPrincipal principal
+	) {
+		if (request == null || request.command() == null || request.command().isBlank()) {
+			return;
+		}
+		String answer = response.answer().isBlank() ? response.status() : response.answer();
+		if (response.requiresApproval() && !response.approvalDescription().isBlank()) {
+			answer = answer + "\n" + response.approvalDescription();
+		}
+		avaAiService.recordToolExchange(
+			request.command(),
+			answer,
+			response.executionMode(),
+			principal
+		);
 	}
 }

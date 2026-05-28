@@ -186,6 +186,95 @@ class AvaAiApi {
     return AvaAiWorkspaceSendResultDto.fromJson(response.data ?? const {});
   }
 
+  Future<AvaAiCalendarWorkspaceDto> calendarWorkspace({
+    required String accessToken,
+    String mode = 'today',
+  }) async {
+    final response = await _dio.get<Map<String, dynamic>>(
+      '/api/ai/calendar/workspace',
+      queryParameters: {'mode': mode},
+      options: _authOptions(accessToken),
+    );
+    return AvaAiCalendarWorkspaceDto.fromJson(response.data ?? const {});
+  }
+
+  Future<List<AvaAiNotionPageDto>> notionSearch({
+    required String accessToken,
+    String query = '',
+  }) async {
+    final response = await _dio.get<List<dynamic>>(
+      '/api/ai/notion/search',
+      queryParameters: {if (query.isNotEmpty) 'query': query},
+      options: _authOptions(accessToken),
+    );
+    return [
+      for (final item in response.data ?? const [])
+        AvaAiNotionPageDto.fromJson((item as Map).cast<String, dynamic>()),
+    ];
+  }
+
+  Future<AvaAiNotionPageDto> notionPage({
+    required String accessToken,
+    required String id,
+    String object = 'page',
+  }) async {
+    final response = await _dio.get<Map<String, dynamic>>(
+      '/api/ai/notion/pages/$id',
+      queryParameters: {'object': object},
+      options: _authOptions(accessToken),
+    );
+    return AvaAiNotionPageDto.fromJson(response.data ?? const {});
+  }
+
+  Future<AvaAiNotionCommandDto> notionCommand({
+    required String accessToken,
+    required String command,
+    String activePageId = '',
+    String activePageObject = '',
+    bool approved = false,
+  }) async {
+    final response = await _dio.post<Map<String, dynamic>>(
+      '/api/ai/notion/command',
+      data: {
+        'command': command,
+        if (activePageId.isNotEmpty) 'activePageId': activePageId,
+        if (activePageObject.isNotEmpty) 'activePageObject': activePageObject,
+        'approved': approved,
+      },
+      options: _authOptions(accessToken),
+    );
+    return AvaAiNotionCommandDto.fromJson(response.data ?? const {});
+  }
+
+  Future<AvaAiNotionCommandDto> uploadNotionFiles({
+    required String accessToken,
+    required String targetId,
+    required List<String> filePaths,
+  }) async {
+    final response = await _dio.post<Map<String, dynamic>>(
+      '/api/ai/notion/uploads',
+      data: FormData.fromMap({
+        'targetId': targetId,
+        'approved': true,
+        'files': [
+          for (final path in filePaths)
+            await MultipartFile.fromFile(path, filename: _fileName(path)),
+        ],
+      }),
+      options: Options(
+        headers: {
+          'Authorization': 'Bearer $accessToken',
+          if (_activeCompany != null && _activeCompany.isNotEmpty)
+            avaCompanyHeader: _activeCompany,
+        },
+        contentType: 'multipart/form-data',
+        sendTimeout: const Duration(minutes: 5),
+        receiveTimeout: const Duration(minutes: 5),
+      ),
+    );
+    return AvaAiNotionCommandDto.fromJson(response.data ?? const {});
+  }
+
   Options _authOptions(String accessToken) {
     return Options(
       headers: {
@@ -208,6 +297,8 @@ class AvaAiChatExchangeDto {
     required this.assistantMessage,
     required this.workspaceItems,
     required this.workspaceStatus,
+    required this.agentTask,
+    required this.calendarWorkspace,
   });
 
   factory AvaAiChatExchangeDto.fromJson(Map<String, dynamic> json) {
@@ -223,6 +314,16 @@ class AvaAiChatExchangeDto {
           AvaAiWorkspaceItemDto.fromJson((item as Map).cast<String, dynamic>()),
       ],
       workspaceStatus: json['workspaceStatus'] as String? ?? '',
+      agentTask: json['agentTask'] is Map
+          ? AvaAiAgentTaskDto.fromJson(
+              (json['agentTask'] as Map).cast<String, dynamic>(),
+            )
+          : null,
+      calendarWorkspace: json['calendarWorkspace'] is Map
+          ? AvaAiCalendarWorkspaceDto.fromJson(
+              (json['calendarWorkspace'] as Map).cast<String, dynamic>(),
+            )
+          : AvaAiCalendarWorkspaceDto.empty(),
     );
   }
 
@@ -230,6 +331,448 @@ class AvaAiChatExchangeDto {
   final AvaAiMessageDto assistantMessage;
   final List<AvaAiWorkspaceItemDto> workspaceItems;
   final String workspaceStatus;
+  final AvaAiAgentTaskDto? agentTask;
+  final AvaAiCalendarWorkspaceDto calendarWorkspace;
+}
+
+class AvaAiCalendarWorkspaceDto {
+  const AvaAiCalendarWorkspaceDto({
+    required this.handled,
+    required this.mutation,
+    required this.requiresClarification,
+    required this.mode,
+    required this.status,
+    required this.selectedEventId,
+    required this.summary,
+    required this.events,
+    required this.conflicts,
+    required this.availability,
+    required this.metadata,
+  });
+
+  factory AvaAiCalendarWorkspaceDto.empty() {
+    return const AvaAiCalendarWorkspaceDto(
+      handled: false,
+      mutation: false,
+      requiresClarification: false,
+      mode: '',
+      status: '',
+      selectedEventId: '',
+      summary: null,
+      events: [],
+      conflicts: [],
+      availability: [],
+      metadata: {},
+    );
+  }
+
+  factory AvaAiCalendarWorkspaceDto.fromJson(Map<String, dynamic> json) {
+    return AvaAiCalendarWorkspaceDto(
+      handled: json['handled'] as bool? ?? false,
+      mutation: json['mutation'] as bool? ?? false,
+      requiresClarification: json['requiresClarification'] as bool? ?? false,
+      mode: json['mode'] as String? ?? '',
+      status: json['status'] as String? ?? '',
+      selectedEventId: json['selectedEventId'] as String? ?? '',
+      summary: json['summary'] is Map
+          ? AvaAiCalendarSummaryDto.fromJson(
+              (json['summary'] as Map).cast<String, dynamic>(),
+            )
+          : null,
+      events: [
+        for (final item in json['events'] as List<dynamic>? ?? const [])
+          AvaAiCalendarEventCardDto.fromJson(
+            (item as Map).cast<String, dynamic>(),
+          ),
+      ],
+      conflicts: [
+        for (final item in json['conflicts'] as List<dynamic>? ?? const [])
+          AvaAiCalendarConflictDto.fromJson(
+            (item as Map).cast<String, dynamic>(),
+          ),
+      ],
+      availability: [
+        for (final item in json['availability'] as List<dynamic>? ?? const [])
+          AvaAiCalendarAvailabilityDto.fromJson(
+            (item as Map).cast<String, dynamic>(),
+          ),
+      ],
+      metadata: (json['metadata'] as Map? ?? const {}).cast<String, dynamic>(),
+    );
+  }
+
+  final bool handled;
+  final bool mutation;
+  final bool requiresClarification;
+  final String mode;
+  final String status;
+  final String selectedEventId;
+  final AvaAiCalendarSummaryDto? summary;
+  final List<AvaAiCalendarEventCardDto> events;
+  final List<AvaAiCalendarConflictDto> conflicts;
+  final List<AvaAiCalendarAvailabilityDto> availability;
+  final Map<String, dynamic> metadata;
+
+  bool get hasSignal =>
+      handled ||
+      events.isNotEmpty ||
+      conflicts.isNotEmpty ||
+      availability.isNotEmpty ||
+      status.trim().isNotEmpty;
+
+  AvaAiCalendarEventCardDto? selectedEvent([String overrideId = '']) {
+    final id = overrideId.isNotEmpty ? overrideId : selectedEventId;
+    if (id.isEmpty) {
+      return events.isEmpty ? null : events.first;
+    }
+    for (final event in events) {
+      if (event.id == id) {
+        return event;
+      }
+    }
+    return events.isEmpty ? null : events.first;
+  }
+
+  AvaAiCalendarWorkspaceDto copyWith({String? selectedEventId}) {
+    return AvaAiCalendarWorkspaceDto(
+      handled: handled,
+      mutation: mutation,
+      requiresClarification: requiresClarification,
+      mode: mode,
+      status: status,
+      selectedEventId: selectedEventId ?? this.selectedEventId,
+      summary: summary,
+      events: events,
+      conflicts: conflicts,
+      availability: availability,
+      metadata: metadata,
+    );
+  }
+
+  Map<String, dynamic> toJson() {
+    return {
+      'handled': handled,
+      'mutation': mutation,
+      'requiresClarification': requiresClarification,
+      'mode': mode,
+      'status': status,
+      'selectedEventId': selectedEventId,
+      if (summary != null) 'summary': summary!.toJson(),
+      'events': [for (final event in events) event.toJson()],
+      'conflicts': [for (final conflict in conflicts) conflict.toJson()],
+      'availability': [
+        for (final suggestion in availability) suggestion.toJson(),
+      ],
+      'metadata': metadata,
+    };
+  }
+}
+
+class AvaAiCalendarSummaryDto {
+  const AvaAiCalendarSummaryDto({
+    required this.title,
+    required this.rangeStart,
+    required this.rangeEnd,
+    required this.totalCount,
+    required this.countsByStatus,
+  });
+
+  factory AvaAiCalendarSummaryDto.fromJson(Map<String, dynamic> json) {
+    return AvaAiCalendarSummaryDto(
+      title: json['title'] as String? ?? '',
+      rangeStart: DateTime.tryParse(json['rangeStart'] as String? ?? ''),
+      rangeEnd: DateTime.tryParse(json['rangeEnd'] as String? ?? ''),
+      totalCount: json['totalCount'] as int? ?? 0,
+      countsByStatus: {
+        for (final entry
+            in (json['countsByStatus'] as Map? ?? const {}).entries)
+          entry.key.toString(): (entry.value as num?)?.toInt() ?? 0,
+      },
+    );
+  }
+
+  final String title;
+  final DateTime? rangeStart;
+  final DateTime? rangeEnd;
+  final int totalCount;
+  final Map<String, int> countsByStatus;
+
+  Map<String, dynamic> toJson() {
+    return {
+      'title': title,
+      if (rangeStart != null) 'rangeStart': rangeStart!.toIso8601String(),
+      if (rangeEnd != null) 'rangeEnd': rangeEnd!.toIso8601String(),
+      'totalCount': totalCount,
+      'countsByStatus': countsByStatus,
+    };
+  }
+}
+
+class AvaAiCalendarEventCardDto {
+  const AvaAiCalendarEventCardDto({
+    required this.id,
+    required this.title,
+    required this.description,
+    required this.startAt,
+    required this.endAt,
+    required this.allDay,
+    required this.location,
+    required this.status,
+    required this.statusLabel,
+    required this.categoryName,
+    required this.color,
+    required this.hasAzoom,
+    required this.hasChat,
+    required this.hasFiles,
+    required this.hasNotion,
+    required this.memo,
+  });
+
+  factory AvaAiCalendarEventCardDto.fromJson(Map<String, dynamic> json) {
+    return AvaAiCalendarEventCardDto(
+      id: json['id'] as String? ?? '',
+      title: json['title'] as String? ?? '',
+      description: json['description'] as String? ?? '',
+      startAt: DateTime.tryParse(json['startAt'] as String? ?? ''),
+      endAt: DateTime.tryParse(json['endAt'] as String? ?? ''),
+      allDay: json['allDay'] as bool? ?? false,
+      location: json['location'] as String? ?? '',
+      status: json['status'] as String? ?? '',
+      statusLabel: json['statusLabel'] as String? ?? '',
+      categoryName: json['categoryName'] as String? ?? '',
+      color: json['color'] as String? ?? '',
+      hasAzoom: json['hasAzoom'] as bool? ?? false,
+      hasChat: json['hasChat'] as bool? ?? false,
+      hasFiles: json['hasFiles'] as bool? ?? false,
+      hasNotion: json['hasNotion'] as bool? ?? false,
+      memo: json['memo'] as String? ?? '',
+    );
+  }
+
+  final String id;
+  final String title;
+  final String description;
+  final DateTime? startAt;
+  final DateTime? endAt;
+  final bool allDay;
+  final String location;
+  final String status;
+  final String statusLabel;
+  final String categoryName;
+  final String color;
+  final bool hasAzoom;
+  final bool hasChat;
+  final bool hasFiles;
+  final bool hasNotion;
+  final String memo;
+
+  Map<String, dynamic> toJson() {
+    return {
+      'id': id,
+      'title': title,
+      'description': description,
+      if (startAt != null) 'startAt': startAt!.toIso8601String(),
+      if (endAt != null) 'endAt': endAt!.toIso8601String(),
+      'allDay': allDay,
+      'location': location,
+      'status': status,
+      'statusLabel': statusLabel,
+      'categoryName': categoryName,
+      'color': color,
+      'hasAzoom': hasAzoom,
+      'hasChat': hasChat,
+      'hasFiles': hasFiles,
+      'hasNotion': hasNotion,
+      'memo': memo,
+    };
+  }
+}
+
+class AvaAiCalendarConflictDto {
+  const AvaAiCalendarConflictDto({
+    required this.eventId,
+    required this.title,
+    required this.startAt,
+    required this.endAt,
+    required this.reason,
+    required this.ownerName,
+  });
+
+  factory AvaAiCalendarConflictDto.fromJson(Map<String, dynamic> json) {
+    return AvaAiCalendarConflictDto(
+      eventId: json['eventId'] as String? ?? '',
+      title: json['title'] as String? ?? '',
+      startAt: DateTime.tryParse(json['startAt'] as String? ?? ''),
+      endAt: DateTime.tryParse(json['endAt'] as String? ?? ''),
+      reason: json['reason'] as String? ?? '',
+      ownerName: json['ownerName'] as String? ?? '',
+    );
+  }
+
+  final String eventId;
+  final String title;
+  final DateTime? startAt;
+  final DateTime? endAt;
+  final String reason;
+  final String ownerName;
+
+  Map<String, dynamic> toJson() {
+    return {
+      'eventId': eventId,
+      'title': title,
+      if (startAt != null) 'startAt': startAt!.toIso8601String(),
+      if (endAt != null) 'endAt': endAt!.toIso8601String(),
+      'reason': reason,
+      'ownerName': ownerName,
+    };
+  }
+}
+
+class AvaAiCalendarAvailabilityDto {
+  const AvaAiCalendarAvailabilityDto({
+    required this.startAt,
+    required this.endAt,
+    required this.score,
+  });
+
+  factory AvaAiCalendarAvailabilityDto.fromJson(Map<String, dynamic> json) {
+    return AvaAiCalendarAvailabilityDto(
+      startAt: DateTime.tryParse(json['startAt'] as String? ?? ''),
+      endAt: DateTime.tryParse(json['endAt'] as String? ?? ''),
+      score: json['score'] as int? ?? 0,
+    );
+  }
+
+  final DateTime? startAt;
+  final DateTime? endAt;
+  final int score;
+
+  Map<String, dynamic> toJson() {
+    return {
+      if (startAt != null) 'startAt': startAt!.toIso8601String(),
+      if (endAt != null) 'endAt': endAt!.toIso8601String(),
+      'score': score,
+    };
+  }
+}
+
+class AvaAiAgentTaskDto {
+  const AvaAiAgentTaskDto({
+    required this.id,
+    required this.status,
+    required this.mode,
+    required this.riskLevel,
+    required this.goal,
+    required this.currentStep,
+    required this.summary,
+    required this.verificationSummary,
+    required this.failureReason,
+    required this.steps,
+    required this.createdAt,
+    required this.updatedAt,
+  });
+
+  factory AvaAiAgentTaskDto.fromJson(Map<String, dynamic> json) {
+    return AvaAiAgentTaskDto(
+      id: json['id'] as String? ?? '',
+      status: json['status'] as String? ?? '',
+      mode: json['mode'] as String? ?? '',
+      riskLevel: json['riskLevel'] as String? ?? '',
+      goal: json['goal'] as String? ?? '',
+      currentStep: json['currentStep'] as String? ?? '',
+      summary: json['summary'] as String? ?? '',
+      verificationSummary: json['verificationSummary'] as String? ?? '',
+      failureReason: json['failureReason'] as String? ?? '',
+      steps: [
+        for (final item in json['steps'] as List<dynamic>? ?? const [])
+          AvaAiAgentStepDto.fromJson((item as Map).cast<String, dynamic>()),
+      ],
+      createdAt: DateTime.tryParse(json['createdAt'] as String? ?? ''),
+      updatedAt: DateTime.tryParse(json['updatedAt'] as String? ?? ''),
+    );
+  }
+
+  final String id;
+  final String status;
+  final String mode;
+  final String riskLevel;
+  final String goal;
+  final String currentStep;
+  final String summary;
+  final String verificationSummary;
+  final String failureReason;
+  final List<AvaAiAgentStepDto> steps;
+  final DateTime? createdAt;
+  final DateTime? updatedAt;
+
+  String get statusLabel {
+    return switch (status.toLowerCase()) {
+      'done' => '완료',
+      'recovered' => '복구 완료',
+      'failed' => '실패',
+      'waiting_approval' => '승인 필요',
+      'verifying' => '검증 중',
+      'running' => '실행 중',
+      'planning' => '계획 중',
+      'skipped' => '건너뜀',
+      _ => status.isEmpty ? '대기' : status,
+    };
+  }
+
+  String get statusLine {
+    final detail = summary.isNotEmpty
+        ? summary
+        : verificationSummary.isNotEmpty
+        ? verificationSummary
+        : currentStep;
+    final stepCount = steps.isEmpty ? '' : ' / ${steps.length}단계';
+    return [
+      '에이전트 $statusLabel$stepCount',
+      if (mode.isNotEmpty) mode,
+      if (detail.isNotEmpty) detail,
+    ].join(' · ');
+  }
+}
+
+class AvaAiAgentStepDto {
+  const AvaAiAgentStepDto({
+    required this.id,
+    required this.stepIndex,
+    required this.toolName,
+    required this.status,
+    required this.description,
+    required this.resultSummary,
+    required this.verificationSummary,
+    required this.errorMessage,
+    required this.createdAt,
+    required this.updatedAt,
+  });
+
+  factory AvaAiAgentStepDto.fromJson(Map<String, dynamic> json) {
+    return AvaAiAgentStepDto(
+      id: json['id'] as String? ?? '',
+      stepIndex: json['stepIndex'] as int? ?? 0,
+      toolName: json['toolName'] as String? ?? '',
+      status: json['status'] as String? ?? '',
+      description: json['description'] as String? ?? '',
+      resultSummary: json['resultSummary'] as String? ?? '',
+      verificationSummary: json['verificationSummary'] as String? ?? '',
+      errorMessage: json['errorMessage'] as String? ?? '',
+      createdAt: DateTime.tryParse(json['createdAt'] as String? ?? ''),
+      updatedAt: DateTime.tryParse(json['updatedAt'] as String? ?? ''),
+    );
+  }
+
+  final String id;
+  final int stepIndex;
+  final String toolName;
+  final String status;
+  final String description;
+  final String resultSummary;
+  final String verificationSummary;
+  final String errorMessage;
+  final DateTime? createdAt;
+  final DateTime? updatedAt;
 }
 
 class AvaAiMessageDto {
@@ -355,4 +898,183 @@ class AvaAiWorkspaceSendResultDto {
 
   final String status;
   final List<AvaAiWorkspaceItemDto> items;
+}
+
+class AvaAiNotionCommandDto {
+  const AvaAiNotionCommandDto({
+    required this.answer,
+    required this.status,
+    required this.results,
+    required this.requiresApproval,
+    required this.approvalTitle,
+    required this.approvalDescription,
+    required this.executionMode,
+    this.activePage,
+  });
+
+  factory AvaAiNotionCommandDto.fromJson(Map<String, dynamic> json) {
+    final activePageJson = json['activePage'];
+    return AvaAiNotionCommandDto(
+      answer: json['answer'] as String? ?? '',
+      status: json['status'] as String? ?? '',
+      activePage: activePageJson is Map
+          ? AvaAiNotionPageDto.fromJson(activePageJson.cast<String, dynamic>())
+          : null,
+      results: [
+        for (final item in json['results'] as List<dynamic>? ?? const [])
+          AvaAiNotionPageDto.fromJson((item as Map).cast<String, dynamic>()),
+      ],
+      requiresApproval: json['requiresApproval'] as bool? ?? false,
+      approvalTitle: json['approvalTitle'] as String? ?? '',
+      approvalDescription: json['approvalDescription'] as String? ?? '',
+      executionMode: json['executionMode'] as String? ?? '',
+    );
+  }
+
+  final String answer;
+  final String status;
+  final AvaAiNotionPageDto? activePage;
+  final List<AvaAiNotionPageDto> results;
+  final bool requiresApproval;
+  final String approvalTitle;
+  final String approvalDescription;
+  final String executionMode;
+}
+
+class AvaAiNotionPageDto {
+  const AvaAiNotionPageDto({
+    required this.id,
+    required this.object,
+    required this.title,
+    required this.subtitle,
+    required this.url,
+    required this.icon,
+    required this.coverUrl,
+    required this.content,
+    required this.properties,
+    required this.blocks,
+    required this.children,
+    required this.updatedAt,
+  });
+
+  factory AvaAiNotionPageDto.fromJson(Map<String, dynamic> json) {
+    return AvaAiNotionPageDto(
+      id: json['id'] as String? ?? '',
+      object: json['object'] as String? ?? '',
+      title: json['title'] as String? ?? '',
+      subtitle: json['subtitle'] as String? ?? '',
+      url: json['url'] as String? ?? '',
+      icon: json['icon'] as String? ?? '',
+      coverUrl: json['coverUrl'] as String? ?? '',
+      content: json['content'] as String? ?? '',
+      updatedAt: DateTime.tryParse(json['updatedAt'] as String? ?? ''),
+      properties: [
+        for (final item in json['properties'] as List<dynamic>? ?? const [])
+          AvaAiNotionPropertyDto.fromJson(
+            (item as Map).cast<String, dynamic>(),
+          ),
+      ],
+      blocks: [
+        for (final item in json['blocks'] as List<dynamic>? ?? const [])
+          AvaAiNotionBlockDto.fromJson((item as Map).cast<String, dynamic>()),
+      ],
+      children: [
+        for (final item in json['children'] as List<dynamic>? ?? const [])
+          AvaAiNotionPageDto.fromJson((item as Map).cast<String, dynamic>()),
+      ],
+    );
+  }
+
+  final String id;
+  final String object;
+  final String title;
+  final String subtitle;
+  final String url;
+  final String icon;
+  final String coverUrl;
+  final String content;
+  final DateTime? updatedAt;
+  final List<AvaAiNotionPropertyDto> properties;
+  final List<AvaAiNotionBlockDto> blocks;
+  final List<AvaAiNotionPageDto> children;
+}
+
+class AvaAiNotionPropertyDto {
+  const AvaAiNotionPropertyDto({
+    required this.name,
+    required this.type,
+    required this.value,
+    required this.color,
+  });
+
+  factory AvaAiNotionPropertyDto.fromJson(Map<String, dynamic> json) {
+    return AvaAiNotionPropertyDto(
+      name: json['name'] as String? ?? '',
+      type: json['type'] as String? ?? '',
+      value: json['value'] as String? ?? '',
+      color: json['color'] as String? ?? '',
+    );
+  }
+
+  final String name;
+  final String type;
+  final String value;
+  final String color;
+}
+
+class AvaAiNotionBlockDto {
+  const AvaAiNotionBlockDto({
+    required this.id,
+    required this.type,
+    required this.text,
+    required this.depth,
+    required this.checked,
+    required this.url,
+    required this.icon,
+    required this.color,
+    required this.cells,
+    required this.children,
+    this.database,
+  });
+
+  factory AvaAiNotionBlockDto.fromJson(Map<String, dynamic> json) {
+    return AvaAiNotionBlockDto(
+      id: json['id'] as String? ?? '',
+      type: json['type'] as String? ?? '',
+      text: json['text'] as String? ?? '',
+      depth: json['depth'] as int? ?? 0,
+      checked: json['checked'] as bool? ?? false,
+      url: json['url'] as String? ?? '',
+      icon: json['icon'] as String? ?? '',
+      color: json['color'] as String? ?? '',
+      cells: [
+        for (final row in json['cells'] as List<dynamic>? ?? const [])
+          [
+            for (final cell in row as List<dynamic>? ?? const [])
+              cell.toString(),
+          ],
+      ],
+      children: [
+        for (final item in json['children'] as List<dynamic>? ?? const [])
+          AvaAiNotionBlockDto.fromJson((item as Map).cast<String, dynamic>()),
+      ],
+      database: json['database'] is Map
+          ? AvaAiNotionPageDto.fromJson(
+              (json['database'] as Map).cast<String, dynamic>(),
+            )
+          : null,
+    );
+  }
+
+  final String id;
+  final String type;
+  final String text;
+  final int depth;
+  final bool checked;
+  final String url;
+  final String icon;
+  final String color;
+  final List<List<String>> cells;
+  final List<AvaAiNotionBlockDto> children;
+  final AvaAiNotionPageDto? database;
 }

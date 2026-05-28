@@ -2,6 +2,8 @@ package com.ava.backend.auth.service;
 
 import java.time.Instant;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
@@ -11,6 +13,7 @@ import com.ava.backend.auth.dto.AccountFindResponse;
 import com.ava.backend.auth.dto.AuthRealtimeEvent;
 import com.ava.backend.auth.dto.AuthResponse;
 import com.ava.backend.auth.dto.LoginRequest;
+import com.ava.backend.auth.dto.PasswordVerificationRequest;
 import com.ava.backend.auth.dto.RefreshTokenRequest;
 import com.ava.backend.auth.dto.SignupRequest;
 import com.ava.backend.auth.dto.SignupResponse;
@@ -28,6 +31,7 @@ import com.ava.backend.user.repository.UserProfileRepository;
 @Service
 public class AuthService {
 
+	private static final Logger log = LoggerFactory.getLogger(AuthService.class);
 	private static final String ONLINE = "\uC628\uB77C\uC778";
 	private static final String OFFLINE = "\uC624\uD504\uB77C\uC778";
 	private static final String DUPLICATE_LOGIN_MESSAGE = "\uB2E4\uB978 \uAE30\uAE30\uC5D0\uC11C \uB85C\uADF8\uC778 \uC911\uC785\uB2C8\uB2E4.";
@@ -160,6 +164,15 @@ public class AuthService {
 		return new AccountFindResponse(found, found ? maskEmail(email) : "");
 	}
 
+	@Transactional(readOnly = true)
+	public void verifyPassword(AuthPrincipal principal, PasswordVerificationRequest request) {
+		UserAccount account = userAccountDao.findById(principal.userId())
+			.orElseThrow(() -> new IllegalArgumentException("\uACC4\uC815\uC744 \uCC3E\uC744 \uC218 \uC5C6\uC2B5\uB2C8\uB2E4."));
+		if (!passwordEncoder.matches(request.password(), account.getPasswordHash())) {
+			throw new IllegalArgumentException("\uBE44\uBC00\uBC88\uD638\uAC00 \uC62C\uBC14\uB974\uC9C0 \uC54A\uC2B5\uB2C8\uB2E4.");
+		}
+	}
+
 	private AuthResponse issue(UserAccount account, UserProfile profile, boolean canReplacePrevious, boolean rememberLogin) {
 		profile.setStatus(ONLINE);
 		profile.setPresenceUpdatedAt(Instant.now());
@@ -176,16 +189,20 @@ public class AuthService {
 	}
 
 	private void publishForcedLogout(UserAccount account) {
-		messagingTemplate.convertAndSendToUser(
-			account.getEmail(),
-			"/queue/auth-events",
-			new AuthRealtimeEvent(
-				"forced_logout",
-				"duplicate_login",
-				FORCED_LOGOUT_MESSAGE,
-				Instant.now()
-			)
-		);
+		try {
+			messagingTemplate.convertAndSendToUser(
+				account.getEmail(),
+				"/queue/auth-events",
+				new AuthRealtimeEvent(
+					"forced_logout",
+					"duplicate_login",
+					FORCED_LOGOUT_MESSAGE,
+					Instant.now()
+				)
+			);
+		} catch (RuntimeException exception) {
+			log.warn("Forced-logout notification failed for user {}.", account.getId(), exception);
+		}
 	}
 
 	private String normalizeEmail(String email) {

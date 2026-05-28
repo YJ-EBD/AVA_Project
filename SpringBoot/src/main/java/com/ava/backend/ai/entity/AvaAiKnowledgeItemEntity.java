@@ -50,6 +50,12 @@ public class AvaAiKnowledgeItemEntity {
 	@Column(nullable = false, columnDefinition = "text")
 	private String combinedText;
 
+	@Column(name = "embedding_model", length = 120)
+	private String embeddingModel;
+
+	@Column(name = "embedding_vector", columnDefinition = "text")
+	private String embeddingVector;
+
 	@Column(nullable = false)
 	private boolean enabled = true;
 
@@ -132,6 +138,14 @@ public class AvaAiKnowledgeItemEntity {
 		return combinedText;
 	}
 
+	public String getEmbeddingModel() {
+		return embeddingModel;
+	}
+
+	public String getEmbeddingVector() {
+		return embeddingVector;
+	}
+
 	public boolean isEnabled() {
 		return enabled;
 	}
@@ -151,5 +165,10 @@ public class AvaAiKnowledgeItemEntity {
 	public void markUsed() {
 		this.useCount = getUseCount() + 1;
 		this.lastUsedAt = Instant.now();
+	}
+
+	public void updateEmbedding(String embeddingModel, String embeddingVector) {
+		this.embeddingModel = embeddingModel;
+		this.embeddingVector = embeddingVector;
 	}
 }

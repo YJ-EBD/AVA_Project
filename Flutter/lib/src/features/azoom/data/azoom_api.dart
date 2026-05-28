@@ -7,7 +7,6 @@ import 'package:stomp_dart_client/stomp_dart_client.dart';
 
 import '../../auth/application/company_scope.dart';
 import '../../auth/data/auth_api.dart';
-import '../../messenger/data/chat_api.dart';
 
 final azoomApiProvider = Provider<AzoomApi>((ref) {
   return AzoomApi(ref.watch(dioProvider), ref.watch(activeCompanyProvider));
@@ -25,33 +24,6 @@ class AzoomApi {
       options: _authOptions(accessToken),
     );
     return AzoomChannelsDto.fromJson(response.data ?? const {});
-  }
-
-  Future<List<ChatMessageDto>> textMessages({
-    required String accessToken,
-    required String channelId,
-  }) async {
-    final response = await _dio.get<List<dynamic>>(
-      '/api/azoom/text-channels/$channelId/messages',
-      options: _authOptions(accessToken),
-    );
-    return [
-      for (final item in response.data ?? const [])
-        ChatMessageDto.fromJson((item as Map).cast<String, dynamic>()),
-    ];
-  }
-
-  Future<ChatMessageDto> sendTextMessage({
-    required String accessToken,
-    required String channelId,
-    required String content,
-  }) async {
-    final response = await _dio.post<Map<String, dynamic>>(
-      '/api/azoom/text-channels/$channelId/messages',
-      data: {'content': content, 'silent': false, 'spoiler': false},
-      options: _authOptions(accessToken),
-    );
-    return ChatMessageDto.fromJson(response.data ?? const {});
   }
 
   Future<AzoomVoiceJoinDto> joinVoice({
@@ -104,6 +76,17 @@ class AzoomApi {
     return AzoomVoiceChannelDto.fromJson(response.data ?? const {});
   }
 
+  Future<AzoomLiveKitTokenDto> liveKitToken({
+    required String accessToken,
+    required String channelId,
+  }) async {
+    final response = await _dio.get<Map<String, dynamic>>(
+      '/api/azoom/voice-channels/$channelId/livekit-token',
+      options: _authOptions(accessToken),
+    );
+    return AzoomLiveKitTokenDto.fromJson(response.data ?? const {});
+  }
+
   Future<List<AzoomMeetingTranscriptSummaryDto>> meetingTranscripts({
     required String accessToken,
   }) async {
@@ -117,6 +100,80 @@ class AzoomApi {
           (item as Map).cast<String, dynamic>(),
         ),
     ];
+  }
+
+  Future<AzoomWorkspaceDto> workspace({required String accessToken}) async {
+    final response = await _dio.get<Map<String, dynamic>>(
+      '/api/azoom/workspace',
+      options: _authOptions(accessToken),
+    );
+    return AzoomWorkspaceDto.fromJson(response.data ?? const {});
+  }
+
+  Future<List<AzoomInviteCandidateDto>> inviteCandidates({
+    required String accessToken,
+  }) async {
+    final response = await _dio.get<List<dynamic>>(
+      '/api/azoom/invite-candidates',
+      options: _authOptions(accessToken),
+    );
+    return [
+      for (final item in response.data ?? const [])
+        AzoomInviteCandidateDto.fromJson((item as Map).cast<String, dynamic>()),
+    ];
+  }
+
+  Future<List<AzoomCompanyUserDto>> companyUsers({
+    required String accessToken,
+  }) async {
+    final response = await _dio.get<List<dynamic>>(
+      '/api/users',
+      options: _authOptions(accessToken),
+    );
+    return [
+      for (final item in response.data ?? const [])
+        AzoomCompanyUserDto.fromJson((item as Map).cast<String, dynamic>()),
+    ];
+  }
+
+  Future<AzoomWorkspaceDto> inviteMembers({
+    required String accessToken,
+    required List<String> accountIds,
+  }) async {
+    final response = await _dio.post<Map<String, dynamic>>(
+      '/api/azoom/invite-members',
+      data: {'accountIds': accountIds},
+      options: _authOptions(accessToken),
+    );
+    return AzoomWorkspaceDto.fromJson(response.data ?? const {});
+  }
+
+  Future<AzoomVoiceChannelDto> updateChannelAccess({
+    required String accessToken,
+    required String channelId,
+    required String accessMode,
+    required List<String> allowedDepartments,
+  }) async {
+    final response = await _dio.put<Map<String, dynamic>>(
+      '/api/azoom/voice-channels/$channelId/access',
+      data: {
+        'accessMode': accessMode,
+        'allowedDepartments': allowedDepartments,
+      },
+      options: _authOptions(accessToken),
+    );
+    return AzoomVoiceChannelDto.fromJson(response.data ?? const {});
+  }
+
+  Future<AzoomVoiceEffectDto> triggerFirework({
+    required String accessToken,
+    required String channelId,
+  }) async {
+    final response = await _dio.post<Map<String, dynamic>>(
+      '/api/azoom/voice-channels/$channelId/effects/firework',
+      options: _authOptions(accessToken),
+    );
+    return AzoomVoiceEffectDto.fromJson(response.data ?? const {});
   }
 
   Future<AzoomMeetingTranscriptDto> meetingTranscript({
@@ -236,68 +293,6 @@ class AzoomApi {
       sendTimeout: sendTimeout,
       receiveTimeout: receiveTimeout,
     );
-  }
-}
-
-class AzoomTextRealtimeClient {
-  AzoomTextRealtimeClient({
-    required this.websocketUrl,
-    required this.accessToken,
-    required this.roomCode,
-  });
-
-  final String websocketUrl;
-  final String accessToken;
-  final String roomCode;
-
-  final _messages = StreamController<ChatMessageDto>.broadcast();
-  StompClient? _client;
-  StompUnsubscribe? _unsubscribe;
-
-  Stream<ChatMessageDto> get messages => _messages.stream;
-
-  void connect() {
-    final headers = {'Authorization': 'Bearer $accessToken'};
-    _client = StompClient(
-      config: StompConfig(
-        url: websocketUrl,
-        stompConnectHeaders: headers,
-        webSocketConnectHeaders: headers,
-        reconnectDelay: const Duration(seconds: 3),
-        connectionTimeout: const Duration(seconds: 8),
-        onConnect: (_) {
-          _unsubscribe = _client?.subscribe(
-            destination: '/topic/azoom/text/$roomCode',
-            callback: (frame) {
-              final body = frame.body;
-              if (body == null || body.isEmpty) {
-                return;
-              }
-              final json = jsonDecode(body);
-              if (json is Map) {
-                _messages.add(
-                  ChatMessageDto.fromJson(json.cast<String, dynamic>()),
-                );
-              }
-            },
-          );
-        },
-        onWebSocketError: (error) {
-          _messages.addError(error);
-        },
-        onStompError: (frame) {
-          _messages.addError(frame.body ?? 'STOMP error');
-        },
-      ),
-    )..activate();
-  }
-
-  void dispose() {
-    _unsubscribe?.call();
-    _unsubscribe = null;
-    _client?.deactivate();
-    _client = null;
-    _messages.close();
   }
 }
 
@@ -439,12 +434,87 @@ class AzoomNotivaRealtimeClient {
   }
 }
 
+class AzoomVoiceEffectRealtimeClient {
+  AzoomVoiceEffectRealtimeClient({
+    required this.websocketUrl,
+    required this.accessToken,
+    required this.roomNames,
+  });
+
+  final String websocketUrl;
+  final String accessToken;
+  final List<String> roomNames;
+
+  final _events = StreamController<AzoomVoiceEffectDto>.broadcast();
+  StompClient? _client;
+  final List<StompUnsubscribe> _unsubscribes = [];
+
+  Stream<AzoomVoiceEffectDto> get events => _events.stream;
+
+  void connect() {
+    final headers = {'Authorization': 'Bearer $accessToken'};
+    _client = StompClient(
+      config: StompConfig(
+        url: websocketUrl,
+        stompConnectHeaders: headers,
+        webSocketConnectHeaders: headers,
+        reconnectDelay: const Duration(seconds: 3),
+        connectionTimeout: const Duration(seconds: 8),
+        onConnect: (_) {
+          _unsubscribes
+            ..forEach((unsubscribe) => unsubscribe())
+            ..clear();
+          for (final roomName in roomNames.toSet()) {
+            final topic = roomName.trim();
+            if (topic.isEmpty) {
+              continue;
+            }
+            final unsubscribe = _client?.subscribe(
+              destination: '/topic/azoom/voice-effects/$topic',
+              callback: (frame) {
+                final body = frame.body;
+                if (body == null || body.isEmpty) {
+                  return;
+                }
+                final json = jsonDecode(body);
+                if (json is Map) {
+                  _events.add(
+                    AzoomVoiceEffectDto.fromJson(json.cast<String, dynamic>()),
+                  );
+                }
+              },
+            );
+            if (unsubscribe != null) {
+              _unsubscribes.add(unsubscribe);
+            }
+          }
+        },
+        onWebSocketError: (error) {
+          _events.addError(error);
+        },
+        onStompError: (frame) {
+          _events.addError(frame.body ?? 'STOMP error');
+        },
+      ),
+    )..activate();
+  }
+
+  void dispose() {
+    for (final unsubscribe in _unsubscribes) {
+      unsubscribe();
+    }
+    _unsubscribes.clear();
+    _client?.deactivate();
+    _client = null;
+    _events.close();
+  }
+}
+
 class AzoomChannelsDto {
   const AzoomChannelsDto({
     required this.companyName,
     required this.liveKitEnabled,
     required this.liveKitUrl,
-    required this.textChannels,
     required this.voiceChannels,
   });
 
@@ -453,10 +523,6 @@ class AzoomChannelsDto {
       companyName: json['companyName'] as String? ?? 'ABBA-S',
       liveKitEnabled: json['liveKitEnabled'] as bool? ?? false,
       liveKitUrl: json['liveKitUrl'] as String? ?? '',
-      textChannels: [
-        for (final item in json['textChannels'] as List<dynamic>? ?? const [])
-          AzoomTextChannelDto.fromJson((item as Map).cast<String, dynamic>()),
-      ],
       voiceChannels: [
         for (final item in json['voiceChannels'] as List<dynamic>? ?? const [])
           AzoomVoiceChannelDto.fromJson((item as Map).cast<String, dynamic>()),
@@ -467,28 +533,150 @@ class AzoomChannelsDto {
   final String companyName;
   final bool liveKitEnabled;
   final String liveKitUrl;
-  final List<AzoomTextChannelDto> textChannels;
   final List<AzoomVoiceChannelDto> voiceChannels;
 }
 
-class AzoomTextChannelDto {
-  const AzoomTextChannelDto({
+class AzoomWorkspaceDto {
+  const AzoomWorkspaceDto({
     required this.id,
+    required this.companyName,
+    required this.companySlug,
     required this.name,
-    required this.roomCode,
+    required this.members,
   });
 
-  factory AzoomTextChannelDto.fromJson(Map<String, dynamic> json) {
-    return AzoomTextChannelDto(
+  factory AzoomWorkspaceDto.fromJson(Map<String, dynamic> json) {
+    return AzoomWorkspaceDto(
       id: json['id'] as String? ?? '',
+      companyName: json['companyName'] as String? ?? '',
+      companySlug: json['companySlug'] as String? ?? '',
       name: json['name'] as String? ?? '',
-      roomCode: json['roomCode'] as String? ?? '',
+      members: [
+        for (final item in json['members'] as List<dynamic>? ?? const [])
+          AzoomMemberDto.fromJson((item as Map).cast<String, dynamic>()),
+      ],
     );
   }
 
   final String id;
+  final String companyName;
+  final String companySlug;
   final String name;
-  final String roomCode;
+  final List<AzoomMemberDto> members;
+}
+
+class AzoomMemberDto {
+  const AzoomMemberDto({
+    required this.accountId,
+    required this.email,
+    required this.displayName,
+    required this.role,
+  });
+
+  factory AzoomMemberDto.fromJson(Map<String, dynamic> json) {
+    return AzoomMemberDto(
+      accountId: json['accountId'] as String? ?? '',
+      email: json['email'] as String? ?? '',
+      displayName: json['displayName'] as String? ?? '',
+      role: json['role'] as String? ?? 'MEMBER',
+    );
+  }
+
+  final String accountId;
+  final String email;
+  final String displayName;
+  final String role;
+}
+
+class AzoomInviteCandidateDto {
+  const AzoomInviteCandidateDto({
+    required this.accountId,
+    required this.email,
+    required this.displayName,
+    required this.department,
+    required this.position,
+    required this.avatarColor,
+    required this.avatarImageUrl,
+  });
+
+  factory AzoomInviteCandidateDto.fromJson(Map<String, dynamic> json) {
+    return AzoomInviteCandidateDto(
+      accountId: json['accountId'] as String? ?? '',
+      email: json['email'] as String? ?? '',
+      displayName: json['displayName'] as String? ?? '',
+      department: json['department'] as String? ?? '',
+      position: json['position'] as String? ?? '',
+      avatarColor: json['avatarColor'] as String? ?? '#7AA06A',
+      avatarImageUrl: json['avatarImageUrl'] as String? ?? '',
+    );
+  }
+
+  final String accountId;
+  final String email;
+  final String displayName;
+  final String department;
+  final String position;
+  final String avatarColor;
+  final String avatarImageUrl;
+}
+
+class AzoomCompanyUserDto {
+  const AzoomCompanyUserDto({
+    required this.accountId,
+    required this.email,
+    required this.displayName,
+    required this.department,
+    required this.position,
+    required this.avatarColor,
+    required this.avatarImageUrl,
+  });
+
+  factory AzoomCompanyUserDto.fromJson(Map<String, dynamic> json) {
+    return AzoomCompanyUserDto(
+      accountId: json['id'] as String? ?? '',
+      email: json['email'] as String? ?? '',
+      displayName:
+          (json['displayName'] as String?) ?? (json['name'] as String? ?? ''),
+      department: json['department'] as String? ?? '',
+      position: json['position'] as String? ?? '',
+      avatarColor: json['avatarColor'] as String? ?? '#7AA06A',
+      avatarImageUrl: json['avatarImageUrl'] as String? ?? '',
+    );
+  }
+
+  final String accountId;
+  final String email;
+  final String displayName;
+  final String department;
+  final String position;
+  final String avatarColor;
+  final String avatarImageUrl;
+}
+
+class AzoomVoiceEffectDto {
+  const AzoomVoiceEffectDto({
+    required this.type,
+    required this.channelId,
+    required this.roomName,
+    required this.senderUserId,
+    required this.occurredAt,
+  });
+
+  factory AzoomVoiceEffectDto.fromJson(Map<String, dynamic> json) {
+    return AzoomVoiceEffectDto(
+      type: json['type'] as String? ?? '',
+      channelId: json['channelId'] as String? ?? '',
+      roomName: json['roomName'] as String? ?? '',
+      senderUserId: json['senderUserId'] as String? ?? '',
+      occurredAt: DateTime.tryParse(json['occurredAt'] as String? ?? ''),
+    );
+  }
+
+  final String type;
+  final String channelId;
+  final String roomName;
+  final String senderUserId;
+  final DateTime? occurredAt;
 }
 
 class AzoomVoiceChannelDto {
@@ -499,6 +687,9 @@ class AzoomVoiceChannelDto {
     required this.startedAt,
     required this.serverNow,
     required this.receivedAt,
+    required this.accessMode,
+    required this.allowedDepartments,
+    required this.canJoin,
     required this.participants,
   });
 
@@ -511,6 +702,13 @@ class AzoomVoiceChannelDto {
       startedAt: DateTime.tryParse(json['startedAt'] as String? ?? ''),
       serverNow: DateTime.tryParse(json['serverNow'] as String? ?? ''),
       receivedAt: receivedAt,
+      accessMode: json['accessMode'] as String? ?? 'ALL',
+      allowedDepartments: [
+        for (final item
+            in json['allowedDepartments'] as List<dynamic>? ?? const [])
+          item.toString(),
+      ],
+      canJoin: json['canJoin'] as bool? ?? true,
       participants: [
         for (final item in json['participants'] as List<dynamic>? ?? const [])
           AzoomVoiceParticipantDto.fromJson(
@@ -526,12 +724,18 @@ class AzoomVoiceChannelDto {
   final DateTime? startedAt;
   final DateTime? serverNow;
   final DateTime? receivedAt;
+  final String accessMode;
+  final List<String> allowedDepartments;
+  final bool canJoin;
   final List<AzoomVoiceParticipantDto> participants;
 
   AzoomVoiceChannelDto copyWith({
     DateTime? startedAt,
     DateTime? serverNow,
     DateTime? receivedAt,
+    String? accessMode,
+    List<String>? allowedDepartments,
+    bool? canJoin,
     List<AzoomVoiceParticipantDto>? participants,
   }) {
     return AzoomVoiceChannelDto(
@@ -541,6 +745,9 @@ class AzoomVoiceChannelDto {
       startedAt: startedAt ?? this.startedAt,
       serverNow: serverNow ?? this.serverNow,
       receivedAt: receivedAt ?? this.receivedAt,
+      accessMode: accessMode ?? this.accessMode,
+      allowedDepartments: allowedDepartments ?? this.allowedDepartments,
+      canJoin: canJoin ?? this.canJoin,
       participants: participants ?? this.participants,
     );
   }
@@ -609,6 +816,9 @@ class AzoomVoiceJoinDto {
               startedAt: null,
               serverNow: null,
               receivedAt: null,
+              accessMode: 'ALL',
+              allowedDepartments: [],
+              canJoin: true,
               participants: [],
             ),
       liveKit: json['liveKit'] is Map

@@ -4,9 +4,10 @@ import java.time.Instant;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Comparator;
-import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 
@@ -19,7 +20,7 @@ import com.ava.backend.user.dto.UserProfileResponse;
 @Service
 public class AzoomVoiceStateService {
 
-	private static final Duration STALE_AFTER = Duration.ofSeconds(90);
+	private static final Duration STALE_AFTER = Duration.ofSeconds(10);
 
 	private final Map<String, Map<UUID, VoiceParticipantState>> channels = new ConcurrentHashMap<>();
 	private final Map<String, Instant> channelStartedAt = new ConcurrentHashMap<>();
@@ -57,6 +58,21 @@ public class AzoomVoiceStateService {
 			}
 		}
 		return snapshot(channelId);
+	}
+
+	public Set<String> leaveAll(UUID userId) {
+		Set<String> changedChannelIds = new LinkedHashSet<>();
+		for (Map.Entry<String, Map<UUID, VoiceParticipantState>> entry : channels.entrySet()) {
+			Map<UUID, VoiceParticipantState> participants = entry.getValue();
+			if (participants.remove(userId) != null) {
+				changedChannelIds.add(entry.getKey());
+			}
+			if (participants.isEmpty()) {
+				channels.remove(entry.getKey(), participants);
+				channelStartedAt.remove(entry.getKey());
+			}
+		}
+		return changedChannelIds;
 	}
 
 	public List<AzoomVoiceParticipantResponse> update(

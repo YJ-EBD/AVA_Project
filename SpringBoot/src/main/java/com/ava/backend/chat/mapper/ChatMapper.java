@@ -6,6 +6,7 @@ import java.util.List;
 import org.springframework.stereotype.Component;
 
 import com.ava.backend.chat.dto.ChatAttachmentResponse;
+import com.ava.backend.chat.dto.ChatMentionResponse;
 import com.ava.backend.chat.dto.ChatMessageResponse;
 import com.ava.backend.chat.dto.ChatNoticeResponse;
 import com.ava.backend.chat.dto.ChatRoomResponse;
@@ -54,6 +55,18 @@ public class ChatMapper {
 		Instant pinnedAt,
 		int unreadCount
 	) {
+		return toRoomResponse(room, participantCount, members, pinned, pinnedAt, unreadCount, false);
+	}
+
+	public ChatRoomResponse toRoomResponse(
+		ChatRoomEntity room,
+		long participantCount,
+		List<UserProfileResponse> members,
+		boolean pinned,
+		Instant pinnedAt,
+		int unreadCount,
+		boolean mentioned
+	) {
 		return new ChatRoomResponse(
 			room.getCode(),
 			room.getTitle(),
@@ -61,14 +74,29 @@ public class ChatMapper {
 			participantCount,
 			pinned,
 			pinned ? pinnedAt : null,
-			room.getLastMessage(),
+			normalizeRoomPreview(room.getLastMessage()),
 			room.getLastMessageAt(),
 			room.isLastMessageSpoiler(),
 			room.getAvatarImageUrl(),
 			toNoticeResponse(room),
 			members,
-			unreadCount
+			unreadCount,
+			mentioned
 		);
+	}
+
+	private String normalizeRoomPreview(String value) {
+		if (value == null || value.isBlank()) {
+			return value == null ? "" : value;
+		}
+		String trimmed = value.trim();
+		if (trimmed.startsWith("[이미지]")) {
+			return "[이미지]";
+		}
+		if (trimmed.startsWith("[동영상]")) {
+			return "[동영상]";
+		}
+		return value;
 	}
 
 	private ChatNoticeResponse toNoticeResponse(ChatRoomEntity room) {
@@ -99,7 +127,11 @@ public class ChatMapper {
 			message.isSystemMessage(),
 			message.isSilentMessage(),
 			message.isSpoilerMessage(),
-			toAttachmentResponse(message)
+			message.isDeletedForEveryone(),
+			toAttachmentResponse(message),
+			message.isDeletedForEveryone()
+				? List.of()
+				: toMentionResponses(message.getMentionUserIds(), message.getMentionDisplayNames())
 		);
 	}
 
@@ -122,8 +154,24 @@ public class ChatMapper {
 			message.isSystemMessage(),
 			message.isSilentMessage(),
 			message.isSpoilerMessage(),
-			toAttachmentResponse(message)
+			message.isDeletedForEveryone(),
+			toAttachmentResponse(message),
+			message.isDeletedForEveryone()
+				? List.of()
+				: toMentionResponses(message.getMentionUserIds(), message.getMentionDisplayNames())
 		);
+	}
+
+	private List<ChatMentionResponse> toMentionResponses(List<java.util.UUID> userIds, List<String> displayNames) {
+		if (userIds == null || userIds.isEmpty()) {
+			return List.of();
+		}
+		return java.util.stream.IntStream.range(0, userIds.size())
+			.mapToObj(index -> new ChatMentionResponse(
+				userIds.get(index),
+				displayNames != null && index < displayNames.size() ? displayNames.get(index) : ""
+			))
+			.toList();
 	}
 
 	private ChatAttachmentResponse toAttachmentResponse(ChatMessageDocument message) {

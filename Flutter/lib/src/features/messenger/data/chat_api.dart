@@ -209,9 +209,11 @@ class ChatApi {
   Future<List<ChatMessageDto>> messages({
     required String accessToken,
     required String roomCode,
+    int limit = 80,
   }) async {
     final response = await _dio.get<List<dynamic>>(
       '/api/chat/rooms/$roomCode/messages',
+      queryParameters: {'limit': limit},
       options: _authOptions(accessToken),
     );
 
@@ -221,16 +223,102 @@ class ChatApi {
     ];
   }
 
+  Future<List<ChatMessageDto>> messagesAround({
+    required String accessToken,
+    required String roomCode,
+    required String messageId,
+    int before = 40,
+    int after = 40,
+  }) async {
+    final response = await _dio.get<List<dynamic>>(
+      '/api/chat/rooms/$roomCode/messages/around/$messageId',
+      queryParameters: {'before': before, 'after': after},
+      options: _authOptions(accessToken),
+    );
+
+    return [
+      for (final item in response.data ?? const [])
+        ChatMessageDto.fromJson((item as Map).cast<String, dynamic>()),
+    ];
+  }
+
+  Future<List<ChatMessageDto>> messagesBefore({
+    required String accessToken,
+    required String roomCode,
+    required String messageId,
+    int limit = 80,
+  }) async {
+    final response = await _dio.get<List<dynamic>>(
+      '/api/chat/rooms/$roomCode/messages/before/$messageId',
+      queryParameters: {'limit': limit},
+      options: _authOptions(accessToken),
+    );
+
+    return [
+      for (final item in response.data ?? const [])
+        ChatMessageDto.fromJson((item as Map).cast<String, dynamic>()),
+    ];
+  }
+
+  Future<ChatLinkPreviewDto> linkPreview({
+    required String accessToken,
+    required String url,
+  }) async {
+    final response = await _dio.get<Map<String, dynamic>>(
+      '/api/chat/link-preview',
+      queryParameters: {'url': url},
+      options: _authOptions(accessToken),
+    );
+    return ChatLinkPreviewDto.fromJson(response.data ?? const {});
+  }
+
+  Future<List<ChatMentionNotificationDto>> mentionNotifications({
+    required String accessToken,
+    String status = 'all',
+    int limit = 80,
+  }) async {
+    final response = await _dio.get<List<dynamic>>(
+      '/api/chat/mention-notifications',
+      queryParameters: {'status': status, 'limit': limit},
+      options: _authOptions(accessToken),
+    );
+
+    return [
+      for (final item in response.data ?? const [])
+        ChatMentionNotificationDto.fromJson(
+          (item as Map).cast<String, dynamic>(),
+        ),
+    ];
+  }
+
+  Future<ChatMentionNotificationDto> markMentionNotificationChecked({
+    required String accessToken,
+    required String notificationId,
+  }) async {
+    final response = await _dio.post<Map<String, dynamic>>(
+      '/api/chat/mention-notifications/$notificationId/checked',
+      options: _authOptions(accessToken),
+    );
+
+    return ChatMentionNotificationDto.fromJson(response.data ?? const {});
+  }
+
   Future<ChatMessageDto> send({
     required String accessToken,
     required String roomCode,
     required String content,
     bool silent = false,
     bool spoiler = false,
+    List<ChatMentionDto> mentions = const [],
   }) async {
     final response = await _dio.post<Map<String, dynamic>>(
       '/api/chat/rooms/$roomCode/messages',
-      data: {'content': content, 'silent': silent, 'spoiler': spoiler},
+      data: {
+        'content': content,
+        'silent': silent,
+        'spoiler': spoiler,
+        'mentions': [for (final mention in mentions) mention.toJson()],
+      },
       options: _authOptions(accessToken),
     );
 
@@ -278,6 +366,19 @@ class ChatApi {
       ),
       onReceiveProgress: onReceiveProgress,
     );
+  }
+
+  Future<ChatMessageDto> deleteMessageForEveryone({
+    required String accessToken,
+    required String roomCode,
+    required String messageId,
+  }) async {
+    final response = await _dio.post<Map<String, dynamic>>(
+      '/api/chat/rooms/$roomCode/messages/$messageId/delete-for-everyone',
+      options: _authOptions(accessToken),
+    );
+
+    return ChatMessageDto.fromJson(response.data ?? const {});
   }
 
   Future<ChatReadStateDto> markRead({
@@ -371,6 +472,27 @@ class ChatApi {
   }) async {
     final response = await _dio.post<Map<String, dynamic>>(
       '/api/chat/group-rooms',
+      data: {
+        'targetUserIds': targetUserIds,
+        if (title != null && title.trim().isNotEmpty) 'title': title.trim(),
+        if (avatarImageUrl != null && avatarImageUrl.trim().isNotEmpty)
+          'avatarImageUrl': avatarImageUrl.trim(),
+      },
+      options: _authOptions(accessToken),
+    );
+
+    return ChatRoomDto.fromJson(response.data ?? const {});
+  }
+
+  Future<ChatRoomDto> inviteRoomMembers({
+    required String accessToken,
+    required String roomCode,
+    required List<String> targetUserIds,
+    String? title,
+    String? avatarImageUrl,
+  }) async {
+    final response = await _dio.post<Map<String, dynamic>>(
+      '/api/chat/rooms/$roomCode/members',
       data: {
         'targetUserIds': targetUserIds,
         if (title != null && title.trim().isNotEmpty) 'title': title.trim(),
@@ -492,6 +614,7 @@ class ChatRoomDto {
     required this.notice,
     required this.members,
     required this.unreadCount,
+    required this.mentioned,
   });
 
   const ChatRoomDto.empty()
@@ -507,7 +630,8 @@ class ChatRoomDto {
       avatarImageUrl = '',
       notice = null,
       members = const [],
-      unreadCount = 0;
+      unreadCount = 0,
+      mentioned = false;
 
   factory ChatRoomDto.fromJson(Map<String, dynamic> json) {
     return ChatRoomDto(
@@ -531,6 +655,10 @@ class ChatRoomDto {
           UserProfileDto.fromJson((item as Map).cast<String, dynamic>()),
       ],
       unreadCount: (json['unreadCount'] as num?)?.toInt() ?? 0,
+      mentioned:
+          json['mentioned'] as bool? ??
+          json['hasUnreadMention'] as bool? ??
+          false,
     );
   }
 
@@ -547,6 +675,7 @@ class ChatRoomDto {
   final ChatNoticeDto? notice;
   final List<UserProfileDto> members;
   final int unreadCount;
+  final bool mentioned;
 }
 
 class UserProfileDto {
@@ -659,7 +788,9 @@ class ChatMessageDto {
     required this.systemMessage,
     required this.silent,
     required this.spoiler,
+    this.deletedForEveryone = false,
     required this.attachment,
+    required this.mentions,
   });
 
   factory ChatMessageDto.fromJson(Map<String, dynamic> json) {
@@ -677,11 +808,16 @@ class ChatMessageDto {
       systemMessage: json['systemMessage'] as bool? ?? false,
       silent: json['silent'] as bool? ?? false,
       spoiler: json['spoiler'] as bool? ?? false,
+      deletedForEveryone: json['deletedForEveryone'] as bool? ?? false,
       attachment: json['attachment'] is Map
           ? ChatAttachmentDto.fromJson(
               (json['attachment'] as Map).cast<String, dynamic>(),
             )
           : null,
+      mentions: [
+        for (final item in json['mentions'] as List<dynamic>? ?? const [])
+          ChatMentionDto.fromJson((item as Map).cast<String, dynamic>()),
+      ],
     );
   }
 
@@ -698,7 +834,89 @@ class ChatMessageDto {
   final bool systemMessage;
   final bool silent;
   final bool spoiler;
+  final bool deletedForEveryone;
   final ChatAttachmentDto? attachment;
+  final List<ChatMentionDto> mentions;
+}
+
+class ChatMentionDto {
+  const ChatMentionDto({required this.userId, required this.displayName});
+
+  factory ChatMentionDto.fromJson(Map<String, dynamic> json) {
+    return ChatMentionDto(
+      userId: json['userId'] as String? ?? '',
+      displayName: json['displayName'] as String? ?? '',
+    );
+  }
+
+  final String userId;
+  final String displayName;
+
+  Map<String, dynamic> toJson() {
+    return {'userId': userId, 'displayName': displayName};
+  }
+}
+
+class ChatMentionNotificationDto {
+  const ChatMentionNotificationDto({
+    required this.id,
+    required this.roomCode,
+    required this.roomTitle,
+    required this.participantCount,
+    required this.roomMembers,
+    required this.messageId,
+    required this.senderId,
+    required this.senderName,
+    required this.senderNickname,
+    required this.senderAvatarColor,
+    required this.senderAvatarImageUrl,
+    required this.mentionDisplayName,
+    required this.content,
+    required this.sentAt,
+    required this.checkedAt,
+    required this.checked,
+  });
+
+  factory ChatMentionNotificationDto.fromJson(Map<String, dynamic> json) {
+    return ChatMentionNotificationDto(
+      id: json['id'] as String? ?? '',
+      roomCode: json['roomCode'] as String? ?? '',
+      roomTitle: json['roomTitle'] as String? ?? '',
+      participantCount: (json['participantCount'] as num?)?.toInt() ?? 0,
+      roomMembers: [
+        for (final item in json['roomMembers'] as List<dynamic>? ?? const [])
+          UserProfileDto.fromJson((item as Map).cast<String, dynamic>()),
+      ],
+      messageId: json['messageId'] as String? ?? '',
+      senderId: json['senderId'] as String? ?? '',
+      senderName: json['senderName'] as String? ?? '',
+      senderNickname: json['senderNickname'] as String? ?? '',
+      senderAvatarColor: json['senderAvatarColor'] as String? ?? '',
+      senderAvatarImageUrl: json['senderAvatarImageUrl'] as String? ?? '',
+      mentionDisplayName: json['mentionDisplayName'] as String? ?? '',
+      content: json['content'] as String? ?? '',
+      sentAt: DateTime.tryParse(json['sentAt'] as String? ?? ''),
+      checkedAt: DateTime.tryParse(json['checkedAt'] as String? ?? ''),
+      checked: json['checked'] as bool? ?? false,
+    );
+  }
+
+  final String id;
+  final String roomCode;
+  final String roomTitle;
+  final int participantCount;
+  final List<UserProfileDto> roomMembers;
+  final String messageId;
+  final String senderId;
+  final String senderName;
+  final String senderNickname;
+  final String senderAvatarColor;
+  final String senderAvatarImageUrl;
+  final String mentionDisplayName;
+  final String content;
+  final DateTime? sentAt;
+  final DateTime? checkedAt;
+  final bool checked;
 }
 
 class ChatAttachmentDto {
@@ -728,6 +946,32 @@ class ChatAttachmentDto {
   final int size;
   final String downloadUrl;
   final String groupId;
+}
+
+class ChatLinkPreviewDto {
+  const ChatLinkPreviewDto({
+    required this.url,
+    required this.title,
+    required this.description,
+    required this.imageUrl,
+    required this.siteName,
+  });
+
+  factory ChatLinkPreviewDto.fromJson(Map<String, dynamic> json) {
+    return ChatLinkPreviewDto(
+      url: json['url'] as String? ?? '',
+      title: json['title'] as String? ?? '',
+      description: json['description'] as String? ?? '',
+      imageUrl: json['imageUrl'] as String? ?? '',
+      siteName: json['siteName'] as String? ?? '',
+    );
+  }
+
+  final String url;
+  final String title;
+  final String description;
+  final String imageUrl;
+  final String siteName;
 }
 
 class ChatRoomLeaveDto {

@@ -12,8 +12,8 @@ updates, or distributed app behavior, bump the Flutter version in the same
 change and keep the backend Windows update version in sync.
 
 Codex rule: a version bump is not complete until the matching Windows update
-zip exists and the update manifest returns `updateAvailable: true` for the
-previous released version.
+zip and Android release APK exist, and both update manifests return
+`updateAvailable: true` for the previous released version.
 
 1. Run `Flutter/bump_version.cmd 0.1.1`.
    - Demo line starts at `0.1.0`.
@@ -30,16 +30,29 @@ previous released version.
      Flutter default `http://localhost:8080`; those only work on the server PC.
    - If another PC still cannot reach the backend, open TCP 8080 on the server
      PC with `SpringBoot/allow_ava_backend_firewall.cmd` from an admin prompt.
-3. Set the backend update version to the same version.
+3. Build and copy the Android release APK for the same version.
+   - Run `Flutter/build_android_release.cmd http://112.166.136.198:8080 ws://112.166.136.198:8080/ws apk`.
+   - Confirm `Flutter/build/app/outputs/flutter-apk/ava-android-<version>.apk`
+     exists.
+   - Confirm `SpringBoot/AppUpdates/ava-android-<version>.apk` exists.
+   - Android APKs must use the local AVA release signing key, not the debug
+     signing key.
+4. Set the backend update version to the same version.
    - `AVA_APP_WINDOWS_LATEST_VERSION=0.1.1`
    - `AVA_APP_WINDOWS_FILE_NAME=ava-windows-0.1.1.zip`
-4. Restart the backend.
-5. Verify the update API before calling the work done.
+   - `AVA_APP_ANDROID_LATEST_VERSION=0.1.1`
+   - `AVA_APP_ANDROID_FILE_NAME=ava-android-0.1.1.apk`
+5. Restart the backend.
+6. Verify the update API before calling the work done.
    - `GET /api/app-updates/windows/latest?currentVersion=<previous-version>`
      must return `updateAvailable: true`.
    - `GET /api/app-updates/windows/download/ava-windows-<version>.zip` must
      return `200 OK`.
+   - `GET /api/app-updates/android/latest?currentVersion=<previous-version>`
+     must return `updateAvailable: true`.
+   - `GET /api/app-updates/android/download/ava-android-<version>.apk` must
+     return `200 OK`.
 
-Clients check `/api/app-updates/windows/latest` on app startup. If the server
-version is higher than the local app version and the zip exists, the app shows
-an update dialog and applies the package after download.
+Clients check their platform update endpoint on app startup. If the server
+version is higher than the local app version and the package exists, the app
+shows the platform update flow after download.

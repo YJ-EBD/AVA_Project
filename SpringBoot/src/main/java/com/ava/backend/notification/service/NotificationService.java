@@ -11,6 +11,7 @@ import com.ava.backend.notification.dto.NotificationListResponse;
 import com.ava.backend.notification.dto.NotificationResponse;
 import com.ava.backend.notification.entity.NotificationEntity;
 import com.ava.backend.notification.repository.NotificationRepository;
+import com.ava.backend.push.service.MobilePushService;
 import com.ava.backend.user.repository.UserAccountRepository;
 
 @Service
@@ -19,15 +20,18 @@ public class NotificationService {
 	private final NotificationRepository notificationRepository;
 	private final UserAccountRepository userAccountRepository;
 	private final SimpMessagingTemplate messagingTemplate;
+	private final MobilePushService mobilePushService;
 
 	public NotificationService(
 		NotificationRepository notificationRepository,
 		UserAccountRepository userAccountRepository,
-		SimpMessagingTemplate messagingTemplate
+		SimpMessagingTemplate messagingTemplate,
+		MobilePushService mobilePushService
 	) {
 		this.notificationRepository = notificationRepository;
 		this.userAccountRepository = userAccountRepository;
 		this.messagingTemplate = messagingTemplate;
+		this.mobilePushService = mobilePushService;
 	}
 
 	@Transactional(readOnly = true)
@@ -62,6 +66,7 @@ public class NotificationService {
 		userAccountRepository.findById(accountId).ifPresent(account ->
 			messagingTemplate.convertAndSendToUser(account.getEmail(), "/queue/notifications", response)
 		);
+		mobilePushService.sendNotification(accountId, response);
 		return response;
 	}
 

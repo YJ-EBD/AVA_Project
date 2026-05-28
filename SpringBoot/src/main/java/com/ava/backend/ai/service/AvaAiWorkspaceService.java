@@ -8,6 +8,7 @@ import java.nio.file.DirectoryStream;
 import java.nio.file.Files;
 import java.nio.file.LinkOption;
 import java.nio.file.Path;
+import java.nio.file.StandardCopyOption;
 import java.text.Normalizer;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
@@ -30,6 +31,7 @@ import java.util.stream.Stream;
 import org.springframework.core.io.Resource;
 import org.springframework.core.io.UrlResource;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -40,9 +42,7 @@ import com.ava.backend.ai.dto.AvaAiWorkspaceItemResponse;
 import com.ava.backend.ai.dto.AvaAiWorkspaceSendRequest;
 import com.ava.backend.ai.service.AvaAiWebSearchService.WebSearchResult;
 import com.ava.backend.auth.security.AuthPrincipal;
-import com.ava.backend.azoom.entity.AzoomChatMessageEntity;
 import com.ava.backend.azoom.entity.AzoomMeetingTranscriptKind;
-import com.ava.backend.azoom.repository.AzoomChatMessageRepository;
 import com.ava.backend.azoom.repository.AzoomMeetingTranscriptRepository;
 import com.ava.backend.azoom.repository.AzoomMeetingUtteranceRepository;
 import com.ava.backend.azoom.service.AzoomService;
@@ -53,8 +53,10 @@ import com.ava.backend.chat.dto.ChatRoomResponse;
 import com.ava.backend.chat.dto.ChatTalkDrawerItemResponse;
 import com.ava.backend.chat.dto.DirectChatRoomRequest;
 import com.ava.backend.chat.entity.ChatMessageEntity;
+import com.ava.backend.chat.entity.ChatMentionNotificationEntity;
 import com.ava.backend.chat.entity.ChatTalkDrawerMediaType;
 import com.ava.backend.chat.repository.ChatMessageJpaRepository;
+import com.ava.backend.chat.repository.ChatMentionNotificationRepository;
 import com.ava.backend.chat.service.ChatService;
 import com.ava.backend.user.dto.UserProfileResponse;
 
@@ -70,6 +72,17 @@ public class AvaAiWorkspaceService {
 	private static final ZoneId WORKSPACE_TIME_ZONE = ZoneId.of("Asia/Seoul");
 	private static final Pattern FILE_EXTENSION_PATTERN = Pattern.compile("(?i)\\.([a-z0-9]{1,12})(?=$|[^a-z0-9])");
 	private static final Set<String> ARDUINO_FILE_EXTENSIONS = Set.of("ino", "pde");
+	private static final Set<String> ARCHIVE_FILE_EXTENSIONS = Set.of(
+		"zip",
+		"7z",
+		"rar",
+		"tar",
+		"gz",
+		"tgz",
+		"bz2",
+		"xz",
+		"iso"
+	);
 	private static final Set<String> SOURCE_CODE_EXTENSIONS = Set.of(
 		"ino",
 		"pde",
@@ -186,6 +199,187 @@ public class AvaAiWorkspaceService {
 		"ino",
 		"firmware"
 	);
+	private static final Set<String> STRONG_SOURCE_CODE_INTENT_TOKENS = Set.of(
+		"\uC18C\uC2A4",
+		"\uC18C\uC2A4\uCF54\uB4DC",
+		"\uCF54\uB4DC",
+		"\uC2A4\uCF00\uCE58",
+		"\uC544\uB450\uC774\uB178",
+		"\uC774\uB178",
+		"source",
+		"code",
+		"src",
+		"sketch",
+		"arduino",
+		"ino"
+	);
+	private static final Set<String> FIRMWARE_INTENT_TOKENS = Set.of(
+		"\uD38C\uC6E8\uC5B4",
+		"firmware",
+		"firm",
+		"fw"
+	);
+	private static final String FIRMWARE_REPOSITORY_DIRECTORY = "\uC81C\uD488 \uC790\uB8CC"; // 제품 자료
+	private static final String FIRMWARE_DEVELOPER_REPOSITORY_DIRECTORY =
+		"\uAC1C\uBC1C\uC790\uB8CC/\uADF9\uCD08\uB2E8\uD30C \uC6D0\uBCF8"; // 개발자료/극초단파 원본
+	private static final Set<String> FIRMWARE_SEARCH_TRIGGERS = Set.of(
+		"\uD38C\uC6E8\uC5B4",
+		"\uB514\uC2A4\uD50C\uB808\uC774",
+		"\uB4DC\uC708",
+		"\uD30C\uC77C",
+		"\uC790\uB8CC",
+		"\uCC3E\uC544",
+		"\uCC3E\uC544\uC918",
+		"\uC62C\uB824",
+		"\uC5C5\uB85C\uB4DC",
+		"\uBCF4\uB0B4",
+		"\uC804\uC1A1",
+		"\uC804\uB2EC",
+		"\uBAA9\uB85D",
+		"firmware",
+		"firm",
+		"fw",
+		"display",
+		"lcd",
+		"dwin",
+		"file",
+		"files",
+		"material",
+		"find",
+		"search",
+		"upload",
+		"send",
+		"list",
+		"zip"
+	);
+	private static final Set<String> FIRMWARE_LIST_TRIGGERS = Set.of(
+		"\uBAA9\uB85D",
+		"\uB9AC\uC2A4\uD2B8",
+		"\uC804\uBD80",
+		"\uBAA8\uB450",
+		"\uC804\uCCB4",
+		"list",
+		"all"
+	);
+	private static final Set<String> FIRMWARE_DEVELOPER_SOURCE_HINTS = Set.of(
+		"\uC6D0\uBCF8",
+		"\uAC1C\uBC1C\uC790",
+		"\uAC1C\uBC1C\uC790\uB8CC",
+		"\uAC1C\uBC1C \uC6D0\uBCF8",
+		"developer",
+		"engineering",
+		"original"
+	);
+	private static final Set<String> FIRMWARE_PRODUCTION_SOURCE_HINTS = Set.of(
+		"\uC591\uC0B0",
+		"\uC81C\uD488 \uC790\uB8CC",
+		"\uC81C\uD488\uC790\uB8CC",
+		"\uC81C\uD488\uC6A9",
+		"production",
+		"release"
+	);
+	private static final List<FirmwareProduct> FIRMWARE_PRODUCTS = List.of(
+		new FirmwareProduct(
+			"\uC62C\uB9AC\uC628 (ALLION)",
+			"ALLION_GMP_Firm.zip",
+			"allion",
+			List.of("\uC62C\uB9AC\uC628", "\uC54C\uB9AC\uC628", "allion")
+		),
+		new FirmwareProduct(
+			"\uBE44\uB9AC\uBCF8 (Bereborn)",
+			"Bereborn [Tron].zip",
+			"bereborn",
+			List.of("\uBE44\uB9AC\uBCF8", "bereborn", "bereborn v0", "\uAE30\uBCF8 \uBE44\uB9AC\uBCF8")
+		),
+		new FirmwareProduct(
+			"\uBE44\uB9AC\uBCF8 \uD50C\uB7EC\uC2A4 \uBC84\uC8041 (Bereborn Plus v1)",
+			"Bereborn Plus \uBC84\uC8041 [Tron].zip",
+			"bereborn-plus",
+			List.of("\uBE44\uB9AC\uBCF8 \uD50C\uB7EC\uC2A4", "\uBE44\uB9AC\uBCF8 \uD50C\uB7EC\uC2A4 v1", "\uBE44\uB9AC\uBCF8\uD50C\uB7EC\uC2A4 \uBC84\uC8041", "bereborn plus", "bereborn+", "bereborn+ v1", "bereborn plus ver1", "bereborn plus v1", "bereborn plus version1")
+		),
+		new FirmwareProduct(
+			"\uBE44\uB9AC\uBCF8 \uD50C\uB7EC\uC2A4 \uBC84\uC8042 (Bereborn Plus v2)",
+			"Bereborn Plus \uBC84\uC8042 [Tron].zip",
+			"bereborn-plus",
+			List.of("\uBE44\uB9AC\uBCF8 \uD50C\uB7EC\uC2A4", "\uBE44\uB9AC\uBCF8 \uD50C\uB7EC\uC2A4 v2", "\uBE44\uB9AC\uBCF8\uD50C\uB7EC\uC2A4 \uBC84\uC8042", "bereborn plus", "bereborn+", "bereborn+ v2", "bereborn plus ver2", "bereborn plus v2", "bereborn plus version2")
+		),
+		new FirmwareProduct(
+			"\uC5D1\uC3D8\uC6E8\uC774\uBE0C (EXO-Wave)",
+			"EXO-Wave [Tron].zip",
+			"exo-wave",
+			List.of("\uC5D1\uC3D8\uC6E8\uC774\uBE0C", "\uC5D1\uC18C\uC6E8\uC774\uBE0C", "\uC561\uC18C\uC6E8\uC774\uBE0C", "\uC561\uC3D8\uC6E8\uC774\uBE0C", "exo wave", "exo-wave", "exowave")
+		),
+		new FirmwareProduct(
+			"\uB9E5\uC2A4\uC6E8\uC774\uBE0C (Max-Wave)",
+			"Max-Wave [Tron].zip",
+			"max-wave",
+			List.of("\uB9E5\uC2A4\uC6E8\uC774\uBE0C", "\uB9E5\uC4F0\uC6E8\uC774\uBE0C", "\uBA55\uC2A4\uC6E8\uC774\uBE0C", "\uBA55\uC4F0\uC6E8\uC774\uBE0C", "max wave", "max-wave", "maxwave")
+		),
+		new FirmwareProduct(
+			"\uB9AC\uBC14\uC774\uBE0C (Revive)",
+			"Revive  [TRON].zip",
+			"revive",
+			List.of("\uB9AC\uBC14\uC774\uBE0C", "revive")
+		),
+		new FirmwareProduct(
+			"\uB274 \uB9AC\uBC14\uC774\uBE0C 200W (New-Revive 200)",
+			"New-Revive200[Tron].zip",
+			"new-revive",
+			List.of("\uB274\uB9AC\uBC14\uC774\uBE0C", "\uB274 \uB9AC\uBC14\uC774\uBE0C", "\uB274\uB9AC\uBC14\uC774\uBE0C 200w", "\uB274 \uB9AC\uBC14\uC774\uBE0C 200w", "\uB274\uB9AC\uBC14\uC774\uBE0C 200\uC640\uD2B8", "new revive", "new revive 200w", "new revive v1", "new-revive 200", "newrevive200")
+		),
+		new FirmwareProduct(
+			"\uB274 \uB9AC\uBC14\uC774\uBE0C 250W (New-Revive 250)",
+			"New-Revive250 [Tron].zip",
+			"new-revive",
+			List.of("\uB274\uB9AC\uBC14\uC774\uBE0C", "\uB274 \uB9AC\uBC14\uC774\uBE0C", "\uB274\uB9AC\uBC14\uC774\uBE0C 250w", "\uB274 \uB9AC\uBC14\uC774\uBE0C 250w", "\uB274\uB9AC\uBC14\uC774\uBE0C 250\uC640\uD2B8", "new revive", "new revive 250w", "new revive v2", "new-revive 250", "newrevive250")
+		),
+		new FirmwareProduct(
+			"\uB9AC\uC96C\uC6E8\uC774\uBE0C (RejuWave)",
+			"RejuWave [TRON].zip",
+			"rejuwave",
+			List.of("\uB9AC\uC96C\uC6E8\uC774\uBE0C", "\uB9AC\uC8FC\uC6E8\uC774\uBE0C", "rejuwave", "reju wave")
+		),
+		new FirmwareProduct(
+			"\uC26C\uBC14 (SHIVA)",
+			"SHIVA [TRON].zip",
+			"shiva",
+			List.of("\uC26C\uBC14", "\uC2DC\uBC14", "\uC2C0\uBC14", "shiva", "siva")
+		),
+		new FirmwareProduct(
+			"\uC2AC\uB9BC\uB3C5 \uBC84\uC8041 (SLIM DOC v1)",
+			"SLIM DOC \uBC84\uC8041 [TRON].zip",
+			"slim-doc",
+			List.of("\uC2AC\uB9BC\uB3C5", "\uC2AC\uB9BC\uB3C5 v1", "\uC2AC\uB9BC\uB3C5 \uBC84\uC8041", "\uC2AC\uB9BC\uB3C5 \uBE44\uB9AC\uBCF8", "slim doc", "slim doc v1", "slim doc ver1", "slim doc bereborn")
+		),
+		new FirmwareProduct(
+			"\uC2AC\uB9BC\uB3C5 \uBC84\uC8042 (SLIM DOC v2)",
+			"SLIM DOC \uBC84\uC8042 [TRON].zip",
+			"slim-doc",
+			List.of("\uC2AC\uB9BC\uB3C5", "\uC2AC\uB9BC\uB3C5 v2", "\uC2AC\uB9BC\uB3C5 \uBC84\uC8042", "\uC2AC\uB9BC\uB3C5 \uB9E5\uC2A4\uC6E8\uC774\uBE0C", "slim doc", "slim doc v2", "slim doc ver2", "slim doc max wave")
+		),
+		new FirmwareProduct(
+			"\uC368\uB9C8\uC6E8\uC774\uBE0C (ThermaWave)",
+			"ThermaWave [TRON].zip",
+			"thermawave",
+			List.of("\uC368\uB9C8\uC6E8\uC774\uBE0C", "\uC368\uB9C8\uB9E4\uB4DC", "therma wave", "thermawave")
+		),
+		new FirmwareProduct(
+			"\uC6E8\uC774\uBE0C\uC628 (Wave On)",
+			"Wave On [TRON].zip",
+			"wave-on",
+			List.of("\uC6E8\uC774\uBE0C\uC628", "\uC6E8\uC774\uBCF8", "wave on", "waveon")
+		)
+	);
+	private static final Set<String> ARCHIVE_INTENT_TOKENS = Set.of(
+		"\uC555\uCD95",
+		"\uC555\uCD95\uD30C\uC77C",
+		"\uC9D1\uD30C\uC77C",
+		"\uC6D0\uBCF8",
+		"\uBC31\uC5C5",
+		"archive",
+		"compressed",
+		"zip"
+	);
 	private static final Set<String> ARDUINO_INTENT_TOKENS = Set.of(
 		"\uC544\uB450\uC774\uB178",
 		"\uC774\uB178",
@@ -264,6 +458,8 @@ public class AvaAiWorkspaceService {
 		"\uC788\uC5B4",
 		"\uAD00\uB828",
 		"\uAD00\uB828\uB41C",
+		"\uAD00\uB828\uD30C\uC77C",
+		"\uAD00\uB828\uC790\uB8CC",
 		"\uC548\uC5D0",
 		"\uC548\uC758",
 		"file",
@@ -298,8 +494,8 @@ public class AvaAiWorkspaceService {
 	private final Path chatAttachmentPath;
 	private final ChatService chatService;
 	private final ChatMessageJpaRepository chatMessageRepository;
+	private final ChatMentionNotificationRepository mentionNotificationRepository;
 	private final AzoomService azoomService;
-	private final AzoomChatMessageRepository azoomChatMessageRepository;
 	private final AzoomMeetingTranscriptRepository transcriptRepository;
 	private final AzoomMeetingUtteranceRepository utteranceRepository;
 	private final SimpMessagingTemplate messagingTemplate;
@@ -307,8 +503,8 @@ public class AvaAiWorkspaceService {
 	public AvaAiWorkspaceService(
 		ChatService chatService,
 		ChatMessageJpaRepository chatMessageRepository,
+		ChatMentionNotificationRepository mentionNotificationRepository,
 		AzoomService azoomService,
-		AzoomChatMessageRepository azoomChatMessageRepository,
 		AzoomMeetingTranscriptRepository transcriptRepository,
 		AzoomMeetingUtteranceRepository utteranceRepository,
 		SimpMessagingTemplate messagingTemplate,
@@ -321,8 +517,8 @@ public class AvaAiWorkspaceService {
 		this.chatAttachmentPath = Path.of(chatAttachmentDirectory).toAbsolutePath().normalize();
 		this.chatService = chatService;
 		this.chatMessageRepository = chatMessageRepository;
+		this.mentionNotificationRepository = mentionNotificationRepository;
 		this.azoomService = azoomService;
-		this.azoomChatMessageRepository = azoomChatMessageRepository;
 		this.transcriptRepository = transcriptRepository;
 		this.utteranceRepository = utteranceRepository;
 		this.messagingTemplate = messagingTemplate;
@@ -356,6 +552,17 @@ public class AvaAiWorkspaceService {
 				.map(this::webItem)
 				.toList());
 		}
+		String explicitPath = extractExplicitPath(prompt);
+		if (!explicitPath.isBlank() && !hasFileMutationIntent(normalized)) {
+			WorkspaceActionResult pathResult = inspectExplicitWorkspacePath(explicitPath, principal);
+			if (pathResult != null) {
+				return pathResult;
+			}
+		}
+		WorkspaceActionResult firmwareResult = inspectFirmwarePrompt(prompt, normalized, principal);
+		if (firmwareResult != null) {
+			return firmwareResult;
+		}
 		items.addAll(mutateFilesFromPrompt(prompt, normalized, principal));
 		if (hasFileSearchIntent(normalized)) {
 			List<AvaAiWorkspaceItemResponse> fileResults = searchFiles(stripSearchCommands(prompt), "", principal);
@@ -366,7 +573,9 @@ public class AvaAiWorkspaceService {
 		}
 		if (hasChatIntent(normalized)) {
 			items.addAll(searchChat(prompt, principal));
-			items.addAll(searchAzoomChat(prompt, principal));
+		}
+		if (hasMentionIntent(normalized)) {
+			items.addAll(searchMentionNotifications(prompt, principal));
 		}
 		if (hasMeetingIntent(normalized)) {
 			items.addAll(searchMeetings(prompt, principal));
@@ -374,10 +583,665 @@ public class AvaAiWorkspaceService {
 		return new WorkspaceActionResult(List.copyOf(limitItems(items, 120)), status, promptContext(items, status), false);
 	}
 
+	private WorkspaceActionResult inspectFirmwarePrompt(String prompt, String normalized, AuthPrincipal principal) {
+		List<FirmwareFile> firmwareFiles = discoveredFirmwareFiles();
+		FirmwareRequest request = firmwareRequest(prompt, normalized, firmwareFiles);
+		if (!request.triggered()) {
+			return null;
+		}
+		if (firmwareFiles.isEmpty()) {
+			String status = "⚠️ 펌웨어 저장소에서 ZIP 파일을 찾지 못했습니다.\n"
+				+ "확인 경로: " + firmwareRepositoryPath().toAbsolutePath().normalize() + "\n"
+				+ "확인 경로: " + firmwareDeveloperRepositoryPath().toAbsolutePath().normalize();
+			return new WorkspaceActionResult(List.of(), status, status, true);
+		}
+		if (request.listRequested()) {
+			return firmwareCatalogResult("사용 가능한 펌웨어/디스플레이 파일 목록입니다.", firmwareFiles);
+		}
+		List<FirmwareFile> clarificationOptions = firmwareClarificationOptions(prompt, firmwareFiles);
+		if (!clarificationOptions.isEmpty()) {
+			return firmwareClarificationResult(clarificationOptions);
+		}
+		List<FirmwareMatch> matches = firmwareMatches(prompt, firmwareFiles);
+		if (matches.isEmpty() || matches.get(0).score() < 60) {
+			return firmwareNotFoundResult(prompt, matches, firmwareFiles);
+		}
+		FirmwareRepositoryKind requestedSource = requestedFirmwareSource(normalized);
+		if (requestedSource != null) {
+			List<FirmwareMatch> sourceMatches = matches.stream()
+				.filter(match -> match.file().repositoryKind() == requestedSource)
+				.toList();
+			if (!sourceMatches.isEmpty()) {
+				matches = sourceMatches;
+			}
+		}
+		List<FirmwareMatch> topMatches = topFirmwareMatches(matches);
+		List<FirmwareFile> dynamicVersionOptions = firmwareDynamicVersionOptions(normalized, topMatches);
+		if (!dynamicVersionOptions.isEmpty()) {
+			return firmwareClarificationResult(dynamicVersionOptions);
+		}
+		if (requestedSource == null && hasMultipleFirmwareRepositories(topMatches)) {
+			return firmwareSourceClarificationResult(topMatches);
+		}
+		FirmwareMatch match = matches.get(0);
+		FirmwareFile firmwareFile = match.file();
+		Path source = firmwareFile.path();
+		if (!Files.isRegularFile(source, LinkOption.NOFOLLOW_LINKS)) {
+			String status = "⚠️ " + firmwareFile.fileName() + " 파일을 " + source.getParent()
+				+ "에서 찾지 못했습니다. 저장소 파일명을 확인해 주세요.";
+			return new WorkspaceActionResult(List.of(), status, status, true);
+		}
+		if (request.chatDeliveryRequested()) {
+			return deliverFirmwareToChat(prompt, principal, firmwareFile, match.score());
+		}
+		Path uploaded = copyFirmwareToWorkspace(source);
+		AvaAiWorkspaceItemResponse item = fileItem(uploaded, firmwareFile.displayName() + " 펌웨어/디스플레이 파일입니다.");
+		String status = firmwareFoundStatus(firmwareFile, firmwareFile.fileName() + " 작업공간에 업로드 완료했습니다.");
+		if (match.score() < 85) {
+			status = firmwareFile.displayName() + " 파일로 이해했습니다. 맞지 않으면 제품명을 다시 알려주세요.\n\n" + status;
+		}
+		return new WorkspaceActionResult(List.of(item), status, promptContext(List.of(item), status), true);
+	}
+
+	private FirmwareRequest firmwareRequest(String prompt, String normalized, List<FirmwareFile> firmwareFiles) {
+		if (hasFileMutationIntent(normalized)) {
+			return new FirmwareRequest(false, false, false);
+		}
+		String compact = compactSearchText(prompt);
+		boolean hasFirmwareSignal = containsAny(normalized, FIRMWARE_INTENT_TOKENS) ||
+			containsAny(normalized, "디스플레이", "드윈", "display", "lcd", "dwin");
+		boolean hasProductSignal = hasFirmwareProductSignal(prompt, firmwareFiles);
+		boolean hasSearchTrigger = containsAny(normalized, FIRMWARE_SEARCH_TRIGGERS) ||
+			containsAny(compact, "firmware", "display", "lcd", "dwin");
+		boolean bareFirmwareUpload = !hasProductSignal &&
+			containsAny(normalized, "파일 올려", "파일 업로드", "자료 올려", "file upload");
+		boolean triggered = (hasProductSignal && hasSearchTrigger) ||
+			hasFirmwareSignal ||
+			(bareFirmwareUpload && hasSearchTrigger);
+		boolean listRequested = triggered && containsAny(normalized, FIRMWARE_LIST_TRIGGERS);
+		boolean chatDelivery = triggered && hasFirmwareChatDeliveryIntent(normalized);
+		return new FirmwareRequest(triggered, listRequested, chatDelivery);
+	}
+
+	private boolean hasFirmwareProductSignal(String prompt, List<FirmwareFile> firmwareFiles) {
+		if (!firmwareClarificationOptions(prompt, firmwareFiles).isEmpty()) {
+			return true;
+		}
+		return firmwareMatches(prompt, firmwareFiles).stream().anyMatch(match -> match.score() >= 60);
+	}
+
+	private boolean hasFirmwareChatDeliveryIntent(String normalized) {
+		return containsAny(normalized, "한테", "에게", "께") &&
+			containsAny(normalized, "보내", "전송", "전달", "공유", "올려", "send", "share");
+	}
+
+	private List<FirmwareFile> firmwareClarificationOptions(String prompt, List<FirmwareFile> firmwareFiles) {
+		String normalized = normalize(prompt).toLowerCase(Locale.ROOT);
+		String compact = compactSearchText(prompt);
+		FirmwareRepositoryKind requestedSource = requestedFirmwareSource(normalized);
+		if ((compact.contains("비리본플러스") || compact.contains("berebornplus") ||
+			(compact.contains("bereborn") && normalized.contains("+"))) &&
+			!hasFirmwareVariantHint(normalized, compact)) {
+			return firmwareFilesByFamily("bereborn-plus", firmwareFiles, requestedSource);
+		}
+		if ((compact.contains("슬림독") || compact.contains("slimdoc")) &&
+			!hasFirmwareVariantHint(normalized, compact) &&
+			!compact.contains("비리본") &&
+			!compact.contains("bereborn") &&
+			!compact.contains("맥스웨이브") &&
+			!compact.contains("maxwave")) {
+			return firmwareFilesByFamily("slim-doc", firmwareFiles, requestedSource);
+		}
+		if ((compact.contains("뉴리바이브") || compact.contains("newrevive")) &&
+			!compact.contains("200") &&
+			!compact.contains("250") &&
+			!hasFirmwareVariantHint(normalized, compact)) {
+			return firmwareFilesByFamily("new-revive", firmwareFiles, requestedSource);
+		}
+		return List.of();
+	}
+
+	private boolean hasFirmwareVariantHint(String normalized, String compact) {
+		return containsAny(normalized, "v1", "v2", "v3", "ver1", "ver2", "ver3", "version1", "version2", "version3",
+			"버전1", "버전2", "버전3", "버젼1", "버젼2", "버젼3", "1번", "2번", "3번", "200", "250", "high11", "maxwave") ||
+			compact.matches(".*v\\d+.*") ||
+			compact.matches(".*ver\\d+.*");
+	}
+
+	private List<FirmwareFile> firmwareFilesByFamily(
+		String family,
+		List<FirmwareFile> firmwareFiles,
+		FirmwareRepositoryKind requestedSource
+	) {
+		return firmwareFiles.stream()
+			.filter(file -> file.family().equals(family))
+			.filter(file -> requestedSource == null || file.repositoryKind() == requestedSource)
+			.sorted(Comparator
+				.comparing(FirmwareFile::repositoryKind)
+				.thenComparing(FirmwareFile::fileName))
+			.toList();
+	}
+
+	private List<FirmwareMatch> firmwareMatches(String prompt, List<FirmwareFile> firmwareFiles) {
+		String compactPrompt = compactSearchText(prompt);
+		List<String> terms = searchTerms(prompt);
+		return firmwareFiles.stream()
+			.map(file -> new FirmwareMatch(file, firmwareMatchScore(file, compactPrompt, terms)))
+			.filter(match -> match.score() > 0)
+			.sorted(Comparator
+				.comparingInt(FirmwareMatch::score).reversed()
+				.thenComparing(match -> match.file().repositoryKind())
+				.thenComparing(match -> match.file().fileName()))
+			.toList();
+	}
+
+	private int firmwareMatchScore(FirmwareFile firmwareFile, String compactPrompt, List<String> terms) {
+		int best = 0;
+		for (String name : firmwareFile.aliases()) {
+			String compactName = compactSearchText(name);
+			if (compactName.isBlank()) {
+				continue;
+			}
+			if (compactPrompt.contains(compactName)) {
+				best = Math.max(best, 95 + Math.min(25, compactName.length()));
+				continue;
+			}
+			String compactWithoutExtension = compactName.replaceAll("(zip|tron|hic|trongmpfirm|firm|original|원본)$", "");
+			if (!compactWithoutExtension.equals(compactName) && compactPrompt.contains(compactWithoutExtension)) {
+				best = Math.max(best, 90 + Math.min(20, compactWithoutExtension.length()));
+				continue;
+			}
+			int fuzzy = fuzzyVariantScore(compactName, terms);
+			if (fuzzy >= 10) {
+				best = Math.max(best, 55 + fuzzy);
+			}
+		}
+		return best;
+	}
+
+	private List<FirmwareMatch> topFirmwareMatches(List<FirmwareMatch> matches) {
+		if (matches.isEmpty()) {
+			return List.of();
+		}
+		int topScore = matches.get(0).score();
+		return matches.stream()
+			.filter(match -> match.score() >= 60 && topScore - match.score() <= 8)
+			.toList();
+	}
+
+	private List<FirmwareFile> firmwareDynamicVersionOptions(String normalized, List<FirmwareMatch> topMatches) {
+		String compact = compactSearchText(normalized);
+		if (topMatches.isEmpty() || hasFirmwareVariantHint(normalized, compact)) {
+			return List.of();
+		}
+		String family = topMatches.get(0).file().family();
+		List<FirmwareFile> options = topMatches.stream()
+			.map(FirmwareMatch::file)
+			.filter(file -> file.family().equals(family))
+			.filter(file -> !file.versionLabel().isBlank())
+			.distinct()
+			.sorted(Comparator
+				.comparing(FirmwareFile::repositoryKind)
+				.thenComparing(FirmwareFile::versionLabel)
+				.thenComparing(FirmwareFile::fileName))
+			.toList();
+		long versions = options.stream()
+			.map(FirmwareFile::versionLabel)
+			.distinct()
+			.count();
+		return versions > 1 ? options : List.of();
+	}
+
+	private boolean hasMultipleFirmwareRepositories(List<FirmwareMatch> matches) {
+		return matches.stream().map(match -> match.file().repositoryKind()).distinct().count() > 1;
+	}
+
+	private FirmwareRepositoryKind requestedFirmwareSource(String normalized) {
+		if (containsAny(normalized, FIRMWARE_DEVELOPER_SOURCE_HINTS)) {
+			return FirmwareRepositoryKind.DEVELOPER;
+		}
+		if (containsAny(normalized, FIRMWARE_PRODUCTION_SOURCE_HINTS)) {
+			return FirmwareRepositoryKind.PRODUCTION;
+		}
+		return null;
+	}
+
+	private WorkspaceActionResult firmwareCatalogResult(String heading, List<FirmwareFile> firmwareFiles) {
+		List<AvaAiWorkspaceItemResponse> items = existingFirmwareItems(firmwareFiles, "사용 가능한 제품 자료 파일입니다.");
+		String status = heading + "\n\n" + firmwareCatalogText(firmwareFiles);
+		return new WorkspaceActionResult(items, status, promptContext(items, status), true);
+	}
+
+	private WorkspaceActionResult firmwareClarificationResult(List<FirmwareFile> options) {
+		List<AvaAiWorkspaceItemResponse> items = existingFirmwareItems(options, "버전 확인이 필요한 제품 자료 파일입니다.");
+		String productName = firmwareClarificationName(options);
+		StringBuilder status = new StringBuilder("📂 ").append(productName).append(" 파일이 여러 버전이 있습니다:\n\n");
+		for (FirmwareFile option : options) {
+			status.append("• ").append(firmwareOptionLabel(option)).append(": ")
+				.append(option.path().toAbsolutePath().normalize());
+			if (option.repositoryKind() == FirmwareRepositoryKind.DEVELOPER) {
+				status.append(" (개발자 원본 파일 ⚠️)");
+			}
+			status.append('\n');
+		}
+		status.append("\n어떤 버전이 필요하신가요?");
+		return new WorkspaceActionResult(items, status.toString(), promptContext(items, status.toString()), true);
+	}
+
+	private WorkspaceActionResult firmwareSourceClarificationResult(List<FirmwareMatch> matches) {
+		List<FirmwareFile> options = matches.stream()
+			.map(FirmwareMatch::file)
+			.distinct()
+			.sorted(Comparator
+				.comparing(FirmwareFile::repositoryKind)
+				.thenComparing(FirmwareFile::fileName))
+			.toList();
+		List<AvaAiWorkspaceItemResponse> items = existingFirmwareItems(options, "양산/개발자 원본 중 선택이 필요한 제품 자료 파일입니다.");
+		StringBuilder status = new StringBuilder("해당 제품의 파일이 두 가지 있습니다:\n");
+		for (FirmwareFile option : options) {
+			status.append("• ")
+				.append(option.repositoryKind() == FirmwareRepositoryKind.PRODUCTION ? "양산 파일" : "개발자 원본")
+				.append(": ")
+				.append(option.path().toAbsolutePath().normalize());
+			if (option.repositoryKind() == FirmwareRepositoryKind.DEVELOPER) {
+				status.append(" (개발자 원본 파일 ⚠️)");
+			}
+			status.append('\n');
+		}
+		status.append("어떤 파일이 필요하신가요?");
+		return new WorkspaceActionResult(items, status.toString(), promptContext(items, status.toString()), true);
+	}
+
+	private WorkspaceActionResult firmwareNotFoundResult(
+		String prompt,
+		List<FirmwareMatch> matches,
+		List<FirmwareFile> firmwareFiles
+	) {
+		List<FirmwareFile> suggestions = matches.stream()
+			.filter(match -> match.score() >= 35)
+			.limit(2)
+			.map(FirmwareMatch::file)
+			.toList();
+		List<AvaAiWorkspaceItemResponse> items = existingFirmwareItems(suggestions, "가장 유사한 제품 자료 파일입니다.");
+		String input = stripSearchCommands(prompt);
+		if (input.isBlank()) {
+			input = prompt;
+		}
+		StringBuilder status = new StringBuilder("⚠️ '")
+			.append(limit(input, 80))
+			.append("'에 해당하는 파일을 찾지 못했습니다.");
+		if (!suggestions.isEmpty()) {
+			status.append("\n\n혹시 이 제품을 찾으시나요?");
+			for (FirmwareFile suggestion : suggestions) {
+				status.append("\n• ").append(suggestion.displayName()).append(" - ")
+					.append(suggestion.path().toAbsolutePath().normalize());
+			}
+			status.append("\n\n제품명을 다시 확인해 주세요.");
+		} else {
+			status.append("\n\n").append(firmwareCatalogText(firmwareFiles));
+		}
+		return new WorkspaceActionResult(items, status.toString(), promptContext(items, status.toString()), true);
+	}
+
+	private WorkspaceActionResult deliverFirmwareToChat(
+		String prompt,
+		AuthPrincipal principal,
+		FirmwareFile firmwareFile,
+		int score
+	) {
+		String recipient = extractRecipient(prompt);
+		AvaAiWorkspaceItemResponse preview = fileItem(firmwareFile.path(), firmwareFile.displayName() + " 펌웨어/디스플레이 파일입니다.");
+		if (recipient.isBlank()) {
+			String status = "수신자를 확인해야 합니다. 예: \"장유종한테 " + firmwareFile.displayName() + " 파일 보내줘\"";
+			return new WorkspaceActionResult(List.of(preview), status, promptContext(List.of(preview), status), true);
+		}
+		if (chatService == null || messagingTemplate == null || principal == null) {
+			String status = firmwareFile.displayName() + " 파일은 찾았지만 현재 채팅 전송 환경이 준비되지 않았습니다.";
+			return new WorkspaceActionResult(List.of(preview), status, promptContext(List.of(preview), status), true);
+		}
+		SendResult result = sendToChat(new AvaAiWorkspaceSendRequest(
+			null,
+			recipient,
+			"",
+			List.of(relativePath(firmwareFile.path()))
+		), principal);
+		String status = firmwareFoundStatus(firmwareFile, firmwareFile.fileName() + "을 " + recipient + "에게 채팅으로 전송했습니다.");
+		if (score < 85) {
+			status = firmwareFile.displayName() + " 파일로 이해하고 전송했습니다. 맞지 않으면 제품명을 다시 알려주세요.\n\n" + status;
+		}
+		return new WorkspaceActionResult(result.items(), status, promptContext(result.items(), status), true);
+	}
+
+	private List<AvaAiWorkspaceItemResponse> existingFirmwareItems(List<FirmwareFile> firmwareFiles, String content) {
+		return firmwareFiles.stream()
+			.filter(file -> Files.exists(file.path(), LinkOption.NOFOLLOW_LINKS))
+			.map(file -> fileItem(file.path(), content))
+			.toList();
+	}
+
+	private List<FirmwareFile> discoveredFirmwareFiles() {
+		List<FirmwareFile> files = new ArrayList<>();
+		discoverFirmwareFiles(firmwareRepositoryPath(), FirmwareRepositoryKind.PRODUCTION, files);
+		discoverFirmwareFiles(firmwareDeveloperRepositoryPath(), FirmwareRepositoryKind.DEVELOPER, files);
+		return List.copyOf(files);
+	}
+
+	private void discoverFirmwareFiles(Path directory, FirmwareRepositoryKind repositoryKind, List<FirmwareFile> files) {
+		if (!Files.isDirectory(directory, LinkOption.NOFOLLOW_LINKS)) {
+			return;
+		}
+		try (Stream<Path> stream = Files.list(directory)) {
+			stream
+				.filter(path -> Files.isRegularFile(path, LinkOption.NOFOLLOW_LINKS))
+				.filter(path -> path.getFileName().toString().toLowerCase(Locale.ROOT).endsWith(".zip"))
+				.sorted(Comparator.comparing(path -> path.getFileName().toString().toLowerCase(Locale.ROOT)))
+				.map(path -> firmwareFileFromPath(path, repositoryKind))
+				.forEach(files::add);
+		} catch (IOException exception) {
+			throw new IllegalStateException("Failed to scan firmware repository: " + directory, exception);
+		}
+	}
+
+	private FirmwareFile firmwareFileFromPath(Path path, FirmwareRepositoryKind repositoryKind) {
+		String fileName = path.getFileName().toString();
+		InferredFirmwareName inferred = inferFirmwareName(fileName);
+		List<FirmwareProduct> candidates = knownFirmwareCandidates(fileName, inferred);
+		FirmwareProduct known = selectKnownFirmwareProduct(fileName, inferred, candidates);
+		String displayName = known == null ? inferred.displayName() : known.displayName();
+		String family = known == null
+			? (candidates.isEmpty() ? inferred.family() : candidates.get(0).family())
+			: known.family();
+		LinkedHashSet<String> aliases = new LinkedHashSet<>();
+		aliases.add(displayName);
+		aliases.add(fileName);
+		aliases.addAll(inferred.aliases());
+		for (FirmwareProduct candidate : candidates) {
+			aliases.add(candidate.displayName());
+			aliases.add(candidate.fileName());
+			aliases.addAll(candidate.aliases());
+		}
+		return new FirmwareFile(
+			displayName,
+			fileName,
+			family,
+			List.copyOf(aliases),
+			path,
+			repositoryKind,
+			inferred.versionLabel()
+		);
+	}
+
+	private List<FirmwareProduct> knownFirmwareCandidates(String fileName, InferredFirmwareName inferred) {
+		String compactFileName = compactSearchText(fileName);
+		String compactBase = compactSearchText(inferred.displayName());
+		return FIRMWARE_PRODUCTS.stream()
+			.filter(product -> {
+				if (compactSearchText(product.fileName()).equals(compactFileName)) {
+					return true;
+				}
+				for (String alias : knownFirmwareAliases(product)) {
+					String compactAlias = compactSearchText(alias);
+					if (compactAlias.isBlank()) {
+						continue;
+					}
+					if (compactBase.equals(compactAlias)) {
+						return true;
+					}
+					if (compactBase.length() >= 10 && compactAlias.contains(compactBase)) {
+						return true;
+					}
+					if (compactAlias.length() >= 10 && compactBase.contains(compactAlias)) {
+						return true;
+					}
+				}
+				return false;
+			})
+			.toList();
+	}
+
+	private List<String> knownFirmwareAliases(FirmwareProduct product) {
+		List<String> aliases = new ArrayList<>();
+		aliases.add(product.displayName());
+		aliases.add(product.fileName());
+		aliases.addAll(product.aliases());
+		return aliases;
+	}
+
+	private FirmwareProduct selectKnownFirmwareProduct(
+		String fileName,
+		InferredFirmwareName inferred,
+		List<FirmwareProduct> candidates
+	) {
+		for (FirmwareProduct product : candidates) {
+			if (product.fileName().equalsIgnoreCase(fileName)) {
+				return product;
+			}
+		}
+		if (!inferred.versionLabel().isBlank()) {
+			List<FirmwareProduct> versionMatches = candidates.stream()
+				.filter(product -> firmwareProductMatchesVersion(product, inferred.versionLabel()))
+				.toList();
+			if (versionMatches.size() == 1) {
+				return versionMatches.get(0);
+			}
+		}
+		return candidates.size() == 1 ? candidates.get(0) : null;
+	}
+
+	private boolean firmwareProductMatchesVersion(FirmwareProduct product, String versionLabel) {
+		String compact = compactSearchText(product.displayName() + " " + product.fileName() + " " + String.join(" ", product.aliases()));
+		String version = compactSearchText(versionLabel);
+		if (version.equals("200w") || version.equals("200")) {
+			return compact.contains("200");
+		}
+		if (version.equals("250w") || version.equals("250")) {
+			return compact.contains("250");
+		}
+		if (version.matches("버전\\d+")) {
+			String number = version.replace("버전", "");
+			return compact.contains("버전" + number) || compact.contains("v" + number) || compact.contains("ver" + number);
+		}
+		return compact.contains(version);
+	}
+
+	private InferredFirmwareName inferFirmwareName(String fileName) {
+		String stem = fileName.replaceFirst("(?i)\\.zip$", "");
+		String versionLabel = firmwareVersionLabel(stem);
+		String base = splitCamelCase(stem)
+			.replaceAll("(?i)\\[[^\\]]*\\]", " ")
+			.replaceAll("(?i)\\([^)]*\\)", " ")
+			.replaceAll("(?i)_?firm\\b", " ")
+			.replaceAll("(?i)\\b(ver|version|v)[ _-]?\\d+\\b", " ")
+			.replaceAll("(?i)\\b(200|250)\\s*w?\\b", " ")
+			.replaceAll("버[전젼]\\s*\\d+", " ")
+			.replace("\uC6D0\uBCF8", " ")
+			.replace('-', ' ')
+			.replace('_', ' ')
+			.replaceAll("\\s+", " ")
+			.strip();
+		if (base.isBlank()) {
+			base = stem;
+		}
+		LinkedHashSet<String> aliases = new LinkedHashSet<>();
+		aliases.add(base);
+		aliases.add(base.replace(" ", ""));
+		aliases.add(fileName);
+		aliases.add(stem);
+		aliases.addAll(koreanPhoneticAliases(base));
+		String family = compactSearchText(base);
+		return new InferredFirmwareName(base, family, List.copyOf(aliases), versionLabel);
+	}
+
+	private String firmwareVersionLabel(String value) {
+		String normalized = normalize(value).toLowerCase(Locale.ROOT);
+		if (normalized.matches(".*\\b200\\s*w?\\b.*")) {
+			return "200W";
+		}
+		if (normalized.matches(".*\\b250\\s*w?\\b.*")) {
+			return "250W";
+		}
+		Matcher korean = Pattern.compile("버[전젼]\\s*(\\d+)").matcher(normalized);
+		if (korean.find()) {
+			return "버전" + korean.group(1);
+		}
+		Matcher english = Pattern.compile("\\b(?:ver|version|v)[ _-]?(\\d+)\\b").matcher(normalized);
+		if (english.find()) {
+			return "버전" + english.group(1);
+		}
+		return "";
+	}
+
+	private String splitCamelCase(String value) {
+		return value == null ? "" : value.replaceAll("(?<=[a-z])(?=[A-Z])", " ");
+	}
+
+	private List<String> koreanPhoneticAliases(String value) {
+		String normalized = normalizeSearchText(splitCamelCase(value));
+		if (normalized.isBlank()) {
+			return List.of();
+		}
+		List<String> tokens = List.of(normalized.split("\\s+"));
+		List<String> koreanTokens = new ArrayList<>();
+		for (String token : tokens) {
+			String korean = englishTokenToKorean(token);
+			if (korean.isBlank()) {
+				return List.of();
+			}
+			koreanTokens.add(korean);
+		}
+		if (koreanTokens.isEmpty()) {
+			return List.of();
+		}
+		String spaced = String.join(" ", koreanTokens);
+		String compact = String.join("", koreanTokens);
+		return spaced.equals(compact) ? List.of(compact) : List.of(spaced, compact);
+	}
+
+	private String englishTokenToKorean(String token) {
+		return switch (token.toLowerCase(Locale.ROOT)) {
+			case "allion" -> "올리온";
+			case "bereborn" -> "비리본";
+			case "plus" -> "플러스";
+			case "exo" -> "엑소";
+			case "max" -> "맥스";
+			case "wave" -> "웨이브";
+			case "revive" -> "리바이브";
+			case "new" -> "뉴";
+			case "reju", "rejuwave" -> "리쥬";
+			case "shiva", "siva" -> "쉬바";
+			case "slim" -> "슬림";
+			case "doc" -> "독";
+			case "therma" -> "써마";
+			case "on" -> "온";
+			case "quantum" -> "퀀텀";
+			case "pro" -> "프로";
+			case "nova" -> "노바";
+			case "ai" -> "에이아이";
+			case "health" -> "헬스";
+			case "care" -> "케어";
+			default -> "";
+		};
+	}
+
+	private Path firmwareRepositoryPath() {
+		return rootPath.resolve(FIRMWARE_REPOSITORY_DIRECTORY).normalize();
+	}
+
+	private Path firmwareDeveloperRepositoryPath() {
+		return rootPath.resolve(FIRMWARE_DEVELOPER_REPOSITORY_DIRECTORY).normalize();
+	}
+
+	private Path copyFirmwareToWorkspace(Path source) {
+		try {
+			Files.createDirectories(uploadPath);
+			Path target = uploadPath.resolve(source.getFileName().toString()).normalize();
+			assertInsideRoot(target);
+			Files.copy(source, target, StandardCopyOption.REPLACE_EXISTING);
+			return target;
+		} catch (IOException exception) {
+			throw new IllegalStateException("Failed to copy firmware file to workspace.", exception);
+		}
+	}
+
+	private String firmwareFoundStatus(FirmwareFile firmwareFile, String completion) {
+		String heading = firmwareFile.repositoryKind() == FirmwareRepositoryKind.DEVELOPER
+			? "🔍 검색 결과 (개발자 원본)"
+			: "🔍 검색 결과";
+		StringBuilder status = new StringBuilder(heading)
+			.append("\n\n제품명: ").append(firmwareFile.displayName())
+			.append("\n파일: ").append(firmwareFile.fileName())
+			.append("\n경로: ").append(firmwareFile.path().toAbsolutePath().normalize());
+		if (firmwareFile.repositoryKind() == FirmwareRepositoryKind.DEVELOPER) {
+			status.append("\n유형: 개발자 원본 파일 ⚠️");
+		}
+		status.append("\n\n✅ ").append(completion);
+		return status.toString();
+	}
+
+	private String firmwareCatalogText(List<FirmwareFile> firmwareFiles) {
+		StringBuilder builder = new StringBuilder();
+		appendFirmwareCatalogSection(builder, "📋 " + firmwareRepositoryPath().toAbsolutePath().normalize()
+			+ " — 양산 펌웨어/디스플레이 파일 목록", firmwareFiles, FirmwareRepositoryKind.PRODUCTION);
+		appendFirmwareCatalogSection(builder, "\n\n📋 " + firmwareDeveloperRepositoryPath().toAbsolutePath().normalize()
+			+ " — 개발자 원본 파일 목록", firmwareFiles, FirmwareRepositoryKind.DEVELOPER);
+		return builder.toString().strip();
+	}
+
+	private void appendFirmwareCatalogSection(
+		StringBuilder builder,
+		String heading,
+		List<FirmwareFile> firmwareFiles,
+		FirmwareRepositoryKind repositoryKind
+	) {
+		List<FirmwareFile> sectionFiles = firmwareFiles.stream()
+			.filter(file -> file.repositoryKind() == repositoryKind)
+			.sorted(Comparator.comparing(FirmwareFile::fileName))
+			.toList();
+		builder.append(heading);
+		if (sectionFiles.isEmpty()) {
+			builder.append("\n- ZIP 파일 없음");
+			return;
+		}
+		for (int index = 0; index < sectionFiles.size(); index++) {
+			FirmwareFile file = sectionFiles.get(index);
+			builder.append('\n')
+				.append(index + 1)
+				.append(". ")
+				.append(file.displayName())
+				.append(" — ")
+				.append(file.fileName());
+		}
+	}
+
+	private String firmwareOptionLabel(FirmwareFile firmwareFile) {
+		String versionLabel = firmwareFile.versionLabel();
+		String label = versionLabel.isBlank() ? firmwareFile.displayName() : versionLabel;
+		if (firmwareFile.repositoryKind() == FirmwareRepositoryKind.DEVELOPER) {
+			return label + " / 개발자 원본";
+		}
+		return label + " / 양산";
+	}
+
+	private String firmwareClarificationName(List<FirmwareFile> options) {
+		if (options.isEmpty()) {
+			return "해당 제품";
+		}
+		return switch (options.get(0).family()) {
+			case "bereborn-plus" -> "비리본 플러스";
+			case "slim-doc" -> "슬림독";
+			case "new-revive" -> "뉴 리바이브";
+			default -> options.get(0).displayName().replaceAll("\\s*\\([^)]*\\)", "");
+		};
+	}
+
 	public List<AvaAiWorkspaceItemResponse> listFiles(String path, AuthPrincipal principal) {
 		Path directory = resolveInsideRoot(path);
 		if (!Files.isDirectory(directory)) {
-			throw new IllegalArgumentException("Workspace path is not a directory.");
+			Path fallback = bestExistingPathForExplicitPath(path);
+			if (fallback == null || !Files.isDirectory(fallback, LinkOption.NOFOLLOW_LINKS)) {
+				throw new IllegalArgumentException("Workspace path is not a directory.");
+			}
+			directory = fallback;
 		}
 		try (Stream<Path> stream = Files.list(directory)) {
 			return stream
@@ -411,6 +1275,65 @@ public class AvaAiWorkspaceService {
 			.limit(MAX_FILE_RESULTS)
 			.map(item -> fileItem(item.path(), searchSnippet(item.path(), searchQuery)))
 			.toList();
+	}
+
+	private WorkspaceActionResult inspectExplicitWorkspacePath(String path, AuthPrincipal principal) {
+		Path target;
+		try {
+			target = resolveInsideRoot(path);
+		} catch (IllegalArgumentException exception) {
+			return null;
+		}
+		if (!Files.exists(target)) {
+			target = bestExistingPathForExplicitPath(path);
+			if (target == null) {
+				return null;
+			}
+		}
+		if (Files.isDirectory(target, LinkOption.NOFOLLOW_LINKS)) {
+			List<AvaAiWorkspaceItemResponse> listed = listFiles(relativePath(target), principal);
+			String status = workspacePathLabel(target) + " 폴더에서 " + listed.size()
+				+ "개 항목을 확인했습니다" + itemTitlePreview(listed) + ".";
+			return new WorkspaceActionResult(
+				List.copyOf(limitItems(listed, 120)),
+				status,
+				promptContext(listed, status),
+				true
+			);
+		}
+		if (Files.isRegularFile(target, LinkOption.NOFOLLOW_LINKS)) {
+			AvaAiWorkspaceItemResponse item = readFile(relativePath(target), principal);
+			String status = workspacePathLabel(target) + " 파일을 확인했습니다.";
+			return new WorkspaceActionResult(
+				List.of(item),
+				status,
+				promptContext(List.of(item), status),
+				true
+			);
+		}
+		return null;
+	}
+
+	private Path bestExistingPathForExplicitPath(String path) {
+		FileSearchQuery query = fileSearchQuery(path);
+		if (query.tokens().isEmpty()) {
+			return null;
+		}
+		List<ScoredPath> results = new ArrayList<>();
+		searchDirectory(rootPath, query, results);
+		if (results.isEmpty()) {
+			return null;
+		}
+		String terminal = compactSearchText(lastPathSegment(path));
+		return results.stream()
+			.sorted(Comparator
+				.comparing((ScoredPath item) -> !Files.isDirectory(item.path(), LinkOption.NOFOLLOW_LINKS))
+				.thenComparing((ScoredPath item) -> terminal.isBlank() || !compactSearchText(relativePath(item.path())).contains(terminal))
+				.thenComparing(Comparator.comparingInt(ScoredPath::score).reversed())
+				.thenComparing(item -> relativePath(item.path()).length()))
+			.map(ScoredPath::path)
+			.findFirst()
+			.orElse(null);
 	}
 
 	public AvaAiWorkspaceItemResponse readFile(String path, AuthPrincipal principal) {
@@ -580,7 +1503,11 @@ public class AvaAiWorkspaceService {
 		}
 		String message = request.message() == null ? "" : request.message().trim();
 		if (!message.isBlank()) {
-			ChatMessageResponse response = chatService.send(room.code(), new ChatMessageRequest(message, false, false), principal);
+			ChatMessageResponse response = chatService.send(
+				room.code(),
+				new ChatMessageRequest(message, false, false, List.of()),
+				principal
+			);
 			publishRoomEvent(room, response);
 		}
 		String status = room.title() + " 채팅방으로 " + sentItems.size() + "개 파일을 전송했습니다.";
@@ -659,36 +1586,57 @@ public class AvaAiWorkspaceService {
 		return List.copyOf(items);
 	}
 
-	public List<AvaAiWorkspaceItemResponse> searchAzoomChat(String query, AuthPrincipal principal) {
-		var workspace = azoomService.workspaceForNotiva(principal);
+	public List<AvaAiWorkspaceItemResponse> searchMentionNotifications(String query, AuthPrincipal principal) {
 		String normalized = normalize(query).toLowerCase(Locale.ROOT);
-		List<String> tokens = tokens(normalized, CHAT_STOPWORDS);
+		List<String> tokens = tokens(normalized, Set.of(
+			"\uBA58\uC158",
+			"\uC54C\uB824",
+			"\uC628\uAC70",
+			"\uC628\uAC83",
+			"\uB098\uD55C\uD14C",
+			"\uB0B4\uAC8C",
+			"\uC804\uBD80",
+			"\uBAA8\uB450",
+			"\uC5B4\uC81C",
+			"\uC624\uB298"
+		));
 		QueryHints hints = queryHints(normalized);
 		List<AvaAiWorkspaceItemResponse> items = new ArrayList<>();
-		for (AzoomChatMessageEntity message : azoomChatMessageRepository
-			.findTop200ByCompanySlugOrderBySentAtDesc(workspace.getCompanySlug())) {
+		List<ChatMentionNotificationEntity> notifications = mentionNotificationRepository
+			.findByMentionedAccount_IdOrderByCreatedAtDesc(principal.userId(), PageRequest.of(0, 120));
+		for (ChatMentionNotificationEntity notification : notifications) {
 			if (items.size() >= MAX_CHAT_RESULTS) {
 				break;
 			}
+			ChatMessageEntity message = notification.getMessage();
 			if (!matchesTimeHints(message.getSentAt(), hints)) {
 				continue;
 			}
-			String haystack = (message.getSenderName() + " " + message.getChannelName() + " " + message.getContent())
+			String roomTitle = "";
+			for (ChatRoomResponse room : chatService.rooms(principal)) {
+				if (room.code().equals(notification.getRoomCode())) {
+					roomTitle = room.title();
+					break;
+				}
+			}
+			String haystack = (message.getSenderName() + " " + roomTitle + " " + message.getContent())
 				.toLowerCase(Locale.ROOT);
 			if (!tokens.isEmpty() && tokens.stream().noneMatch(haystack::contains)) {
 				continue;
 			}
 			items.add(new AvaAiWorkspaceItemResponse(
-				"azoom_chat_message",
-				"AZOOM #" + message.getChannelName(),
-				message.getSenderName() + " 쨌 " + message.getSentAt(),
+				"mention_notification",
+				message.getSenderName() + " \u00b7 " + (roomTitle == null || roomTitle.isBlank()
+					? notification.getRoomCode()
+					: roomTitle),
+				"@" + notification.getMentionDisplayName() + " \u00b7 " + message.getSentAt(),
 				"",
 				"",
 				"",
 				message.getContent(),
 				null,
 				message.getSentAt(),
-				message.getRoomCode()
+				notification.getRoomCode()
 			));
 		}
 		return List.copyOf(items);
@@ -885,7 +1833,7 @@ public class AvaAiWorkspaceService {
 		stack.push(start);
 		while (!stack.isEmpty() && results.size() < MAX_FILE_CANDIDATES) {
 			Path current = stack.pop();
-			if (current == null || Files.isSymbolicLink(current)) {
+			if (current == null || Files.isSymbolicLink(current) || shouldSkipSearchPath(current, query)) {
 				continue;
 			}
 			int score = scoreFile(current, query);
@@ -917,6 +1865,33 @@ public class AvaAiWorkspaceService {
 		}
 	}
 
+	private boolean shouldSkipSearchPath(Path path, FileSearchQuery query) {
+		if (path == null || path.equals(rootPath)) {
+			return false;
+		}
+		String name = path.getFileName() == null ? "" : path.getFileName().toString().toLowerCase(Locale.ROOT);
+		if (name.isBlank()) {
+			return false;
+		}
+		if (name.equals("$recycle.bin")
+			|| name.equals("system volume information")
+			|| name.equals(".abbas_nas_recycle_bin")
+			|| name.equals("__macosx")
+			|| name.equals(".git")
+			|| name.equals("node_modules")) {
+			return true;
+		}
+		if (query.archiveIntent() && !query.sourceCodeIntent()
+			&& (name.equals("debug")
+				|| name.equals("release")
+				|| name.equals("build")
+				|| name.equals("bin")
+				|| name.equals("obj"))) {
+			return true;
+		}
+		return false;
+	}
+
 	private String extension(Path path) {
 		if (path == null || path.getFileName() == null) {
 			return "";
@@ -941,9 +1916,28 @@ public class AvaAiWorkspaceService {
 		String phrase = normalizeSearchText(query.phrase());
 		String compactPhrase = compactSearchText(phrase);
 		String extension = extension(path);
+		boolean directory = Files.isDirectory(path, LinkOption.NOFOLLOW_LINKS);
+		boolean archive = !extension.isBlank() && ARCHIVE_FILE_EXTENSIONS.contains(extension);
+		int depth = relativePath(path).isBlank()
+			? 0
+			: relativePath(path).replace('\\', '/').split("/").length;
 		int score = 0;
 		int matchedGroups = 0;
 
+		if (query.firmwareIntent()) {
+			if (directory && (compactName.contains("펌웨어") || compactName.contains("firmware") || compactName.contains("firm"))) {
+				score += 180;
+			}
+			if (archive) {
+				score += 130;
+			}
+		}
+		if (query.archiveIntent() && archive) {
+			score += 100;
+		}
+		if (query.archiveIntent() && directory && depth <= 3) {
+			score += 36;
+		}
 		if (!extension.isBlank() && query.preferredExtensions().contains(extension)) {
 			score += query.arduinoIntent() && ARDUINO_FILE_EXTENSIONS.contains(extension) ? 180 : 90;
 		}
@@ -1010,13 +2004,19 @@ public class AvaAiWorkspaceService {
 		} else {
 			score += matchedGroups * 14;
 		}
-		if (Files.isDirectory(path)) {
+		if (directory) {
 			score += 10;
 		} else if (!extension.isBlank() && SOURCE_CODE_EXTENSIONS.contains(extension)) {
 			score += 12;
 		}
+		if (query.archiveIntent() && !query.sourceCodeIntent() && !archive && !directory) {
+			score -= 34;
+		}
+		if (query.firmwareIntent() && !query.sourceCodeIntent() && depth >= 5 && !archive) {
+			score -= 60;
+		}
 		score += Math.max(0, 24 - (relative.length() / 28));
-		return score;
+		return Math.max(0, score);
 	}
 
 	private FileSearchQuery fileSearchQuery(String query) {
@@ -1031,9 +2031,16 @@ public class AvaAiWorkspaceService {
 		LinkedHashSet<String> explicitExtensions = extractRequestedExtensions(phrase);
 		boolean arduinoIntent = containsAny(normalizedPhrase, ARDUINO_INTENT_TOKENS) ||
 			explicitExtensions.stream().anyMatch(ARDUINO_FILE_EXTENSIONS::contains);
-		boolean sourceCodeIntent = arduinoIntent ||
-			containsAny(normalizedPhrase, SOURCE_CODE_INTENT_TOKENS) ||
+		boolean firmwareIntent = containsAny(normalizedPhrase, FIRMWARE_INTENT_TOKENS);
+		boolean strongSourceCodeIntent = arduinoIntent ||
+			containsAny(normalizedPhrase, STRONG_SOURCE_CODE_INTENT_TOKENS) ||
 			explicitExtensions.stream().anyMatch(SOURCE_CODE_EXTENSIONS::contains);
+		boolean sourceCodeIntent = arduinoIntent ||
+			strongSourceCodeIntent ||
+			explicitExtensions.stream().anyMatch(SOURCE_CODE_EXTENSIONS::contains);
+		boolean archiveIntent = firmwareIntent ||
+			containsAny(normalizedPhrase, ARCHIVE_INTENT_TOKENS) ||
+			explicitExtensions.stream().anyMatch(ARCHIVE_FILE_EXTENSIONS::contains);
 		LinkedHashSet<String> preferredExtensions = new LinkedHashSet<>();
 		preferredExtensions.addAll(explicitExtensions);
 		if (arduinoIntent) {
@@ -1055,7 +2062,9 @@ public class AvaAiWorkspaceService {
 			variants,
 			Set.copyOf(preferredExtensions),
 			sourceCodeIntent,
-			arduinoIntent
+			arduinoIntent,
+			firmwareIntent,
+			archiveIntent
 		);
 	}
 
@@ -1151,9 +2160,17 @@ public class AvaAiWorkspaceService {
 			case "\uD38C\uC6E8\uC5B4", "firmware" -> {
 				addVariant(variants, "\uD38C\uC6E8\uC5B4");
 				addVariant(variants, "firmware");
+				addVariant(variants, "\uD38C\uC6E8\uC5B4 \uBAA8\uC74C");
 				addVariant(variants, "\uC6D0\uBCF8");
-				addVariant(variants, "source");
-				addVariant(variants, "src");
+			}
+			case "\uBE44\uB9AC\uBCF8", "\uBCA0\uB9AC\uBCF8", "bereborn", "be-reborn", "be_reborn", "reborn" -> {
+				addVariant(variants, "\uBE44\uB9AC\uBCF8");
+				addVariant(variants, "\uBCA0\uB9AC\uBCF8");
+				addVariant(variants, "bereborn");
+				addVariant(variants, "be reborn");
+				addVariant(variants, "be-reborn");
+				addVariant(variants, "be_reborn");
+				addVariant(variants, "reborn");
 			}
 			case "\uC544\uB450\uC774\uB178", "\uC774\uB178", "arduino", "sketch" -> {
 				addVariant(variants, "\uC544\uB450\uC774\uB178");
@@ -1230,7 +2247,9 @@ public class AvaAiWorkspaceService {
 			if (token.endsWith("file") && token.length() > 4) {
 				token = token.substring(0, token.length() - 4);
 			}
-			if (SOURCE_CODE_EXTENSIONS.contains(token) || TEXT_SEARCH_EXTENSIONS.contains(token)) {
+			if (SOURCE_CODE_EXTENSIONS.contains(token)
+				|| TEXT_SEARCH_EXTENSIONS.contains(token)
+				|| ARCHIVE_FILE_EXTENSIONS.contains(token)) {
 				extensions.add(token);
 			}
 		}
@@ -1311,15 +2330,39 @@ public class AvaAiWorkspaceService {
 	private Path resolveInsideRoot(String value) {
 		String normalized = value == null ? "" : value.trim();
 		normalized = normalized.replace('\\', '/');
+		normalized = normalized.replaceAll("/{2,}", "/");
 		if (normalized.matches("^[A-Za-z]:/.*")) {
 			normalized = normalized.substring(3);
 		}
 		while (normalized.startsWith("/")) {
 			normalized = normalized.substring(1);
 		}
+		normalized = stripWorkspaceRootAlias(normalized);
 		Path target = rootPath.resolve(normalized).normalize();
 		assertInsideRoot(target);
 		return target;
+	}
+
+	private String stripWorkspaceRootAlias(String value) {
+		String normalized = value == null ? "" : value.trim().replace('\\', '/');
+		normalized = normalized.replaceAll("/{2,}", "/");
+		while (normalized.startsWith("/")) {
+			normalized = normalized.substring(1);
+		}
+		String lower = normalized.toLowerCase(Locale.ROOT);
+		for (String alias : List.of("foriver_nas", "foriver-nas", "foriver nas", "forivernas")) {
+			if (lower.equals(alias)) {
+				return "";
+			}
+			if (lower.startsWith(alias + "/")) {
+				String stripped = normalized.substring(alias.length() + 1);
+				while (stripped.startsWith("/")) {
+					stripped = stripped.substring(1);
+				}
+				return stripped;
+			}
+		}
+		return normalized;
 	}
 
 	private Path resolveSendableFile(String value) {
@@ -1400,6 +2443,10 @@ public class AvaAiWorkspaceService {
 			"specification",
 			"manual",
 			"firmware",
+			"firm",
+			"fw",
+			"zip",
+			"archive",
 			"image",
 			"logo",
 			"uiux",
@@ -1419,6 +2466,10 @@ public class AvaAiWorkspaceService {
 			return true;
 		}
 		return containsAny(value, "파일", "폴더", "nas", "f:", "생성", "수정", "삭제");
+	}
+
+	private boolean hasFileMutationIntent(String value) {
+		return containsAny(value, "삭제", "지워", "생성", "만들", "수정", "변경", "덮어");
 	}
 
 	private List<AvaAiWorkspaceItemResponse> mutateFilesFromPrompt(
@@ -1446,8 +2497,33 @@ public class AvaAiWorkspaceService {
 		return List.of();
 	}
 
+	private String workspacePathLabel(Path path) {
+		String relative = relativePath(path).replace('/', '\\');
+		return relative.isBlank() ? "FORIVER_NAS" : "FORIVER_NAS\\" + relative;
+	}
+
+	private String itemTitlePreview(List<AvaAiWorkspaceItemResponse> items) {
+		if (items == null || items.isEmpty()) {
+			return "";
+		}
+		List<String> titles = items.stream()
+			.limit(12)
+			.map(AvaAiWorkspaceItemResponse::title)
+			.filter(title -> title != null && !title.isBlank())
+			.toList();
+		if (titles.isEmpty()) {
+			return "";
+		}
+		String suffix = items.size() > titles.size() ? " 외 " + (items.size() - titles.size()) + "개" : "";
+		return ": " + String.join(", ", titles) + suffix;
+	}
+
 	private boolean hasChatIntent(String value) {
 		return containsAny(value, "채팅", "말했", "올린", "보낸", "메시지", "사진", "이미지", "첨부");
+	}
+
+	private boolean hasMentionIntent(String value) {
+		return value.contains("\uBA58\uC158") || value.contains("@");
 	}
 
 	private boolean hasMeetingIntent(String value) {
@@ -1512,18 +2588,105 @@ public class AvaAiWorkspaceService {
 			if (start >= 0 && end > start) {
 				String candidate = value.substring(start + 1, end).trim();
 				if (looksLikePath(candidate)) {
-					return candidate;
+					return trimToExistingWorkspacePath(candidate);
 				}
 			}
 		}
 		int driveIndex = value.toLowerCase(Locale.ROOT).indexOf("f:");
 		if (driveIndex >= 0) {
-			String candidate = value.substring(driveIndex).split("\\s+")[0];
+			String candidate = value.substring(driveIndex);
 			if (looksLikePath(candidate)) {
-				return candidate;
+				return trimToExistingWorkspacePath(candidate);
+			}
+		}
+		for (String alias : List.of("FORIVER_NAS", "FORIVER-NAS", "FORIVER NAS", "FORIVERNAS")) {
+			int aliasIndex = value.toLowerCase(Locale.ROOT).indexOf(alias.toLowerCase(Locale.ROOT));
+			if (aliasIndex >= 0) {
+				String candidate = value.substring(aliasIndex);
+				if (looksLikePath(candidate)) {
+					return trimToExistingWorkspacePath(candidate);
+				}
+			}
+		}
+		for (String part : value.split("\\s+")) {
+			if (looksLikePath(part)) {
+				return trimToExistingWorkspacePath(part);
 			}
 		}
 		return "";
+	}
+
+	private String trimToExistingWorkspacePath(String value) {
+		String normalized = value == null ? "" : value.trim();
+		normalized = normalized.replaceAll("^[\"'`]+|[\"'`.。]+$", "").trim();
+		if (normalized.isBlank()) {
+			return "";
+		}
+		String direct = trimTrailingPathCommandWords(normalized);
+		if (workspacePathExists(direct)) {
+			return direct;
+		}
+		String[] parts = normalized.split("\\s+");
+		for (int end = parts.length; end >= 1; end--) {
+			String candidate = String.join(" ", java.util.Arrays.copyOf(parts, end)).trim();
+			candidate = trimTrailingPathCommandWords(candidate);
+			if (workspacePathExists(candidate)) {
+				return candidate;
+			}
+		}
+		return direct;
+	}
+
+	private String trimTrailingPathCommandWords(String value) {
+		String candidate = value == null ? "" : value.trim();
+		boolean changed;
+		do {
+			changed = false;
+			for (String suffix : List.of(
+				"파일 목록 보여줘",
+				"파일목록 보여줘",
+				"목록 보여줘",
+				"목록",
+				"보여줘",
+				"알려줘",
+				"찾아줘",
+				"검색해줘",
+				"확인해줘",
+				"열어줘",
+				"안에",
+				"에서",
+				"파일",
+				"폴더"
+			)) {
+				if (candidate.length() > suffix.length() && candidate.endsWith(suffix)) {
+					candidate = candidate.substring(0, candidate.length() - suffix.length()).trim();
+					changed = true;
+				}
+			}
+		} while (changed);
+		return candidate;
+	}
+
+	private String lastPathSegment(String value) {
+		String normalized = trimTrailingPathCommandWords(value == null ? "" : value.trim())
+			.replace('\\', '/')
+			.replaceAll("/{2,}", "/");
+		while (normalized.endsWith("/") && normalized.length() > 1) {
+			normalized = normalized.substring(0, normalized.length() - 1);
+		}
+		int slash = normalized.lastIndexOf('/');
+		return slash >= 0 ? normalized.substring(slash + 1).trim() : normalized.trim();
+	}
+
+	private boolean workspacePathExists(String value) {
+		if (value == null || value.isBlank()) {
+			return false;
+		}
+		try {
+			return Files.exists(resolveInsideRoot(value));
+		} catch (IllegalArgumentException exception) {
+			return false;
+		}
 	}
 
 	private boolean looksLikePath(String value) {
@@ -1841,13 +3004,48 @@ public class AvaAiWorkspaceService {
 	public record WorkspaceDownload(Resource resource, String fileName, String contentType, long size) {
 	}
 
+	private record FirmwareProduct(String displayName, String fileName, String family, List<String> aliases) {
+	}
+
+	private enum FirmwareRepositoryKind {
+		PRODUCTION,
+		DEVELOPER
+	}
+
+	private record FirmwareFile(
+		String displayName,
+		String fileName,
+		String family,
+		List<String> aliases,
+		Path path,
+		FirmwareRepositoryKind repositoryKind,
+		String versionLabel
+	) {
+	}
+
+	private record InferredFirmwareName(
+		String displayName,
+		String family,
+		List<String> aliases,
+		String versionLabel
+	) {
+	}
+
+	private record FirmwareMatch(FirmwareFile file, int score) {
+	}
+
+	private record FirmwareRequest(boolean triggered, boolean listRequested, boolean chatDeliveryRequested) {
+	}
+
 	private record FileSearchQuery(
 		String phrase,
 		List<String> tokens,
 		List<List<String>> variants,
 		Set<String> preferredExtensions,
 		boolean sourceCodeIntent,
-		boolean arduinoIntent
+		boolean arduinoIntent,
+		boolean firmwareIntent,
+		boolean archiveIntent
 	) {
 	}
 

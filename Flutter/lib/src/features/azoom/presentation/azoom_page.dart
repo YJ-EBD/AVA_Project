@@ -1,3 +1,5 @@
+// ignore_for_file: unused_element, unused_element_parameter, unused_field
+
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
@@ -5,65 +7,68 @@ import 'dart:math' as math;
 import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_webrtc/flutter_webrtc.dart' as rtc;
 import 'package:livekit_client/livekit_client.dart' as lk;
+import 'package:permission_handler/permission_handler.dart';
 import 'package:record/record.dart';
 
 import '../../../config/app_config.dart';
+import '../../../platform/azoom_voice_platform.dart';
+import '../../../platform/window_control.dart';
 import '../../auth/application/auth_controller.dart';
-import '../../messenger/data/chat_api.dart';
+import '../../messenger/application/notification_center_controller.dart';
 import '../../messenger/domain/messenger_models.dart';
 import '../../messenger/presentation/widgets/profile_avatar.dart';
-import '../../../platform/window_control.dart';
+import '../../../shared/ava_toast.dart';
 import '../data/azoom_api.dart';
 import 'azoom_screen_share_dialog.dart';
 
 const _serverRailWidth = 72.0;
 const _channelSidebarWidth = 290.0;
 const _channelHeaderHeight = 48.0;
-const _composerHeight = 64.0;
 
 const _avaAccent = Color(0xFF2387F2);
-const _avaAccentDeep = Color(0xFF1D63AA);
-const _chatBackground = Color(0xFF313338);
-const _composerBackground = Color(0xFF383A40);
-const _borderColor = Color(0xFF1E1F22);
-const _searchBackground = Color(0xFF1E1F22);
-const _stageBackground = Color(0xFF000000);
-const _stageTile = Color(0xFF3A281F);
-const _stagePanel = Color(0xFF111214);
-const _stageControl = Color(0xFF1E1F22);
-const _stageBorder = Color(0xFF34363C);
-const _stageText = Color(0xFFF2F3F5);
-const _stageMutedText = Color(0xFFB5BAC1);
-const _stageMenu = Color(0xFF111214);
-const _stageMenuHover = Color(0xFF2B2D31);
-const _stageMenuBorder = Color(0xFF34363C);
-const _discordActivityTop = Color(0xFF420939);
-const _discordActivityBottom = Color(0xFF08090C);
+const _avaAccentDeep = Color(0xFF155E9E);
+const _chatBackground = Color(0xFFF4F9FE);
+const _borderColor = Color(0xFFC8DDEA);
+const _stageBackground = Color(0xFFF2F8FD);
+const _stageTile = Color(0xFFE3F0FA);
+const _stagePanel = Color(0xFFFFFFFF);
+const _stageControl = Color(0xFFE6F1FA);
+const _stageBorder = Color(0xFFC5D9E8);
+const _stageText = Color(0xFF173247);
+const _stageMutedText = Color(0xFF62788A);
+const _stageMenu = Color(0xFFFFFFFF);
+const _stageMenuHover = Color(0xFFEAF5FF);
+const _stageMenuBorder = Color(0xFFD2E2F0);
+const _discordActivityTop = Color(0xFFD5EAFF);
+const _discordActivityBottom = Color(0xFFF7FBFF);
 const _discordDanger = Color(0xFFDA373C);
-const _discordSidebarBackground = Color(0xFF2B2D31);
-const _discordSidebarPanel = Color(0xFF232428);
-const _discordSidebarSelected = Color(0xFF404249);
-const _discordSidebarHover = Color(0xFF35373C);
-const _discordSidebarBorder = Color(0xFF1E1F22);
-const _discordSidebarText = Color(0xFFF2F3F5);
-const _discordSidebarMuted = Color(0xFF949BA4);
-const _discordSidebarSubtle = Color(0xFF80848E);
-const _discordSidebarGreen = Color(0xFF23A55A);
+const _discordSidebarBackground = Color(0xFFF6FAFE);
+const _discordSidebarPanel = Color(0xFFEAF3FB);
+const _discordSidebarSelected = Color(0xFFDDEEFF);
+const _discordSidebarHover = Color(0xFFEFF7FE);
+const _discordSidebarBorder = Color(0xFFC9DDEA);
+const _discordSidebarText = Color(0xFF17212A);
+const _discordSidebarMuted = Color(0xFF63788A);
+const _discordSidebarSubtle = Color(0xFF8798A7);
+const _discordSidebarGreen = Color(0xFF20A66A);
 const _stageControlsBottomInset = 18.0;
 const _stageControlsOverlayHeight = 96.0;
 const _mobileAzoomBreakpoint = 720.0;
 const _mobileAzoomRailWidth = 64.0;
-const _mobileAzoomRailColor = Color(0xFF111214);
-const _mobileAzoomBottomNavHeight = 64.0;
+const _mobileAzoomRailColor = Color(0xFFE8F3FC);
+const _mobileAzoomBottomNavHeight = 58.0;
 const _mobileAzoomBottomSheetHeight = 236.0;
-const _azoomLiveKitProbeTimeout = Duration(milliseconds: 1500);
-const _azoomLiveKitConnectTimeout = Duration(seconds: 8);
-const _azoomMicrophoneEnableTimeout = Duration(seconds: 8);
+const _azoomLiveKitProbeTimeout = Duration(seconds: 2);
+const _azoomLiveKitConnectTimeout = Duration(seconds: 25);
+const _azoomMicrophoneEnableTimeout = Duration(seconds: 12);
+const _azoomLiveKitRetryDelay = Duration(seconds: 4);
 const _azoomVoiceStatusTimeout = Duration(seconds: 6);
+const _azoomFireworkDuration = Duration(milliseconds: 2150);
 const _notivaRealtimeChunkDuration = Duration(seconds: 6);
 const _notivaRecordSampleRate = 16000;
 const _notivaRecordChannels = 1;
@@ -72,21 +77,28 @@ const _notivaMinSpeechRms = 0.006;
 const _notivaMinSpeechPeak = 0.030;
 const _notivaMinSpeechActiveRatio = 0.003;
 const _notivaRealtimeUploadTimeout = Duration(minutes: 10);
+const _azoomVoiceHeartbeatInterval = Duration(seconds: 3);
 const _discordSpeaking = Color(0xFF23A55A);
-const _voiceRoomBackground = Color(0xFF102D3D);
-const _voiceRoomHeader = Color(0xFF0E2838);
-const _voiceRoomBottom = Color(0xFF173E53);
-const _voiceRoomPanel = Color(0xFF173B50);
-const _voiceRoomTile = Color(0xFF2A596F);
-const _voiceRoomControl = Color(0xFF25586F);
-const _voiceRoomBorder = Color(0xFF37667D);
-const _voiceRoomText = Color(0xFFEAF4FA);
-const _voiceRoomMutedText = Color(0xFFB8D0DE);
+const _voiceRoomBackground = Color(0xFFF2F8FD);
+const _voiceRoomHeader = Color(0xFFE3F1FF);
+const _voiceRoomBottom = Color(0xFFE8F4FF);
+const _voiceRoomPanel = Color(0xFFFFFFFF);
+const _voiceRoomTile = Color(0xFFE4F1FB);
+const _voiceRoomControl = Color(0xFFEAF5FF);
+const _voiceRoomBorder = Color(0xFFC5D9E8);
+const _voiceRoomText = Color(0xFF123047);
+const _voiceRoomMutedText = Color(0xFF62788A);
 const _primaryText = Color(0xFF213640);
 const _secondaryText = Color(0xFF4D6370);
 
-Future<List<String>> _orderedLiveKitConnectUrls(String rawUrl) async {
-  final candidates = _liveKitConnectUrlCandidates(rawUrl);
+Future<List<String>> _orderedLiveKitConnectUrls(
+  String rawUrl, {
+  String? apiBaseUrl,
+}) async {
+  final candidates = _liveKitConnectUrlCandidates(
+    rawUrl,
+    apiBaseUrl: apiBaseUrl,
+  );
   if (candidates.length < 2) {
     return candidates;
   }
@@ -107,7 +119,7 @@ Future<List<String>> _orderedLiveKitConnectUrls(String rawUrl) async {
   return reachable.isEmpty ? candidates : [...reachable, ...fallback];
 }
 
-List<String> _liveKitConnectUrlCandidates(String rawUrl) {
+List<String> _liveKitConnectUrlCandidates(String rawUrl, {String? apiBaseUrl}) {
   final trimmed = rawUrl.trim();
   if (trimmed.isEmpty) {
     return const <String>[];
@@ -115,12 +127,48 @@ List<String> _liveKitConnectUrlCandidates(String rawUrl) {
 
   final candidates = <String>[trimmed];
   final uri = Uri.tryParse(trimmed);
-  if (uri != null &&
-      (uri.scheme == 'ws' || uri.scheme == 'wss') &&
-      !_isLoopbackLiveKitHost(uri.host)) {
-    candidates.add(uri.replace(host: '127.0.0.1').toString());
+  if (uri != null && (uri.scheme == 'ws' || uri.scheme == 'wss')) {
+    if (_isLoopbackLiveKitHost(uri.host) && Platform.isAndroid) {
+      candidates.add(uri.replace(host: '10.0.2.2').toString());
+    } else if (!_isLoopbackLiveKitHost(uri.host)) {
+      candidates.add(uri.replace(host: '127.0.0.1').toString());
+    }
+  }
+  final proxyUrl = _liveKitProxyUrlFromApiBase(apiBaseUrl);
+  if (proxyUrl != null) {
+    candidates.add(proxyUrl);
   }
   return <String>{...candidates}.toList(growable: false);
+}
+
+@visibleForTesting
+List<String> liveKitConnectUrlCandidatesForTest(
+  String rawUrl, {
+  String? apiBaseUrl,
+}) {
+  return _liveKitConnectUrlCandidates(rawUrl, apiBaseUrl: apiBaseUrl);
+}
+
+String? _liveKitProxyUrlFromApiBase(String? apiBaseUrl) {
+  final raw = apiBaseUrl?.trim();
+  if (raw == null || raw.isEmpty) {
+    return null;
+  }
+  final uri = Uri.tryParse(raw);
+  if (uri == null || (uri.scheme != 'http' && uri.scheme != 'https')) {
+    return null;
+  }
+  final host = Platform.isAndroid && _isLoopbackLiveKitHost(uri.host)
+      ? '10.0.2.2'
+      : uri.host;
+  return uri
+      .replace(
+        scheme: uri.scheme == 'https' ? 'wss' : 'ws',
+        host: host,
+        path: '',
+        query: null,
+      )
+      .toString();
 }
 
 Future<bool> _canReachLiveKitSignalUrl(String rawUrl) async {
@@ -344,6 +392,9 @@ const _azoomAudioProcessingOptions = lk.AudioCaptureOptions(
   stopAudioCaptureOnMute: true,
 );
 const _azoomAudioOutputOptions = lk.AudioOutputOptions(speakerOn: false);
+
+enum _AzoomNoiseSuppressionMode { krisp, basic, off }
+
 const _azoomScreenShareEncoding = lk.VideoEncoding(
   maxBitrate: 9000 * 1000,
   maxFramerate: 60,
@@ -369,28 +420,17 @@ const _azoomScreenSharePublishOptions = lk.VideoPublishOptions(
   degradationPreference: lk.DegradationPreference.maintainFramerate,
 );
 
-const _fallbackTextChannels = [
-  AzoomTextChannelDto(
-    id: 'all-staff',
-    name: '전직원 회의',
-    roomCode: 'azoom-local-text-all-staff',
-  ),
-  AzoomTextChannelDto(id: 'ra', name: 'RA 회의', roomCode: 'azoom-local-text-ra'),
-  AzoomTextChannelDto(
-    id: 'research',
-    name: '연구소 회의',
-    roomCode: 'azoom-local-text-research',
-  ),
-];
-
 const _fallbackVoiceChannels = [
   AzoomVoiceChannelDto(
     id: 'all-staff',
-    name: '전 직원',
+    name: '전직원 회의',
     roomName: 'azoom-local-voice-all-staff',
     startedAt: null,
     serverNow: null,
     receivedAt: null,
+    accessMode: 'ALL',
+    allowedDepartments: [],
+    canJoin: true,
     participants: [],
   ),
   AzoomVoiceChannelDto(
@@ -400,6 +440,9 @@ const _fallbackVoiceChannels = [
     startedAt: null,
     serverNow: null,
     receivedAt: null,
+    accessMode: 'ALL',
+    allowedDepartments: [],
+    canJoin: true,
     participants: [],
   ),
   AzoomVoiceChannelDto(
@@ -409,6 +452,9 @@ const _fallbackVoiceChannels = [
     startedAt: null,
     serverNow: null,
     receivedAt: null,
+    accessMode: 'ALL',
+    allowedDepartments: [],
+    canJoin: true,
     participants: [],
   ),
 ];
@@ -418,36 +464,37 @@ class AzoomPage extends ConsumerStatefulWidget {
     required this.currentUser,
     this.mobileActiveTab = MessengerTab.azoom,
     this.onMobileTabSelected,
+    this.bypassAndroidVoicePermissionChecks = false,
     super.key,
   });
 
   final PersonProfile currentUser;
   final MessengerTab mobileActiveTab;
   final ValueChanged<MessengerTab>? onMobileTabSelected;
+  @visibleForTesting
+  final bool bypassAndroidVoicePermissionChecks;
 
   @override
   ConsumerState<AzoomPage> createState() => _AzoomPageState();
 }
 
-class _AzoomPageState extends ConsumerState<AzoomPage> {
-  final _messageController = TextEditingController();
-  final _messageScrollController = ScrollController();
+class _AzoomPageState extends ConsumerState<AzoomPage>
+    with WidgetsBindingObserver {
   late final AzoomVoiceStageActive _voiceStageActive;
+  late final AzoomApi _disposeAzoomApi;
 
   AzoomChannelsDto? _channels;
-  AzoomTextChannelDto? _selectedTextChannel;
   AzoomVoiceChannelDto? _stageVoiceChannel;
   AzoomVoiceChannelDto? _connectedVoiceChannel;
   AzoomVoiceChannelDto? _mobileVoicePreviewChannel;
-  List<ChatMessageDto> _messages = const [];
-
-  AzoomTextRealtimeClient? _chatRealtimeClient;
-  StreamSubscription<ChatMessageDto>? _chatRealtimeSubscription;
   AzoomVoiceRealtimeClient? _voiceRealtimeClient;
   StreamSubscription<AzoomVoiceChannelDto>? _voiceRealtimeSubscription;
+  AzoomVoiceEffectRealtimeClient? _voiceEffectRealtimeClient;
+  StreamSubscription<AzoomVoiceEffectDto>? _voiceEffectRealtimeSubscription;
   AzoomNotivaRealtimeClient? _notivaRealtimeClient;
   StreamSubscription<AzoomNotivaEventDto>? _notivaRealtimeSubscription;
   Timer? _voiceHeartbeatTimer;
+  Timer? _liveKitReconnectTimer;
   AudioRecorder? _notivaRecorder;
   Timer? _notivaChunkTimer;
   Future<void> _notivaRealtimeUploadQueue = Future<void>.value();
@@ -456,29 +503,45 @@ class _AzoomPageState extends ConsumerState<AzoomPage> {
   lk.EventsListener<lk.RoomEvent>? _liveKitListener;
 
   bool _loadingChannels = true;
-  bool _loadingMessages = false;
-  bool _sendingMessage = false;
+  bool _loadingTranscript = false;
   bool _joiningVoice = false;
   bool _liveKitConnecting = false;
   bool _liveKitConnected = false;
+  bool _liveKitReconnectInFlight = false;
   bool _micEnabled = true;
   bool _deafened = false;
+  bool _mobilePreviewMicEnabled = true;
+  bool _mobilePreviewDeafened = false;
+  bool _mobileSpeakerOn = false;
   bool _cameraEnabled = false;
   bool _cameraToggleInFlight = false;
   bool _screenSharing = false;
   bool _screenShareToggleInFlight = false;
   bool _voiceFullscreen = false;
   bool _mobileVoiceRoomVisible = false;
+  bool _appInForeground = true;
   bool _mobileMeetingTranscriptsExpanded = false;
+  bool _mobileMiniVoiceControlsVisible = false;
+  bool _nativeVoiceSessionActive = false;
+  String? _nativeVoiceSessionSignature;
+  bool _nativeOverlayPermissionPrompted = false;
+  bool _nativeNotificationPermissionPrompted = false;
   bool _notivaOpen = false;
   bool _notivaStarting = false;
   bool _notivaAudioCaptureActive = false;
   bool _notivaChunkRotating = false;
+  final List<int> _fireworkBurstIds = <int>[];
+  int _fireworkBurstSequence = 0;
+  _AzoomNoiseSuppressionMode _noiseSuppressionMode =
+      _AzoomNoiseSuppressionMode.krisp;
   double _azoomOutputVolume = 0.50;
+  Offset? _mobileMiniVoiceOffset;
+  String _azoomSearchQuery = '';
   String? _cameraUnavailableReason;
   String? _errorText;
   String? _mediaErrorText;
   String? _notivaErrorText;
+  String? _lastAccessToken;
   AzoomMeetingTranscriptDto? _selectedMeetingTranscript;
   AzoomMeetingTranscriptDto? _notivaTranscript;
   List<AzoomMeetingTranscriptSummaryDto> _meetingTranscripts = const [];
@@ -486,13 +549,24 @@ class _AzoomPageState extends ConsumerState<AzoomPage> {
   String? _notivaCaptureChannelId;
   String? _notivaCurrentChunkPath;
   int _notivaChunkSequence = 0;
+  int _liveKitReconnectAttempt = 0;
   final List<String> _notivaBatchChunkPaths = <String>[];
   final List<String> _notivaFullAudioChunkPaths = <String>[];
+
+  bool get _fireworkVisible => _fireworkBurstIds.isNotEmpty;
 
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _voiceStageActive = ref.read(azoomVoiceStageActiveProvider.notifier);
+    _disposeAzoomApi = ref.read(azoomApiProvider);
+    _lastAccessToken = ref
+        .read(authControllerProvider)
+        .value
+        ?.session
+        ?.accessToken;
+    AzoomVoicePlatform.setActionHandler(_handleNativeVoiceAction);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) {
         unawaited(_loadChannels());
@@ -502,6 +576,7 @@ class _AzoomPageState extends ConsumerState<AzoomPage> {
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     unawaited(
       Future<void>.microtask(() {
         try {
@@ -514,42 +589,318 @@ class _AzoomPageState extends ConsumerState<AzoomPage> {
     if (_voiceFullscreen) {
       unawaited(WindowControl.setAzoomFullscreen(false));
     }
-    _stopTextRealtime();
     _stopVoiceRealtime();
+    _stopVoiceEffectRealtime();
     _stopNotivaRealtime();
     unawaited(_stopNotivaAudioCapture(uploadBatch: false));
     _stopVoiceHeartbeat();
-    unawaited(_disconnectLiveKit(callServer: false));
-    _messageController.dispose();
-    _messageScrollController.dispose();
+    _cancelLiveKitReconnect();
+    AzoomVoicePlatform.setActionHandler(null);
+    final disposeAccessToken = _lastAccessToken;
+    unawaited(AzoomVoicePlatform.stopSession());
+    unawaited(
+      _disconnectLiveKit(
+        callServer: true,
+        accessTokenOverride: disposeAccessToken,
+        apiOverride: _disposeAzoomApi,
+      ),
+    );
     super.dispose();
+  }
+
+  @override
+  void didUpdateWidget(covariant AzoomPage oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.mobileActiveTab != widget.mobileActiveTab) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) {
+          unawaited(_syncNativeVoiceSession());
+        }
+      });
+    }
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    final inForeground = state == AppLifecycleState.resumed;
+    if (_appInForeground == inForeground) {
+      return;
+    }
+    setState(() {
+      _appInForeground = inForeground;
+    });
+    unawaited(_syncNativeVoiceSession());
   }
 
   String? get _accessToken {
     final token = ref.read(authControllerProvider).value?.session?.accessToken;
-    return token == null || token.isEmpty ? null : token;
+    final normalized = token == null || token.isEmpty ? null : token;
+    _lastAccessToken = normalized;
+    return normalized;
+  }
+
+  bool get _isCurrentUserAzoomAdmin {
+    final role = widget.currentUser.role?.toUpperCase() ?? '';
+    return role == 'ADMIN' || role == 'SUPERUSER';
+  }
+
+  Future<void> _handleNativeVoiceAction(String action) async {
+    switch (action) {
+      case 'open':
+      case 'fullscreen':
+        widget.onMobileTabSelected?.call(MessengerTab.azoom);
+        final channel = _connectedVoiceChannel ?? _stageVoiceChannel;
+        if (mounted && channel != null) {
+          setState(() {
+            _stageVoiceChannel = channel;
+            _mobileVoiceRoomVisible = true;
+            _mobileMiniVoiceControlsVisible = false;
+          });
+          unawaited(_syncNativeVoiceSession());
+        }
+        break;
+      case 'toggleMic':
+        await _toggleMic();
+        break;
+      case 'toggleDeafen':
+        await _toggleDeafen();
+        break;
+      case 'leave':
+        await _leaveVoice();
+        break;
+    }
+  }
+
+  Future<void> _syncNativeVoiceSession({
+    bool requestOverlayPermission = false,
+  }) async {
+    final channel = _connectedVoiceChannel;
+    final token = _accessToken;
+    if (channel == null || token == null || token.isEmpty) {
+      if (_nativeVoiceSessionActive) {
+        _nativeVoiceSessionActive = false;
+        _nativeVoiceSessionSignature = null;
+        await AzoomVoicePlatform.stopSession();
+      }
+      return;
+    }
+
+    if (Platform.isAndroid) {
+      final allowed =
+          widget.bypassAndroidVoicePermissionChecks ||
+          await _ensureAndroidVoiceSurfacePermissions(requestOverlayPermission);
+      if (!allowed) {
+        return;
+      }
+    }
+
+    final featured = _featuredVoiceParticipant(channel);
+    final avatarName = featured.displayName.trim().isEmpty
+        ? widget.currentUser.name
+        : featured.displayName.trim();
+    final avatarColor = featured.avatarColor.trim().isEmpty
+        ? _colorToHex(widget.currentUser.color)
+        : featured.avatarColor.trim();
+    final avatarImageUrl = featured.avatarImageUrl.trim().isEmpty
+        ? (widget.currentUser.imageUrl ?? '')
+        : featured.avatarImageUrl.trim();
+    final muted = !_micEnabled || _deafened;
+    final voiceRoomVisibleInForeground =
+        _mobileVoiceRoomVisible &&
+        _appInForeground &&
+        widget.mobileActiveTab == MessengerTab.azoom;
+    final overlayEnabled = !voiceRoomVisibleInForeground;
+    final signature = [
+      token,
+      channel.id,
+      channel.name,
+      avatarName,
+      avatarColor,
+      avatarImageUrl,
+      muted,
+      _deafened,
+      featured.cameraEnabled || _cameraEnabled,
+      featured.screenSharing || _screenSharing,
+      overlayEnabled,
+    ].join('\u001F');
+    if (_nativeVoiceSessionActive &&
+        _nativeVoiceSessionSignature == signature) {
+      return;
+    }
+    final platformUpdate = _nativeVoiceSessionActive
+        ? AzoomVoicePlatform.updateSession(
+            channelName: channel.name,
+            participantName: avatarName,
+            avatarColor: avatarColor,
+            avatarImageUrl: avatarImageUrl,
+            muted: muted,
+            deafened: _deafened,
+            cameraEnabled: featured.cameraEnabled || _cameraEnabled,
+            screenSharing: featured.screenSharing || _screenSharing,
+            overlayEnabled: overlayEnabled,
+          )
+        : AzoomVoicePlatform.startSession(
+            apiBaseUrl: ref.read(appConfigProvider).apiBaseUrl,
+            accessToken: token,
+            channelId: channel.id,
+            channelName: channel.name,
+            participantName: avatarName,
+            avatarColor: avatarColor,
+            avatarImageUrl: avatarImageUrl,
+            muted: muted,
+            deafened: _deafened,
+            cameraEnabled: featured.cameraEnabled || _cameraEnabled,
+            screenSharing: featured.screenSharing || _screenSharing,
+            overlayEnabled: overlayEnabled,
+          );
+    _nativeVoiceSessionActive = true;
+    _nativeVoiceSessionSignature = signature;
+    await platformUpdate;
+  }
+
+  Future<bool> _ensureAndroidVoiceSurfacePermissions(
+    bool requestOverlay,
+  ) async {
+    var notificationsAllowed = true;
+    try {
+      final notification = await Permission.notification.status;
+      if (!notification.isGranted && !notification.isLimited) {
+        final requested = await Permission.notification.request();
+        notificationsAllowed = requested.isGranted || requested.isLimited;
+      }
+    } on Object {
+      // Older Android versions do not require runtime notification permission.
+    }
+    try {
+      notificationsAllowed =
+          notificationsAllowed &&
+          await AzoomVoicePlatform.areNotificationsEnabled();
+    } on Object {
+      // Keep the permission result as the source of truth if the native check fails.
+    }
+    if (!notificationsAllowed) {
+      if (!_nativeNotificationPermissionPrompted) {
+        _nativeNotificationPermissionPrompted = true;
+        if (mounted) {
+          showAvaToast(
+            context,
+            '\uC54C\uB9BC \uAD8C\uD55C\uC744 \uD5C8\uC6A9\uD574\uC57C AZOOM \uD1B5\uD654 \uC54C\uB9BC\uCE74\uB4DC\uAC00 \uD45C\uC2DC\uB429\uB2C8\uB2E4.',
+          );
+        }
+        await AzoomVoicePlatform.openNotificationSettings();
+      }
+      return false;
+    }
+
+    try {
+      final microphone = await Permission.microphone.status;
+      if (!_permissionGranted(microphone)) {
+        final requested = await Permission.microphone.request();
+        if (!_permissionGranted(requested)) {
+          if (mounted) {
+            showAvaToast(
+              context,
+              '\uB9C8\uC774\uD06C \uAD8C\uD55C\uC744 \uD5C8\uC6A9\uD574\uC57C AZOOM \uC74C\uC131 \uCC44\uB110\uC5D0 \uC785\uC7A5\uD560 \uC218 \uC788\uC2B5\uB2C8\uB2E4.',
+            );
+          }
+          return false;
+        }
+      }
+    } on Object {
+      // Desktop and older platform implementations may not expose this permission.
+    }
+
+    var voiceChannelAllowed = true;
+    try {
+      voiceChannelAllowed =
+          await AzoomVoicePlatform.areVoiceNotificationsEnabled();
+    } on Object {
+      voiceChannelAllowed = true;
+    }
+    if (!voiceChannelAllowed) {
+      if (mounted) {
+        showAvaToast(context, 'AZOOM 음성채널 알림 카테고리를 허용해야 실행중 알림카드가 표시됩니다.');
+      }
+      await AzoomVoicePlatform.openVoiceNotificationSettings();
+      return false;
+    }
+
+    if (!requestOverlay || _nativeOverlayPermissionPrompted) {
+      return true;
+    }
+    _nativeOverlayPermissionPrompted = true;
+    try {
+      final overlay = await Permission.systemAlertWindow.status;
+      if (!overlay.isGranted) {
+        await AzoomVoicePlatform.requestOverlayPermission();
+      }
+    } on Object {
+      await AzoomVoicePlatform.requestOverlayPermission();
+    }
+    return true;
+  }
+
+  AzoomVoiceParticipantDto _featuredVoiceParticipant(
+    AzoomVoiceChannelDto channel,
+  ) {
+    final participants = _voiceRowParticipants(
+      channel.participants,
+      currentUser: widget.currentUser,
+      includeLocal: true,
+      micEnabled: _micEnabled,
+      deafened: _deafened,
+      cameraEnabled: _cameraEnabled,
+      screenSharing: _screenSharing,
+    );
+    if (participants.isEmpty) {
+      return _participantFromProfile(widget.currentUser);
+    }
+    for (final participant in participants) {
+      if (participant.screenSharing) {
+        return participant;
+      }
+    }
+    for (final participant in participants) {
+      if (participant.cameraEnabled) {
+        return participant;
+      }
+    }
+    for (final participant in participants) {
+      if (!participant.muted && !participant.deafened) {
+        return participant;
+      }
+    }
+    final index = DateTime.now().second % participants.length;
+    return participants[index];
+  }
+
+  List<AzoomMeetingTranscriptSummaryDto> get _visibleMeetingTranscripts {
+    final query = _azoomSearchQuery.trim().toLowerCase();
+    if (query.isEmpty) {
+      return _meetingTranscripts;
+    }
+    return _meetingTranscripts
+        .where((item) => _matchesMeetingTranscriptSearch(item, query))
+        .toList();
   }
 
   Future<void> _loadChannels() async {
     final token = _accessToken;
     if (token == null) {
       _stopVoiceRealtime();
-      final selected = _fallbackTextChannels.first;
       setState(() {
         _channels = const AzoomChannelsDto(
           companyName: 'ABBA-S',
           liveKitEnabled: false,
           liveKitUrl: '',
-          textChannels: _fallbackTextChannels,
           voiceChannels: _fallbackVoiceChannels,
         );
-        _selectedTextChannel = selected;
         _meetingTranscripts = const [];
         _selectedMeetingTranscript = null;
-        _messages = _fallbackMessages(selected);
         _loadingChannels = false;
         _errorText = null;
       });
+      _openPendingVoiceEntryIfReady();
       return;
     }
 
@@ -565,197 +916,38 @@ class _AzoomPageState extends ConsumerState<AzoomPage> {
       if (!mounted) {
         return;
       }
-      final selected = _matchingTextChannel(
-        channels.textChannels,
-        _selectedTextChannel?.id,
-      );
       setState(() {
         _channels = channels;
         _meetingTranscripts = transcripts;
-        _selectedTextChannel = selected;
         _loadingChannels = false;
       });
+      _openPendingVoiceEntryIfReady();
       _startVoiceRealtime(token, channels.voiceChannels);
-      if (selected != null) {
-        await _selectTextChannel(selected, refreshMessages: true);
-      }
     } on Object {
       if (!mounted) {
         return;
       }
       _stopVoiceRealtime();
-      final selected = _fallbackTextChannels.first;
       setState(() {
         _channels = const AzoomChannelsDto(
           companyName: 'ABBA-S',
           liveKitEnabled: false,
           liveKitUrl: '',
-          textChannels: _fallbackTextChannels,
           voiceChannels: _fallbackVoiceChannels,
         );
-        _selectedTextChannel = selected;
         _meetingTranscripts = const [];
         _selectedMeetingTranscript = null;
-        _messages = _fallbackMessages(selected);
         _loadingChannels = false;
         _errorText = 'AZOOM 서버 연결을 확인하고 있습니다.';
       });
+      _openPendingVoiceEntryIfReady();
       return;
     }
-  }
-
-  Future<void> _selectTextChannel(
-    AzoomTextChannelDto channel, {
-    bool refreshMessages = false,
-  }) async {
-    _stageVoiceChannel = null;
-    _selectedMeetingTranscript = null;
-    _selectedTextChannel = channel;
-    _stopTextRealtime();
-    final token = _accessToken;
-    if (token == null) {
-      setState(() {
-        _messages = _fallbackMessages(channel);
-      });
-      _scrollToBottom();
-      return;
-    }
-
-    setState(() {
-      _loadingMessages = true;
-      _errorText = null;
-    });
-    try {
-      final messages = await ref
-          .read(azoomApiProvider)
-          .textMessages(accessToken: token, channelId: channel.id);
-      if (!mounted || _selectedTextChannel?.id != channel.id) {
-        return;
-      }
-      setState(() {
-        _messages = messages;
-        _loadingMessages = false;
-      });
-      _startTextRealtime(token, channel);
-      _scrollToBottom();
-    } on Object {
-      if (!mounted) {
-        return;
-      }
-      setState(() {
-        _messages = refreshMessages ? const [] : _messages;
-        _loadingMessages = false;
-        _errorText = '채팅 내역을 불러오지 못했습니다.';
-      });
-      return;
-    }
-  }
-
-  void _startTextRealtime(String token, AzoomTextChannelDto channel) {
-    if (channel.roomCode.isEmpty) {
-      return;
-    }
-    final client = AzoomTextRealtimeClient(
-      websocketUrl: ref.read(appConfigProvider).websocketUrl,
-      accessToken: token,
-      roomCode: channel.roomCode,
-    );
-    _chatRealtimeClient = client;
-    _chatRealtimeSubscription = client.messages.listen((message) {
-      if (!mounted || message.roomCode != channel.roomCode) {
-        return;
-      }
-      _appendRemoteMessage(message);
-    }, onError: (_) {});
-    client.connect();
-  }
-
-  void _stopTextRealtime() {
-    _chatRealtimeSubscription?.cancel();
-    _chatRealtimeSubscription = null;
-    _chatRealtimeClient?.dispose();
-    _chatRealtimeClient = null;
-  }
-
-  Future<void> _sendTextMessage() async {
-    final channel = _selectedTextChannel;
-    final content = _messageController.text.trim();
-    if (channel == null || content.isEmpty || _sendingMessage) {
-      return;
-    }
-    _messageController.clear();
-
-    final token = _accessToken;
-    if (token == null) {
-      _appendRemoteMessage(
-        ChatMessageDto(
-          id: 'local-${DateTime.now().microsecondsSinceEpoch}',
-          roomCode: channel.roomCode,
-          senderId: widget.currentUser.id ?? '',
-          senderName: widget.currentUser.name,
-          senderNickname: widget.currentUser.nickname ?? '',
-          senderAvatarColor: _colorToHex(widget.currentUser.color),
-          senderAvatarImageUrl: widget.currentUser.imageUrl ?? '',
-          content: content,
-          sentAt: DateTime.now(),
-          unreadCount: 0,
-          systemMessage: false,
-          silent: false,
-          spoiler: false,
-          attachment: null,
-        ),
-      );
-      return;
-    }
-
-    setState(() {
-      _sendingMessage = true;
-    });
-    try {
-      final message = await ref
-          .read(azoomApiProvider)
-          .sendTextMessage(
-            accessToken: token,
-            channelId: channel.id,
-            content: content,
-          );
-      if (mounted) {
-        _appendRemoteMessage(message);
-      }
-    } on Object {
-      if (!mounted) {
-        return;
-      }
-      setState(() {
-        _errorText = '메시지 전송에 실패했습니다.';
-      });
-      _messageController.text = content;
-      _messageController.selection = TextSelection.fromPosition(
-        TextPosition(offset: _messageController.text.length),
-      );
-    } finally {
-      if (mounted) {
-        setState(() {
-          _sendingMessage = false;
-        });
-      }
-    }
-  }
-
-  void _appendRemoteMessage(ChatMessageDto message) {
-    if (_messages.any((item) => item.id == message.id)) {
-      return;
-    }
-    setState(() {
-      _messages = [..._messages, message];
-      _errorText = null;
-    });
-    _scrollToBottom();
   }
 
   Future<void> _joinVoice(
     AzoomVoiceChannelDto channel, {
-    bool keepStageOnMediaFailure = false,
+    bool keepStageOnMediaFailure = true,
   }) async {
     if (_joiningVoice) {
       return;
@@ -765,8 +957,18 @@ class _AzoomPageState extends ConsumerState<AzoomPage> {
         (_liveKitConnected || _liveKitConnecting)) {
       return;
     }
+    if (Platform.isAndroid) {
+      final allowed =
+          widget.bypassAndroidVoicePermissionChecks ||
+          await _ensureAndroidVoiceSurfacePermissions(false);
+      if (!allowed) {
+        return;
+      }
+      if (!mounted) {
+        return;
+      }
+    }
     final token = _accessToken;
-    _stopTextRealtime();
     setState(() {
       _selectedMeetingTranscript = null;
       _stageVoiceChannel = channel;
@@ -790,9 +992,18 @@ class _AzoomPageState extends ConsumerState<AzoomPage> {
       if (currentChannel != null && currentChannel.id != channel.id) {
         await _disconnectLiveKit(
           callServer: true,
-          clearVoiceState: false,
+          clearVoiceState: true,
           stopRealtime: false,
+          resetMediaControls: false,
         );
+        if (!mounted) {
+          return;
+        }
+        setState(() {
+          _stageVoiceChannel = channel;
+          _joiningVoice = true;
+          _mediaErrorText = null;
+        });
       }
       final response = await ref
           .read(azoomApiProvider)
@@ -810,11 +1021,14 @@ class _AzoomPageState extends ConsumerState<AzoomPage> {
         _stageVoiceChannel = response.channel;
         _replaceVoiceChannel(response.channel);
       });
+      unawaited(_syncNativeVoiceSession(requestOverlayPermission: true));
+      unawaited(_updateVoiceStatus(muted: !_micEnabled, deafened: _deafened));
       final mediaConnected = await _connectLiveKit(response.liveKit);
       if (!mounted) {
         return;
       }
       if (!mediaConnected) {
+        _scheduleLiveKitReconnect();
         if (keepStageOnMediaFailure) {
           _startVoiceHeartbeat();
           setState(() {
@@ -841,6 +1055,7 @@ class _AzoomPageState extends ConsumerState<AzoomPage> {
       setState(() {
         _joiningVoice = false;
       });
+      unawaited(_syncNativeVoiceSession());
     } on Object {
       if (!mounted) {
         return;
@@ -892,6 +1107,7 @@ class _AzoomPageState extends ConsumerState<AzoomPage> {
       _syncVoiceState(state);
     }, onError: (_) {});
     client.connect();
+    _startVoiceEffectRealtime(token, voiceChannels);
   }
 
   void _stopVoiceRealtime() {
@@ -899,6 +1115,131 @@ class _AzoomPageState extends ConsumerState<AzoomPage> {
     _voiceRealtimeSubscription = null;
     _voiceRealtimeClient?.dispose();
     _voiceRealtimeClient = null;
+    _stopVoiceEffectRealtime();
+  }
+
+  void _startVoiceEffectRealtime(
+    String token,
+    List<AzoomVoiceChannelDto> voiceChannels,
+  ) {
+    final roomNames = [
+      for (final channel in voiceChannels)
+        if (channel.roomName.trim().isNotEmpty) channel.roomName.trim(),
+    ];
+    if (roomNames.isEmpty) {
+      return;
+    }
+    _stopVoiceEffectRealtime();
+    final client = AzoomVoiceEffectRealtimeClient(
+      websocketUrl: ref.read(appConfigProvider).websocketUrl,
+      accessToken: token,
+      roomNames: roomNames,
+    );
+    _voiceEffectRealtimeClient = client;
+    _voiceEffectRealtimeSubscription = client.events.listen((event) {
+      if (!mounted || event.type != 'FIREWORK') {
+        return;
+      }
+      final visible =
+          _connectedVoiceChannel?.roomName == event.roomName ||
+          _stageVoiceChannel?.roomName == event.roomName;
+      if (visible) {
+        _playFirework();
+      }
+    }, onError: (_) {});
+    client.connect();
+  }
+
+  void _stopVoiceEffectRealtime() {
+    _voiceEffectRealtimeSubscription?.cancel();
+    _voiceEffectRealtimeSubscription = null;
+    _voiceEffectRealtimeClient?.dispose();
+    _voiceEffectRealtimeClient = null;
+  }
+
+  void _playFirework() {
+    final burstId = _fireworkBurstSequence++;
+    setState(() {
+      _fireworkBurstIds.add(burstId);
+    });
+    Future<void>.delayed(_azoomFireworkDuration, () {
+      if (!mounted || !_fireworkBurstIds.contains(burstId)) {
+        return;
+      }
+      setState(() {
+        _fireworkBurstIds.remove(burstId);
+      });
+    });
+  }
+
+  Future<void> _triggerFirework(AzoomVoiceChannelDto channel) async {
+    _playFirework();
+    final token = _accessToken;
+    if (token == null) {
+      return;
+    }
+    try {
+      await ref
+          .read(azoomApiProvider)
+          .triggerFirework(accessToken: token, channelId: channel.id);
+    } on Object {
+      if (mounted) {
+        showAvaToast(context, '폭죽을 보낼 수 없습니다.');
+      }
+    }
+  }
+
+  Future<void> _showAzoomManagerPanel() async {
+    if (!_isCurrentUserAzoomAdmin) {
+      showAvaToast(context, '권한없음');
+      return;
+    }
+    final token = _accessToken;
+    if (token == null) {
+      showAvaToast(context, '권한없음');
+      return;
+    }
+    await showDialog<void>(
+      context: context,
+      barrierColor: Colors.black.withValues(alpha: 0.54),
+      builder: (context) {
+        return Dialog(
+          insetPadding: const EdgeInsets.symmetric(
+            horizontal: 18,
+            vertical: 28,
+          ),
+          backgroundColor: Colors.transparent,
+          child: _AzoomManagerPanel(
+            api: ref.read(azoomApiProvider),
+            accessToken: token,
+            voiceChannels: _channels?.voiceChannels ?? const [],
+            onChanged: () {
+              unawaited(_loadChannels());
+            },
+          ),
+        );
+      },
+    );
+  }
+
+  Future<void> _showParticipantsPanel(AzoomVoiceChannelDto channel) async {
+    await showDialog<void>(
+      context: context,
+      barrierColor: Colors.black.withValues(alpha: 0.54),
+      builder: (context) {
+        return Dialog(
+          insetPadding: const EdgeInsets.symmetric(
+            horizontal: 18,
+            vertical: 34,
+          ),
+          backgroundColor: Colors.transparent,
+          child: _AzoomParticipantsPanel(
+            channel: channel,
+            onClose: () => Navigator.of(context).pop(),
+          ),
+        );
+      },
+    );
   }
 
   void _startNotivaRealtime(String token, String roomName) {
@@ -1384,11 +1725,10 @@ class _AzoomPageState extends ConsumerState<AzoomPage> {
     if (token == null || summary.id.isEmpty) {
       return;
     }
-    _stopTextRealtime();
     setState(() {
       _stageVoiceChannel = null;
       _selectedMeetingTranscript = null;
-      _loadingMessages = true;
+      _loadingTranscript = true;
       _errorText = null;
     });
     try {
@@ -1400,14 +1740,14 @@ class _AzoomPageState extends ConsumerState<AzoomPage> {
       }
       setState(() {
         _selectedMeetingTranscript = transcript;
-        _loadingMessages = false;
+        _loadingTranscript = false;
       });
     } on Object {
       if (!mounted) {
         return;
       }
       setState(() {
-        _loadingMessages = false;
+        _loadingTranscript = false;
         _errorText = '회의록을 불러오지 못했습니다.';
       });
     }
@@ -1462,7 +1802,8 @@ class _AzoomPageState extends ConsumerState<AzoomPage> {
 
   void _startVoiceHeartbeat() {
     _voiceHeartbeatTimer?.cancel();
-    _voiceHeartbeatTimer = Timer.periodic(const Duration(seconds: 20), (_) {
+    unawaited(_sendVoiceHeartbeat());
+    _voiceHeartbeatTimer = Timer.periodic(_azoomVoiceHeartbeatInterval, (_) {
       unawaited(_sendVoiceHeartbeat());
     });
   }
@@ -1470,6 +1811,79 @@ class _AzoomPageState extends ConsumerState<AzoomPage> {
   void _stopVoiceHeartbeat() {
     _voiceHeartbeatTimer?.cancel();
     _voiceHeartbeatTimer = null;
+  }
+
+  void _cancelLiveKitReconnect() {
+    _liveKitReconnectTimer?.cancel();
+    _liveKitReconnectTimer = null;
+    _liveKitReconnectAttempt = 0;
+  }
+
+  void _scheduleLiveKitReconnect() {
+    if (!mounted ||
+        _connectedVoiceChannel == null ||
+        _accessToken == null ||
+        _liveKitConnected ||
+        _liveKitConnecting ||
+        _liveKitReconnectInFlight ||
+        (_liveKitReconnectTimer?.isActive ?? false)) {
+      return;
+    }
+    final delaySeconds = math.min(
+      20,
+      _azoomLiveKitRetryDelay.inSeconds + (_liveKitReconnectAttempt * 2),
+    );
+    _liveKitReconnectTimer = Timer(Duration(seconds: delaySeconds), () {
+      unawaited(_retryLiveKitConnection());
+    });
+  }
+
+  Future<void> _retryLiveKitConnection() async {
+    _liveKitReconnectTimer?.cancel();
+    _liveKitReconnectTimer = null;
+    if (_liveKitReconnectInFlight || !mounted || _liveKitConnected) {
+      return;
+    }
+    final token = _accessToken;
+    final channel = _connectedVoiceChannel;
+    if (token == null || channel == null) {
+      return;
+    }
+
+    _liveKitReconnectInFlight = true;
+    _liveKitReconnectAttempt += 1;
+    var shouldRetry = false;
+    try {
+      if (mounted) {
+        setState(() {
+          _liveKitConnecting = true;
+        });
+      }
+      final liveKit = await ref
+          .read(azoomApiProvider)
+          .liveKitToken(accessToken: token, channelId: channel.id)
+          .timeout(const Duration(seconds: 15));
+      if (!mounted || _connectedVoiceChannel?.id != channel.id) {
+        return;
+      }
+      final connected = await _connectLiveKit(liveKit);
+      shouldRetry =
+          !connected && mounted && _connectedVoiceChannel?.id == channel.id;
+    } on Object catch (error) {
+      shouldRetry = mounted && _connectedVoiceChannel?.id == channel.id;
+      if (mounted) {
+        setState(() {
+          _liveKitConnecting = false;
+          _liveKitConnected = false;
+          _mediaErrorText = '미디어 서버 재연결 실패: $error';
+        });
+      }
+    } finally {
+      _liveKitReconnectInFlight = false;
+      if (shouldRetry) {
+        _scheduleLiveKitReconnect();
+      }
+    }
   }
 
   Future<void> _sendVoiceHeartbeat() async {
@@ -1498,7 +1912,6 @@ class _AzoomPageState extends ConsumerState<AzoomPage> {
           companyName: channels.companyName,
           liveKitEnabled: channels.liveKitEnabled,
           liveKitUrl: channels.liveKitUrl,
-          textChannels: channels.textChannels,
           voiceChannels: [
             for (final channel in channels.voiceChannels)
               if (channel.id == state.id) state else channel,
@@ -1506,6 +1919,7 @@ class _AzoomPageState extends ConsumerState<AzoomPage> {
         );
       }
     });
+    unawaited(_syncNativeVoiceSession());
   }
 
   void _replaceVoiceChannel(AzoomVoiceChannelDto state) {
@@ -1517,7 +1931,6 @@ class _AzoomPageState extends ConsumerState<AzoomPage> {
       companyName: channels.companyName,
       liveKitEnabled: channels.liveKitEnabled,
       liveKitUrl: channels.liveKitUrl,
-      textChannels: channels.textChannels,
       voiceChannels: [
         for (final channel in channels.voiceChannels)
           if (channel.id == state.id) state else channel,
@@ -1526,14 +1939,26 @@ class _AzoomPageState extends ConsumerState<AzoomPage> {
   }
 
   Future<bool> _connectLiveKit(AzoomLiveKitTokenDto token) async {
+    final requestedDeafened = _deafened;
+    final requestedMicEnabled = _micEnabled && !requestedDeafened;
     await _disconnectLiveKit(
       callServer: false,
       clearVoiceState: false,
       stopRealtime: false,
+      resetMediaControls: false,
     );
+    if (!mounted) {
+      return false;
+    }
+    setState(() {
+      _micEnabled = requestedMicEnabled;
+      _deafened = requestedDeafened;
+    });
     if (!token.enabled || token.url.isEmpty || token.token.isEmpty) {
       setState(() {
         _liveKitConnected = false;
+        _micEnabled = requestedMicEnabled;
+        _deafened = requestedDeafened;
         _mediaErrorText = token.reason.isEmpty
             ? '미디어 서버 설정이 필요합니다.'
             : token.reason;
@@ -1541,12 +1966,25 @@ class _AzoomPageState extends ConsumerState<AzoomPage> {
       return false;
     }
 
+    var effectiveMicEnabled = requestedMicEnabled;
+    if (requestedMicEnabled && !await _ensureAzoomMicrophonePermission()) {
+      effectiveMicEnabled = false;
+      if (mounted) {
+        setState(() {
+          _micEnabled = false;
+        });
+      }
+    }
+
     setState(() {
       _liveKitConnecting = true;
       _mediaErrorText = null;
     });
     final audioCaptureOptions = await _resolveAzoomAudioCaptureOptions();
-    final connectUrls = await _orderedLiveKitConnectUrls(token.url);
+    final connectUrls = await _orderedLiveKitConnectUrls(
+      token.url,
+      apiBaseUrl: ref.read(appConfigProvider).apiBaseUrl,
+    );
     final room = lk.Room(
       roomOptions: lk.RoomOptions(
         adaptiveStream: false,
@@ -1563,6 +2001,7 @@ class _AzoomPageState extends ConsumerState<AzoomPage> {
           setState(() {
             _liveKitConnected = false;
           });
+          _scheduleLiveKitReconnect();
         }
       })
       ..on<lk.ParticipantConnectedEvent>((_) => _onLiveKitRoomChanged())
@@ -1588,18 +2027,16 @@ class _AzoomPageState extends ConsumerState<AzoomPage> {
             connectOptions: const lk.ConnectOptions(autoSubscribe: true),
           )
           .timeout(_azoomLiveKitConnectTimeout);
-      var microphoneEnabled = false;
       try {
         await room.localParticipant
             ?.setMicrophoneEnabled(
-              true,
+              effectiveMicEnabled,
               audioCaptureOptions: audioCaptureOptions,
             )
             .timeout(_azoomMicrophoneEnableTimeout);
-        microphoneEnabled =
-            room.localParticipant?.isMicrophoneEnabled() ?? false;
       } on Object {
-        microphoneEnabled = false;
+        // Keep the user's requested pre-join state in the UI; LiveKit can catch
+        // up on the next reconnect or explicit toggle.
       }
       if (!mounted) {
         await listener.dispose();
@@ -1607,21 +2044,36 @@ class _AzoomPageState extends ConsumerState<AzoomPage> {
         return false;
       }
       _ensureRemoteSubscriptions(room);
+      _cancelLiveKitReconnect();
       setState(() {
         _liveKitRoom = room;
         _liveKitListener = listener;
         _liveKitConnecting = false;
         _liveKitConnected = true;
-        _micEnabled = microphoneEnabled;
-        _deafened = false;
+        _micEnabled = effectiveMicEnabled;
+        _deafened = requestedDeafened;
         _cameraEnabled = false;
         _cameraToggleInFlight = false;
         _screenSharing = false;
         _screenShareToggleInFlight = false;
         _cameraUnavailableReason = null;
       });
+      unawaited(_syncNativeVoiceSession());
       unawaited(_applyAzoomOutputVolume(room, _azoomOutputVolume));
-      unawaited(_updateVoiceStatus(muted: !microphoneEnabled, deafened: false));
+      unawaited(_setMobileSpeakerOn(_mobileSpeakerOn));
+      if (requestedDeafened) {
+        for (final participant in room.remoteParticipants.values) {
+          for (final publication in participant.audioTrackPublications) {
+            unawaited(publication.unsubscribe());
+          }
+        }
+      }
+      unawaited(
+        _updateVoiceStatus(
+          muted: !effectiveMicEnabled,
+          deafened: requestedDeafened,
+        ),
+      );
       unawaited(_refreshCameraAvailability());
       return true;
     } on Object catch (error) {
@@ -1634,6 +2086,8 @@ class _AzoomPageState extends ConsumerState<AzoomPage> {
       setState(() {
         _liveKitConnecting = false;
         _liveKitConnected = false;
+        _micEnabled = effectiveMicEnabled;
+        _deafened = requestedDeafened;
         _mediaErrorText = '미디어 서버 연결 실패: $error';
       });
       return false;
@@ -1701,9 +2155,15 @@ class _AzoomPageState extends ConsumerState<AzoomPage> {
     required bool callServer,
     bool clearVoiceState = true,
     bool stopRealtime = true,
+    bool resetMediaControls = true,
+    String? accessTokenOverride,
+    AzoomApi? apiOverride,
   }) async {
     if (callServer || clearVoiceState || stopRealtime) {
       _stopVoiceHeartbeat();
+    }
+    if (callServer || clearVoiceState) {
+      _cancelLiveKitReconnect();
     }
     await _stopNotivaAudioCapture(uploadBatch: true);
     final channel = _connectedVoiceChannel;
@@ -1717,12 +2177,20 @@ class _AzoomPageState extends ConsumerState<AzoomPage> {
       await room.dispose();
     }
     await listener?.dispose();
-    final token = callServer ? _accessToken : null;
+    final token = callServer
+        ? (accessTokenOverride ?? (mounted ? _accessToken : null))
+        : null;
     if (token != null && channel != null) {
       try {
-        final state = await ref
-            .read(azoomApiProvider)
-            .leaveVoice(accessToken: token, channelId: channel.id);
+        final api =
+            apiOverride ?? (mounted ? ref.read(azoomApiProvider) : null);
+        if (api == null) {
+          return;
+        }
+        final state = await api.leaveVoice(
+          accessToken: token,
+          channelId: channel.id,
+        );
         if (mounted) {
           _syncVoiceState(state);
         }
@@ -1742,8 +2210,10 @@ class _AzoomPageState extends ConsumerState<AzoomPage> {
       }
       _liveKitConnected = false;
       _liveKitConnecting = false;
-      _micEnabled = true;
-      _deafened = false;
+      if (resetMediaControls) {
+        _micEnabled = true;
+        _deafened = false;
+      }
       _cameraEnabled = false;
       _cameraToggleInFlight = false;
       _screenSharing = false;
@@ -1751,6 +2221,13 @@ class _AzoomPageState extends ConsumerState<AzoomPage> {
       _cameraUnavailableReason = null;
       _mediaErrorText = null;
     });
+    if (callServer || clearVoiceState) {
+      _nativeVoiceSessionActive = false;
+      _nativeVoiceSessionSignature = null;
+      unawaited(AzoomVoicePlatform.stopSession());
+    } else {
+      unawaited(_syncNativeVoiceSession());
+    }
     if (stopRealtime) {
       _stopVoiceRealtime();
     }
@@ -1772,6 +2249,9 @@ class _AzoomPageState extends ConsumerState<AzoomPage> {
       return;
     }
     final next = !_micEnabled;
+    if (next && !await _ensureAzoomMicrophonePermission()) {
+      return;
+    }
     try {
       final audioCaptureOptions = next
           ? await _resolveAzoomAudioCaptureOptions()
@@ -1783,6 +2263,7 @@ class _AzoomPageState extends ConsumerState<AzoomPage> {
       setState(() {
         _micEnabled = next;
       });
+      unawaited(_syncNativeVoiceSession());
       if (_notivaAudioCaptureActive) {
         if (next) {
           await _beginNextNotivaChunk();
@@ -1800,14 +2281,20 @@ class _AzoomPageState extends ConsumerState<AzoomPage> {
 
   Future<lk.AudioCaptureOptions> _resolveAzoomAudioCaptureOptions() async {
     final device = await _preferredAzoomAudioInput();
+    return _audioCaptureOptionsForNoiseMode(deviceId: device?.deviceId);
+  }
+
+  lk.AudioCaptureOptions _audioCaptureOptionsForNoiseMode({String? deviceId}) {
+    final enabled = _noiseSuppressionMode != _AzoomNoiseSuppressionMode.off;
+    final krisp = _noiseSuppressionMode == _AzoomNoiseSuppressionMode.krisp;
     return lk.AudioCaptureOptions(
-      deviceId: device?.deviceId,
-      noiseSuppression: true,
-      echoCancellation: true,
-      autoGainControl: true,
-      highPassFilter: true,
-      voiceIsolation: true,
-      typingNoiseDetection: true,
+      deviceId: deviceId,
+      noiseSuppression: enabled,
+      echoCancellation: enabled,
+      autoGainControl: enabled,
+      highPassFilter: enabled,
+      voiceIsolation: krisp,
+      typingNoiseDetection: krisp,
       stopAudioCaptureOnMute: true,
     );
   }
@@ -1849,6 +2336,9 @@ class _AzoomPageState extends ConsumerState<AzoomPage> {
     final room = _liveKitRoom;
     final nextMicEnabled = !next;
     try {
+      if (nextMicEnabled && !await _ensureAzoomMicrophonePermission()) {
+        return;
+      }
       if (room != null) {
         if (nextMicEnabled) {
           final audioCaptureOptions = await _resolveAzoomAudioCaptureOptions();
@@ -1876,6 +2366,7 @@ class _AzoomPageState extends ConsumerState<AzoomPage> {
         _deafened = next;
         _micEnabled = nextMicEnabled;
       });
+      unawaited(_syncNativeVoiceSession());
       if (_notivaAudioCaptureActive) {
         if (nextMicEnabled) {
           await _beginNextNotivaChunk();
@@ -1899,10 +2390,8 @@ class _AzoomPageState extends ConsumerState<AzoomPage> {
     }
     await room.setAudioInputDevice(device);
     if (_micEnabled) {
-      final audioCaptureOptions = _azoomAudioProcessingOptions.copyWith(
+      final audioCaptureOptions = _audioCaptureOptionsForNoiseMode(
         deviceId: device.deviceId,
-        highPassFilter: true,
-        typingNoiseDetection: true,
       );
       await room.localParticipant?.setMicrophoneEnabled(
         false,
@@ -1924,6 +2413,62 @@ class _AzoomPageState extends ConsumerState<AzoomPage> {
     }
     await room.setAudioOutputDevice(device);
     await _applyAzoomOutputVolume(room, _azoomOutputVolume);
+  }
+
+  Future<void> _setMobileSpeakerOn(bool speakerOn) async {
+    try {
+      final room = _liveKitRoom;
+      if (room != null) {
+        await room.setSpeakerOn(speakerOn);
+      } else {
+        await lk.Hardware.instance.setSpeakerphoneOn(speakerOn);
+      }
+      if (mounted) {
+        setState(() {
+          _mobileSpeakerOn = speakerOn;
+        });
+      } else {
+        _mobileSpeakerOn = speakerOn;
+      }
+    } on Object {
+      if (mounted) {
+        showAvaToast(
+          context,
+          '\uC624\uB514\uC624 \uCD9C\uB825\uC744 \uBCC0\uACBD\uD558\uC9C0 \uBABB\uD588\uC2B5\uB2C8\uB2E4.',
+        );
+      }
+    }
+  }
+
+  Future<void> _setNoiseSuppressionMode(_AzoomNoiseSuppressionMode mode) async {
+    if (_noiseSuppressionMode == mode) {
+      return;
+    }
+    setState(() {
+      _noiseSuppressionMode = mode;
+    });
+    final room = _liveKitRoom;
+    final participant = room?.localParticipant;
+    if (room == null || participant == null || !_micEnabled) {
+      return;
+    }
+    try {
+      final audioCaptureOptions = await _resolveAzoomAudioCaptureOptions();
+      await participant.setMicrophoneEnabled(
+        false,
+        audioCaptureOptions: audioCaptureOptions,
+      );
+      await participant.setMicrophoneEnabled(
+        true,
+        audioCaptureOptions: audioCaptureOptions,
+      );
+    } on Object catch (error) {
+      if (mounted) {
+        setState(() {
+          _mediaErrorText = 'Noise suppression update failed: $error';
+        });
+      }
+    }
   }
 
   Future<void> _selectCameraInput(lk.MediaDevice device) async {
@@ -1982,6 +2527,9 @@ class _AzoomPageState extends ConsumerState<AzoomPage> {
     }
 
     final next = !_cameraEnabled;
+    if (next && !await _ensureAzoomCameraPermission()) {
+      return;
+    }
     setState(() {
       _cameraToggleInFlight = true;
       _mediaErrorText = null;
@@ -2122,6 +2670,55 @@ class _AzoomPageState extends ConsumerState<AzoomPage> {
     }
   }
 
+  bool get _needsRuntimeMediaPermission => Platform.isAndroid || Platform.isIOS;
+
+  bool _permissionGranted(PermissionStatus status) =>
+      status.isGranted || status.isLimited;
+
+  Future<bool> _ensureAzoomMicrophonePermission() async {
+    if (!_needsRuntimeMediaPermission) {
+      return true;
+    }
+    final current = await Permission.microphone.status;
+    if (_permissionGranted(current)) {
+      return true;
+    }
+    final requested = await Permission.microphone.request();
+    if (_permissionGranted(requested)) {
+      return true;
+    }
+    if (mounted) {
+      setState(() {
+        _liveKitConnecting = false;
+        _mediaErrorText = '마이크 권한이 필요합니다.';
+      });
+    }
+    return false;
+  }
+
+  Future<bool> _ensureAzoomCameraPermission() async {
+    if (!_needsRuntimeMediaPermission) {
+      return true;
+    }
+    final current = await Permission.camera.status;
+    if (_permissionGranted(current)) {
+      return true;
+    }
+    final requested = await Permission.camera.request();
+    if (_permissionGranted(requested)) {
+      return true;
+    }
+    if (mounted) {
+      setState(() {
+        _cameraToggleInFlight = false;
+        _cameraUnavailableReason = '카메라 권한이 필요합니다.';
+        _mediaErrorText = null;
+      });
+    }
+    await _showCameraUnavailableDialog('카메라 권한이 필요합니다.');
+    return false;
+  }
+
   String _cameraFailureMessage(Object error) {
     final detail = error.toString().toLowerCase();
     if (detail.contains('notallowed') ||
@@ -2151,8 +2748,9 @@ class _AzoomPageState extends ConsumerState<AzoomPage> {
     final participant = room?.localParticipant;
     if (!_liveKitConnected || room == null || participant == null) {
       await _showScreenShareDialog(
-        title: '화면 공유 불가능',
-        message: '미디어 서버 연결이 완료된 뒤 화면 공유를 시작해주세요.',
+        title: '\uD654\uBA74 \uACF5\uC720 \uBD88\uAC00',
+        message:
+            '\uBBF8\uB514\uC5B4 \uC11C\uBC84 \uC5F0\uACB0\uC774 \uC644\uB8CC\uB41C \uB4A4 \uD654\uBA74 \uACF5\uC720\uB97C \uC2DC\uC791\uD574\uC8FC\uC138\uC694.',
       );
       return;
     }
@@ -2347,17 +2945,6 @@ class _AzoomPageState extends ConsumerState<AzoomPage> {
     }
   }
 
-  void _scrollToBottom() {
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!_messageScrollController.hasClients) {
-        return;
-      }
-      _messageScrollController.jumpTo(
-        _messageScrollController.position.maxScrollExtent,
-      );
-    });
-  }
-
   void _syncVoiceStageChrome(bool active) {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) {
@@ -2396,11 +2983,51 @@ class _AzoomPageState extends ConsumerState<AzoomPage> {
         _stageVoiceChannel = connected;
         _mobileVoiceRoomVisible = true;
       });
+      unawaited(_syncNativeVoiceSession());
       return;
     }
     setState(() {
       _mobileVoicePreviewChannel = channel;
+      _mobilePreviewMicEnabled = _micEnabled;
+      _mobilePreviewDeafened = _deafened;
     });
+  }
+
+  void _toggleMobilePreviewMic() {
+    setState(() {
+      _mobilePreviewMicEnabled = !_mobilePreviewMicEnabled;
+    });
+  }
+
+  void _toggleMobilePreviewDeafen() {
+    setState(() {
+      _mobilePreviewDeafened = !_mobilePreviewDeafened;
+    });
+  }
+
+  void _openPendingVoiceEntryIfReady() {
+    final channelId = ref.read(azoomPendingVoiceEntryProvider);
+    if (channelId == null || channelId.isEmpty) {
+      return;
+    }
+    final channels = _channels?.voiceChannels ?? const <AzoomVoiceChannelDto>[];
+    AzoomVoiceChannelDto? target;
+    for (final channel in channels) {
+      if (channel.id == channelId) {
+        target = channel;
+        break;
+      }
+    }
+    if (target == null) {
+      return;
+    }
+    final width = MediaQuery.maybeSizeOf(context)?.width ?? double.infinity;
+    if (width <= _mobileAzoomBreakpoint) {
+      _showMobileVoiceEntry(target);
+    } else {
+      unawaited(_joinVoice(target));
+    }
+    ref.read(azoomPendingVoiceEntryProvider.notifier).clear();
   }
 
   void _hideMobileVoiceEntry() {
@@ -2416,16 +3043,19 @@ class _AzoomPageState extends ConsumerState<AzoomPage> {
     setState(() {
       _mobileVoicePreviewChannel = null;
       _mobileVoiceRoomVisible = true;
+      _micEnabled = _mobilePreviewMicEnabled && !_mobilePreviewDeafened;
+      _deafened = _mobilePreviewDeafened;
     });
-    await _joinVoice(channel);
+    await _joinVoice(channel, keepStageOnMediaFailure: true);
     if (!mounted) {
       return;
     }
     final connected = _connectedVoiceChannel;
     final staged = _stageVoiceChannel;
     final visible =
-        connected?.id == channel.id &&
-        (_liveKitConnected || _accessToken == null);
+        connected?.id == channel.id ||
+        staged?.id == channel.id ||
+        _joiningVoice;
     setState(() {
       _mobileVoiceRoomVisible = visible;
       if (connected?.id == channel.id) {
@@ -2434,6 +3064,7 @@ class _AzoomPageState extends ConsumerState<AzoomPage> {
         _stageVoiceChannel = staged;
       }
     });
+    unawaited(_syncNativeVoiceSession());
   }
 
   void _dismissMobileVoiceRoom() {
@@ -2444,6 +3075,7 @@ class _AzoomPageState extends ConsumerState<AzoomPage> {
       _mobileVoiceRoomVisible = false;
       _stageVoiceChannel = null;
     });
+    unawaited(_syncNativeVoiceSession());
   }
 
   bool _handleMobileBack() {
@@ -2459,9 +3091,7 @@ class _AzoomPageState extends ConsumerState<AzoomPage> {
   }
 
   Widget _buildMobileAzoomLayout({
-    required List<AzoomTextChannelDto> textChannels,
     required List<AzoomVoiceChannelDto> voiceChannels,
-    required AzoomTextChannelDto selectedText,
     required Set<String> liveVoiceUserIds,
   }) {
     AzoomVoiceChannelDto rowVoiceChannel(AzoomVoiceChannelDto channel) {
@@ -2478,6 +3108,25 @@ class _AzoomPageState extends ConsumerState<AzoomPage> {
         ? (_connectedVoiceChannel ?? _stageVoiceChannel)
         : null;
     final mediaPadding = MediaQuery.paddingOf(context);
+    final pageSize = MediaQuery.sizeOf(context);
+    final miniVoiceChannel = !_mobileVoiceRoomVisible
+        ? _connectedVoiceChannel
+        : null;
+    final miniVoiceExpanded = _mobileMiniVoiceControlsVisible;
+    final miniVoiceWidth = miniVoiceExpanded ? 178.0 : 112.0;
+    final miniVoiceHeight = miniVoiceExpanded ? 174.0 : 112.0;
+    final miniDefaultOffset = Offset(
+      pageSize.width - miniVoiceWidth - 14,
+      mediaPadding.top + 68,
+    );
+    final rawMiniOffset = _mobileMiniVoiceOffset ?? miniDefaultOffset;
+    final miniVoiceOffset = Offset(
+      rawMiniOffset.dx.clamp(8.0, pageSize.width - miniVoiceWidth - 8),
+      rawMiniOffset.dy.clamp(
+        mediaPadding.top + 8,
+        pageSize.height - miniVoiceHeight - mediaPadding.bottom - 8,
+      ),
+    );
 
     return AnnotatedRegion<SystemUiOverlayStyle>(
       value: const SystemUiOverlayStyle(
@@ -2523,12 +3172,11 @@ class _AzoomPageState extends ConsumerState<AzoomPage> {
                           topLeft: Radius.circular(18),
                         ),
                         child: _MobileAzoomChannelList(
-                          textChannels: textChannels,
                           voiceChannels: voiceChannels,
-                          meetingTranscripts: _meetingTranscripts,
+                          meetingTranscripts: _visibleMeetingTranscripts,
+                          searchQuery: _azoomSearchQuery,
                           meetingTranscriptsExpanded:
                               _mobileMeetingTranscriptsExpanded,
-                          selectedTextChannel: selectedText,
                           selectedMeetingTranscript: _selectedMeetingTranscript,
                           stageVoiceChannel: _stageVoiceChannel,
                           connectedVoiceChannel: _connectedVoiceChannel,
@@ -2539,15 +3187,6 @@ class _AzoomPageState extends ConsumerState<AzoomPage> {
                           deafened: _deafened,
                           cameraEnabled: _cameraEnabled,
                           screenSharing: _screenSharing,
-                          onTextChannelSelected: (channel) {
-                            _hideMobileVoiceEntry();
-                            unawaited(_setVoiceFullscreen(false));
-                            setState(() {
-                              _stageVoiceChannel = null;
-                              _mobileVoiceRoomVisible = false;
-                            });
-                            unawaited(_selectTextChannel(channel));
-                          },
                           onVoiceChannelSelected: _showMobileVoiceEntry,
                           onMeetingTranscriptsToggle: () {
                             setState(() {
@@ -2562,8 +3201,16 @@ class _AzoomPageState extends ConsumerState<AzoomPage> {
                               _stageVoiceChannel = null;
                               _mobileVoiceRoomVisible = false;
                             });
+                            unawaited(_syncNativeVoiceSession());
                             unawaited(_selectMeetingTranscript(summary));
                           },
+                          onSearchChanged: (value) {
+                            setState(() {
+                              _azoomSearchQuery = value;
+                            });
+                          },
+                          onInvitePressed: () =>
+                              unawaited(_showAzoomManagerPanel()),
                         ),
                       ),
                     ),
@@ -2593,7 +3240,11 @@ class _AzoomPageState extends ConsumerState<AzoomPage> {
                           ),
                           channel: rowVoiceChannel(_mobileVoicePreviewChannel!),
                           joining: _joiningVoice,
+                          micEnabled: _mobilePreviewMicEnabled,
+                          deafened: _mobilePreviewDeafened,
                           onCollapse: _hideMobileVoiceEntry,
+                          onToggleMic: _toggleMobilePreviewMic,
+                          onToggleDeafen: _toggleMobilePreviewDeafen,
                           onJoin: () => unawaited(
                             _joinMobileVoice(_mobileVoicePreviewChannel!),
                           ),
@@ -2637,8 +3288,19 @@ class _AzoomPageState extends ConsumerState<AzoomPage> {
                               unawaited(_selectCameraInput(device)),
                           outputVolume: _azoomOutputVolume,
                           onOutputVolumeChanged: _setAzoomOutputVolume,
+                          mobileSpeakerOn: _mobileSpeakerOn,
+                          onMobileSpeakerChanged: (speakerOn) =>
+                              unawaited(_setMobileSpeakerOn(speakerOn)),
+                          noiseSuppressionMode: _noiseSuppressionMode,
+                          onNoiseSuppressionModeChanged: (mode) =>
+                              unawaited(_setNoiseSuppressionMode(mode)),
                           onToggleScreenShare: () =>
                               unawaited(_toggleScreenShare()),
+                          onShowParticipants: () => unawaited(
+                            _showParticipantsPanel(visibleVoiceChannel),
+                          ),
+                          onTriggerFirework: () =>
+                              unawaited(_triggerFirework(visibleVoiceChannel)),
                           onToggleNotiva: () =>
                               unawaited(_toggleNotiva(visibleVoiceChannel)),
                           onLeave: () => unawaited(_leaveVoice()),
@@ -2661,6 +3323,63 @@ class _AzoomPageState extends ConsumerState<AzoomPage> {
                         unawaited(_toggleNotiva(visibleVoiceChannel)),
                   ),
                 ),
+              if (miniVoiceChannel != null &&
+                  _mobileVoicePreviewChannel == null)
+                Positioned(
+                  left: miniVoiceOffset.dx,
+                  top: miniVoiceOffset.dy,
+                  child: _MobileAzoomVoiceMiniOverlay(
+                    channel: miniVoiceChannel,
+                    participant: _featuredVoiceParticipant(miniVoiceChannel),
+                    expanded: miniVoiceExpanded,
+                    micEnabled: _micEnabled,
+                    deafened: _deafened,
+                    onTap: () {
+                      setState(() {
+                        _mobileMiniVoiceControlsVisible =
+                            !_mobileMiniVoiceControlsVisible;
+                      });
+                    },
+                    onDragUpdate: (delta) {
+                      setState(() {
+                        final current =
+                            _mobileMiniVoiceOffset ?? miniVoiceOffset;
+                        _mobileMiniVoiceOffset = Offset(
+                          (current.dx + delta.dx).clamp(
+                            8.0,
+                            pageSize.width - miniVoiceWidth - 8,
+                          ),
+                          (current.dy + delta.dy).clamp(
+                            mediaPadding.top + 8,
+                            pageSize.height -
+                                miniVoiceHeight -
+                                mediaPadding.bottom -
+                                8,
+                          ),
+                        );
+                      });
+                    },
+                    onOpen: () {
+                      setState(() {
+                        _stageVoiceChannel = miniVoiceChannel;
+                        _mobileVoiceRoomVisible = true;
+                        _mobileMiniVoiceControlsVisible = false;
+                      });
+                      unawaited(_syncNativeVoiceSession());
+                    },
+                    onToggleMic: () => unawaited(_toggleMic()),
+                    onToggleDeafen: () => unawaited(_toggleDeafen()),
+                    onLeave: () => unawaited(_leaveVoice()),
+                  ),
+                ),
+              if (_fireworkVisible)
+                Positioned.fill(
+                  child: IgnorePointer(
+                    child: _AzoomFireworkOverlay(
+                      burstIds: List<int>.of(_fireworkBurstIds),
+                    ),
+                  ),
+                ),
               if (visibleVoiceChannel == null &&
                   _selectedMeetingTranscript != null)
                 Positioned(
@@ -2676,6 +3395,9 @@ class _AzoomPageState extends ConsumerState<AzoomPage> {
                     active: true,
                     errorText: null,
                     transcript: _selectedMeetingTranscript,
+                    relatedTranscripts: _meetingTranscripts,
+                    onTranscriptSelected: (summary) =>
+                        unawaited(_selectMeetingTranscript(summary)),
                     onClose: () {
                       setState(() {
                         _selectedMeetingTranscript = null;
@@ -2703,10 +3425,18 @@ class _AzoomPageState extends ConsumerState<AzoomPage> {
 
   @override
   Widget build(BuildContext context) {
+    ref.listen<String?>(azoomPendingVoiceEntryProvider, (previous, next) {
+      if (next == null || next.isEmpty) {
+        return;
+      }
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) {
+          _openPendingVoiceEntryIfReady();
+        }
+      });
+    });
     final channels = _channels;
-    final textChannels = channels?.textChannels ?? _fallbackTextChannels;
     final voiceChannels = channels?.voiceChannels ?? _fallbackVoiceChannels;
-    final selectedText = _selectedTextChannel ?? textChannels.first;
     final voiceStage = _stageVoiceChannel;
     final liveVoiceUserIds = _liveVoiceUserIds(_liveKitRoom);
     final mobileLayout =
@@ -2746,6 +3476,8 @@ class _AzoomPageState extends ConsumerState<AzoomPage> {
         onToggleScreenShare: () => unawaited(_toggleScreenShare()),
         onToggleFullscreen: _toggleVoiceFullscreen,
         onToggleNotiva: () => unawaited(_toggleNotiva(channel)),
+        onShowParticipants: () => unawaited(_showParticipantsPanel(channel)),
+        onTriggerFirework: () => unawaited(_triggerFirework(channel)),
         onLeave: () => unawaited(_leaveVoice()),
       );
     }
@@ -2754,15 +3486,25 @@ class _AzoomPageState extends ConsumerState<AzoomPage> {
       return ColoredBox(
         key: const ValueKey('azoom-page'),
         color: _stageBackground,
-        child: buildVoiceSurface(voiceStage),
+        child: Stack(
+          children: [
+            buildVoiceSurface(voiceStage),
+            if (_fireworkVisible)
+              Positioned.fill(
+                child: IgnorePointer(
+                  child: _AzoomFireworkOverlay(
+                    burstIds: List<int>.of(_fireworkBurstIds),
+                  ),
+                ),
+              ),
+          ],
+        ),
       );
     }
 
     if (mobileLayout) {
       return _buildMobileAzoomLayout(
-        textChannels: textChannels,
         voiceChannels: voiceChannels,
-        selectedText: selectedText,
         liveVoiceUserIds: liveVoiceUserIds,
       );
     }
@@ -2776,10 +3518,9 @@ class _AzoomPageState extends ConsumerState<AzoomPage> {
             children: [
               const _ServerRail(),
               _ChannelSidebar(
-                textChannels: textChannels,
                 voiceChannels: voiceChannels,
-                meetingTranscripts: _meetingTranscripts,
-                selectedTextChannel: selectedText,
+                meetingTranscripts: _visibleMeetingTranscripts,
+                searchQuery: _azoomSearchQuery,
                 selectedMeetingTranscript: _selectedMeetingTranscript,
                 stageVoiceChannel: voiceStage,
                 connectedVoiceChannel: _connectedVoiceChannel,
@@ -2790,17 +3531,16 @@ class _AzoomPageState extends ConsumerState<AzoomPage> {
                 deafened: _deafened,
                 cameraEnabled: _cameraEnabled,
                 screenSharing: _screenSharing,
-                onTextChannelSelected: (channel) {
-                  unawaited(_setVoiceFullscreen(false));
-                  setState(() {
-                    _stageVoiceChannel = null;
-                  });
-                  unawaited(_selectTextChannel(channel));
-                },
                 onVoiceChannelSelected: (channel) =>
                     unawaited(_joinVoice(channel)),
                 onMeetingTranscriptSelected: (summary) =>
                     unawaited(_selectMeetingTranscript(summary)),
+                onSearchChanged: (value) {
+                  setState(() {
+                    _azoomSearchQuery = value;
+                  });
+                },
+                onInvitePressed: () => unawaited(_showAzoomManagerPanel()),
               ),
               Expanded(
                 child: _selectedMeetingTranscript != null
@@ -2811,15 +3551,12 @@ class _AzoomPageState extends ConsumerState<AzoomPage> {
                             unawaited(_selectMeetingTranscript(summary)),
                       )
                     : voiceStage == null
-                    ? _AzoomChatSurface(
-                        channel: selectedText,
-                        messages: _messages,
-                        loading: _loadingChannels || _loadingMessages,
+                    ? _AzoomVoicePlaceholderSurface(
+                        voiceChannels: voiceChannels,
+                        loading: _loadingChannels || _loadingTranscript,
                         errorText: _errorText,
-                        scrollController: _messageScrollController,
-                        messageController: _messageController,
-                        sending: _sendingMessage,
-                        onSend: () => unawaited(_sendTextMessage()),
+                        onVoiceChannelSelected: (channel) =>
+                            unawaited(_joinVoice(channel)),
                       )
                     : buildVoiceSurface(voiceStage),
               ),
@@ -2854,15 +3591,28 @@ class _AzoomPageState extends ConsumerState<AzoomPage> {
                   unawaited(_selectAudioOutput(device)),
               onOutputVolumeChanged: _setAzoomOutputVolume,
               onToggleScreenShare: () => unawaited(_toggleScreenShare()),
+              onTriggerFirework: () {
+                final channel = _connectedVoiceChannel ?? _stageVoiceChannel;
+                if (channel != null) {
+                  unawaited(_triggerFirework(channel));
+                }
+              },
             ),
           ),
+          if (_fireworkVisible)
+            Positioned.fill(
+              child: IgnorePointer(
+                child: _AzoomFireworkOverlay(
+                  burstIds: List<int>.of(_fireworkBurstIds),
+                ),
+              ),
+            ),
         ],
       ),
     );
   }
 }
 
-// ignore: unused_element
 class _AzoomScreenShareSourceDialog extends StatefulWidget {
   const _AzoomScreenShareSourceDialog();
 
@@ -2871,7 +3621,6 @@ class _AzoomScreenShareSourceDialog extends StatefulWidget {
       _AzoomScreenShareSourceDialogState();
 }
 
-// ignore: unused_element
 class _AzoomScreenShareSourceDialogState
     extends State<_AzoomScreenShareSourceDialog> {
   List<rtc.DesktopCapturerSource> _sources = const [];
@@ -2973,8 +3722,8 @@ class _AzoomScreenShareSourceDialogState
                             unselectedLabelColor: _secondaryText,
                             indicatorColor: _avaAccentDeep,
                             tabs: [
-                              Tab(text: '전체 화면'),
-                              Tab(text: '창'),
+                              Tab(text: '\uC804\uCCB4 \uD654\uBA74'),
+                              Tab(text: '\uCC3D'),
                             ],
                           ),
                           Expanded(
@@ -3278,7 +4027,7 @@ class _ServerButton extends StatelessWidget {
                   Text(
                     label ?? '',
                     style: TextStyle(
-                      color: selected ? Colors.white : _discordSidebarText,
+                      color: _discordSidebarText,
                       fontSize: 13,
                       fontWeight: FontWeight.w800,
                       height: 1,
@@ -3334,10 +4083,9 @@ class _RailIconButton extends StatelessWidget {
 
 class _ChannelSidebar extends StatefulWidget {
   const _ChannelSidebar({
-    required this.textChannels,
     required this.voiceChannels,
     required this.meetingTranscripts,
-    required this.selectedTextChannel,
+    required this.searchQuery,
     required this.selectedMeetingTranscript,
     required this.stageVoiceChannel,
     required this.connectedVoiceChannel,
@@ -3348,15 +4096,15 @@ class _ChannelSidebar extends StatefulWidget {
     required this.deafened,
     required this.cameraEnabled,
     required this.screenSharing,
-    required this.onTextChannelSelected,
     required this.onVoiceChannelSelected,
     required this.onMeetingTranscriptSelected,
+    required this.onSearchChanged,
+    required this.onInvitePressed,
   });
 
-  final List<AzoomTextChannelDto> textChannels;
   final List<AzoomVoiceChannelDto> voiceChannels;
   final List<AzoomMeetingTranscriptSummaryDto> meetingTranscripts;
-  final AzoomTextChannelDto selectedTextChannel;
+  final String searchQuery;
   final AzoomMeetingTranscriptDto? selectedMeetingTranscript;
   final AzoomVoiceChannelDto? stageVoiceChannel;
   final AzoomVoiceChannelDto? connectedVoiceChannel;
@@ -3367,10 +4115,11 @@ class _ChannelSidebar extends StatefulWidget {
   final bool deafened;
   final bool cameraEnabled;
   final bool screenSharing;
-  final ValueChanged<AzoomTextChannelDto> onTextChannelSelected;
   final ValueChanged<AzoomVoiceChannelDto> onVoiceChannelSelected;
   final ValueChanged<AzoomMeetingTranscriptSummaryDto>
   onMeetingTranscriptSelected;
+  final ValueChanged<String> onSearchChanged;
+  final VoidCallback onInvitePressed;
 
   @override
   State<_ChannelSidebar> createState() => _ChannelSidebarState();
@@ -3381,13 +4130,11 @@ class _ChannelSidebarState extends State<_ChannelSidebar> {
 
   @override
   Widget build(BuildContext context) {
-    final textChannels = widget.textChannels;
     final voiceChannels = widget.voiceChannels;
     final meetingTranscripts = widget.meetingTranscripts;
     final meetingTranscriptGroups = _groupMeetingTranscripts(
       meetingTranscripts,
     );
-    final selectedTextChannel = widget.selectedTextChannel;
     final selectedMeetingTranscript = widget.selectedMeetingTranscript;
     final stageVoiceChannel = widget.stageVoiceChannel;
     final connectedVoiceChannel = widget.connectedVoiceChannel;
@@ -3415,18 +4162,11 @@ class _ChannelSidebarState extends State<_ChannelSidebar> {
       color: _discordSidebarBackground,
       child: Column(
         children: [
-          const _AzoomServerHeader(),
-          if (DateTime.now().millisecondsSinceEpoch < 0) ...[
-            const _SidebarShortcutRow(icon: Icons.calendar_today, label: '이벤트'),
-            const _SidebarShortcutRow(
-              icon: Icons.hexagon_outlined,
-              label: '서버 부스트',
-            ),
-            const Padding(
-              padding: EdgeInsets.fromLTRB(16, 12, 16, 9),
-              child: Divider(height: 1, color: _discordSidebarBorder),
-            ),
-          ],
+          _AzoomServerHeader(
+            searchQuery: widget.searchQuery,
+            onSearchChanged: widget.onSearchChanged,
+            onInvitePressed: widget.onInvitePressed,
+          ),
           Expanded(
             child: ListView(
               padding: EdgeInsets.fromLTRB(
@@ -3437,7 +4177,7 @@ class _ChannelSidebarState extends State<_ChannelSidebar> {
               ),
               children: [
                 _SectionHeader(
-                  title: '회의록',
+                  title: '\uD68C\uC758\uB85D',
                   expanded: _meetingTranscriptsExpanded,
                   showAdd: false,
                   onTap: () {
@@ -3462,23 +4202,7 @@ class _ChannelSidebarState extends State<_ChannelSidebar> {
                       ),
                 ],
                 const SizedBox(height: 14),
-                const _SectionHeader(title: '채팅 채널'),
-                for (final channel in textChannels)
-                  _ChannelRow(
-                    key: ValueKey('azoom-text-channel-${channel.name}'),
-                    label: channel.name,
-                    selected:
-                        stageVoiceChannel == null &&
-                        channel.id == selectedTextChannel.id,
-                    trailing:
-                        stageVoiceChannel == null &&
-                            channel.id == selectedTextChannel.id
-                        ? const _SelectedChannelTools()
-                        : null,
-                    onTap: () => widget.onTextChannelSelected(channel),
-                  ),
-                const SizedBox(height: 14),
-                const _SectionHeader(title: '음성 채널'),
+                const _SectionHeader(title: '\uC74C\uC131 \uCC44\uB110'),
                 for (final channel in voiceChannels)
                   _VoiceRow(
                     key: ValueKey('azoom-voice-channel-${channel.name}'),
@@ -3529,6 +4253,51 @@ class _TranscriptEmptyRow extends StatelessWidget {
       ),
     );
   }
+}
+
+bool _matchesMeetingTranscriptSearch(
+  AzoomMeetingTranscriptSummaryDto item,
+  String rawQuery,
+) {
+  final query = rawQuery.trim().toLowerCase();
+  if (query.isEmpty) {
+    return true;
+  }
+  final compactQuery = query.replaceAll(RegExp(r'[^0-9]'), '');
+  final haystack = [
+    item.channelName,
+    item.titleTimestamp,
+    item.startedAt?.toIso8601String() ?? '',
+    item.endedAt?.toIso8601String() ?? '',
+    ...?_dateSearchTerms(item.startedAt),
+    ...?_dateSearchTerms(item.endedAt),
+  ].join(' ').toLowerCase();
+  if (haystack.contains(query)) {
+    return true;
+  }
+  if (compactQuery.isEmpty) {
+    return false;
+  }
+  return haystack.replaceAll(RegExp(r'[^0-9]'), '').contains(compactQuery);
+}
+
+List<String>? _dateSearchTerms(DateTime? value) {
+  if (value == null) {
+    return null;
+  }
+  final local = value.toLocal();
+  final year = local.year.toString().padLeft(4, '0');
+  final month = local.month.toString().padLeft(2, '0');
+  final day = local.day.toString().padLeft(2, '0');
+  return [
+    '$year-$month-$day',
+    '$year.$month.$day',
+    '$year/$month/$day',
+    '$year$month$day',
+    '${local.month}/${local.day}',
+    '${local.month}.${local.day}',
+    '${local.month}\uC6D4 ${local.day}\uC77C',
+  ];
 }
 
 List<_MeetingTranscriptGroup> _groupMeetingTranscripts(
@@ -3695,18 +4464,22 @@ class _MeetingTranscriptGroup {
     );
     final hasFailed = transcripts.any((item) => item.status == 'FAILED');
     if (hasProcessing) {
-      return hasRealtime ? '실시간 · 통파일 변환중' : '통파일 변환중';
+      return hasRealtime
+          ? '\uC2E4\uC2DC\uAC04 \u00B7 \uD1B5\uD30C\uC77C \uBCC0\uD658\uC911'
+          : '\uD1B5\uD30C\uC77C \uBCC0\uD658\uC911';
     }
     if (hasFailed) {
-      return hasRealtime ? '실시간 · 통파일 실패' : '통파일 실패';
+      return hasRealtime
+          ? '\uC2E4\uC2DC\uAC04 \u00B7 \uD1B5\uD30C\uC77C \uC2E4\uD328'
+          : '\uD1B5\uD30C\uC77C \uC2E4\uD328';
     }
     if (hasRealtime && hasBatch) {
-      return '실시간 · 통파일';
+      return '\uC2E4\uC2DC\uAC04 \u00B7 \uD1B5\uD30C\uC77C';
     }
     if (hasBatch) {
-      return '통파일';
+      return '\uD1B5\uD30C\uC77C';
     }
-    return '실시간';
+    return '\uC2E4\uC2DC\uAC04';
   }
 }
 
@@ -3929,7 +4702,7 @@ class _MobileRailDivider extends StatelessWidget {
       width: 34,
       height: 1,
       margin: const EdgeInsets.only(top: 6, bottom: 4),
-      color: const Color(0xFF2B2D31),
+      color: _discordSidebarBorder,
     );
   }
 }
@@ -3974,7 +4747,7 @@ class _MobileRailButton extends StatelessWidget {
               style: IconButton.styleFrom(
                 backgroundColor: active
                     ? _discordSidebarSelected
-                    : const Color(0xFF232428),
+                    : _discordSidebarPanel,
                 shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(active ? 16 : 23),
                 ),
@@ -4010,8 +4783,8 @@ class _MobileAzoomBottomNav extends StatelessWidget {
       height: _mobileAzoomBottomNavHeight + bottomInset,
       padding: EdgeInsets.only(bottom: bottomInset),
       decoration: const BoxDecoration(
-        color: Color(0xFF292B31),
-        border: Border(top: BorderSide(color: Color(0xFF3A3C42))),
+        color: _discordSidebarPanel,
+        border: Border(top: BorderSide(color: _discordSidebarBorder)),
       ),
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceAround,
@@ -4019,30 +4792,49 @@ class _MobileAzoomBottomNav extends StatelessWidget {
           _MobileAzoomBottomNavItem(
             key: const ValueKey('azoom-mobile-bottom-nav-friends'),
             icon: Icons.person,
+            label: '친구',
             active: activeTab == MessengerTab.friends,
             onTap: () => onTabSelected?.call(MessengerTab.friends),
           ),
           _MobileAzoomBottomNavItem(
             key: const ValueKey('azoom-mobile-bottom-nav-chats'),
             icon: Icons.chat_bubble,
+            label: '채팅',
             active: activeTab == MessengerTab.chats,
             onTap: () => onTabSelected?.call(MessengerTab.chats),
           ),
           _MobileAzoomBottomNavItem(
+            key: const ValueKey('azoom-mobile-bottom-nav-notifications'),
+            icon: Icons.notifications,
+            label: '알림',
+            active: activeTab == MessengerTab.notifications,
+            onTap: () => onTabSelected?.call(MessengerTab.notifications),
+          ),
+          _MobileAzoomBottomNavItem(
             key: const ValueKey('azoom-mobile-bottom-nav-azoom'),
             icon: Icons.videocam,
+            label: 'AZOOM',
             active: activeTab == MessengerTab.azoom,
             onTap: () => onTabSelected?.call(MessengerTab.azoom),
           ),
           _MobileAzoomBottomNavItem(
+            key: const ValueKey('azoom-mobile-bottom-nav-ava-stock'),
+            icon: Icons.inventory_2_outlined,
+            label: '재고',
+            active: activeTab == MessengerTab.avaStock,
+            onTap: () => onTabSelected?.call(MessengerTab.avaStock),
+          ),
+          _MobileAzoomBottomNavItem(
             key: const ValueKey('azoom-mobile-bottom-nav-ai'),
             icon: Icons.auto_awesome,
+            label: 'AI',
             active: activeTab == MessengerTab.avaAi,
             onTap: () => onTabSelected?.call(MessengerTab.avaAi),
           ),
           _MobileAzoomBottomNavItem(
             key: const ValueKey('azoom-mobile-bottom-nav-more'),
             icon: Icons.more_horiz,
+            label: '\uB354\uBCF4\uAE30',
             active: activeTab == MessengerTab.more,
             onTap: () => onTabSelected?.call(MessengerTab.more),
           ),
@@ -4055,28 +4847,51 @@ class _MobileAzoomBottomNav extends StatelessWidget {
 class _MobileAzoomBottomNavItem extends StatelessWidget {
   const _MobileAzoomBottomNavItem({
     required this.icon,
+    required this.label,
     required this.active,
     required this.onTap,
     super.key,
   });
 
   final IconData icon;
+  final String label;
   final bool active;
   final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
-    return IconButton(
-      onPressed: onTap,
-      style: IconButton.styleFrom(
-        backgroundColor: active ? _discordSidebarSelected : Colors.transparent,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
-        fixedSize: const Size(48, 42),
-      ),
-      icon: Icon(
-        icon,
-        color: active ? _discordSidebarText : _discordSidebarMuted,
-        size: 24,
+    final color = active ? _discordSidebarText : _discordSidebarMuted;
+    return SizedBox(
+      width: 54,
+      height: 48,
+      child: Tooltip(
+        message: label,
+        child: Material(
+          color: Colors.transparent,
+          child: InkWell(
+            borderRadius: BorderRadius.circular(14),
+            onTap: onTap,
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(icon, color: color, size: 21),
+                const SizedBox(height: 2),
+                Text(
+                  label,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    color: color,
+                    fontSize: 9,
+                    fontWeight: active ? FontWeight.w800 : FontWeight.w600,
+                    height: 1,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
       ),
     );
   }
@@ -4084,11 +4899,10 @@ class _MobileAzoomBottomNavItem extends StatelessWidget {
 
 class _MobileAzoomChannelList extends StatelessWidget {
   const _MobileAzoomChannelList({
-    required this.textChannels,
     required this.voiceChannels,
     required this.meetingTranscripts,
+    required this.searchQuery,
     required this.meetingTranscriptsExpanded,
-    required this.selectedTextChannel,
     required this.selectedMeetingTranscript,
     required this.stageVoiceChannel,
     required this.connectedVoiceChannel,
@@ -4099,17 +4913,17 @@ class _MobileAzoomChannelList extends StatelessWidget {
     required this.deafened,
     required this.cameraEnabled,
     required this.screenSharing,
-    required this.onTextChannelSelected,
     required this.onVoiceChannelSelected,
     required this.onMeetingTranscriptsToggle,
     required this.onMeetingTranscriptSelected,
+    required this.onSearchChanged,
+    required this.onInvitePressed,
   });
 
-  final List<AzoomTextChannelDto> textChannels;
   final List<AzoomVoiceChannelDto> voiceChannels;
   final List<AzoomMeetingTranscriptSummaryDto> meetingTranscripts;
+  final String searchQuery;
   final bool meetingTranscriptsExpanded;
-  final AzoomTextChannelDto selectedTextChannel;
   final AzoomMeetingTranscriptDto? selectedMeetingTranscript;
   final AzoomVoiceChannelDto? stageVoiceChannel;
   final AzoomVoiceChannelDto? connectedVoiceChannel;
@@ -4120,11 +4934,12 @@ class _MobileAzoomChannelList extends StatelessWidget {
   final bool deafened;
   final bool cameraEnabled;
   final bool screenSharing;
-  final ValueChanged<AzoomTextChannelDto> onTextChannelSelected;
   final ValueChanged<AzoomVoiceChannelDto> onVoiceChannelSelected;
   final VoidCallback onMeetingTranscriptsToggle;
   final ValueChanged<AzoomMeetingTranscriptSummaryDto>
   onMeetingTranscriptSelected;
+  final ValueChanged<String> onSearchChanged;
+  final VoidCallback onInvitePressed;
 
   @override
   Widget build(BuildContext context) {
@@ -4140,13 +4955,17 @@ class _MobileAzoomChannelList extends StatelessWidget {
 
     return Container(
       key: const ValueKey('azoom-mobile-channel-list'),
-      color: const Color(0xFF1E1F22),
+      color: _discordSidebarBackground,
       child: SafeArea(
         left: false,
         top: false,
         child: Column(
           children: [
-            const _MobileAzoomHeader(),
+            _MobileAzoomHeader(
+              searchQuery: searchQuery,
+              onSearchChanged: onSearchChanged,
+              onInvitePressed: onInvitePressed,
+            ),
             Expanded(
               child: ListView(
                 padding: EdgeInsets.fromLTRB(
@@ -4165,18 +4984,6 @@ class _MobileAzoomChannelList extends StatelessWidget {
                     onToggle: onMeetingTranscriptsToggle,
                     onMeetingTranscriptSelected: onMeetingTranscriptSelected,
                   ),
-                  const SizedBox(height: 10),
-                  const _SectionHeader(title: '\uCC44\uD305 \uCC44\uB110'),
-                  for (final channel in textChannels)
-                    _ChannelRow(
-                      key: ValueKey('azoom-mobile-text-${channel.id}'),
-                      label: channel.name,
-                      selected:
-                          selectedMeetingTranscript == null &&
-                          stageVoiceChannel == null &&
-                          channel.id == selectedTextChannel.id,
-                      onTap: () => onTextChannelSelected(channel),
-                    ),
                   const SizedBox(height: 14),
                   const _SectionHeader(title: '\uC74C\uC131 \uCC44\uB110'),
                   for (final channel in voiceChannels)
@@ -4260,7 +5067,15 @@ class _MobileMeetingTranscriptSection extends StatelessWidget {
 }
 
 class _MobileAzoomHeader extends StatelessWidget {
-  const _MobileAzoomHeader();
+  const _MobileAzoomHeader({
+    required this.searchQuery,
+    required this.onSearchChanged,
+    required this.onInvitePressed,
+  });
+
+  final String searchQuery;
+  final ValueChanged<String> onSearchChanged;
+  final VoidCallback onInvitePressed;
 
   @override
   Widget build(BuildContext context) {
@@ -4293,39 +5108,16 @@ class _MobileAzoomHeader extends StatelessWidget {
           Row(
             children: [
               Expanded(
-                child: Container(
-                  height: 32,
-                  decoration: BoxDecoration(
-                    color: _discordSidebarSelected,
-                    borderRadius: BorderRadius.circular(16),
-                  ),
-                  alignment: Alignment.center,
-                  child: const Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Icon(Icons.search, color: _discordSidebarMuted, size: 19),
-                      SizedBox(width: 5),
-                      Text(
-                        '\uAC80\uC0C9\uD558\uAE30',
-                        style: TextStyle(
-                          color: _discordSidebarMuted,
-                          fontSize: 14,
-                          fontWeight: FontWeight.w800,
-                        ),
-                      ),
-                    ],
-                  ),
+                child: _AzoomTranscriptSearchField(
+                  query: searchQuery,
+                  onChanged: onSearchChanged,
                 ),
               ),
               const SizedBox(width: 10),
               _MobileHeaderActionButton(
                 key: ValueKey('azoom-mobile-header-invite'),
                 icon: Icons.person_add_alt_1,
-              ),
-              const SizedBox(width: 8),
-              _MobileHeaderActionButton(
-                key: ValueKey('azoom-mobile-header-calendar'),
-                icon: Icons.calendar_today,
+                onPressed: onInvitePressed,
               ),
             ],
           ),
@@ -4336,9 +5128,14 @@ class _MobileAzoomHeader extends StatelessWidget {
 }
 
 class _MobileHeaderActionButton extends StatelessWidget {
-  const _MobileHeaderActionButton({required this.icon, super.key});
+  const _MobileHeaderActionButton({
+    required this.icon,
+    required this.onPressed,
+    super.key,
+  });
 
   final IconData icon;
+  final VoidCallback onPressed;
 
   @override
   Widget build(BuildContext context) {
@@ -4347,7 +5144,7 @@ class _MobileHeaderActionButton extends StatelessWidget {
       child: IconButton(
         padding: EdgeInsets.zero,
         visualDensity: VisualDensity.compact,
-        onPressed: () {},
+        onPressed: onPressed,
         style: IconButton.styleFrom(
           backgroundColor: _discordSidebarSelected,
           shape: const CircleBorder(),
@@ -4358,18 +5155,224 @@ class _MobileHeaderActionButton extends StatelessWidget {
   }
 }
 
+class _MobileAzoomVoiceMiniOverlay extends StatelessWidget {
+  const _MobileAzoomVoiceMiniOverlay({
+    required this.channel,
+    required this.participant,
+    required this.expanded,
+    required this.micEnabled,
+    required this.deafened,
+    required this.onTap,
+    required this.onDragUpdate,
+    required this.onOpen,
+    required this.onToggleMic,
+    required this.onToggleDeafen,
+    required this.onLeave,
+  });
+
+  final AzoomVoiceChannelDto channel;
+  final AzoomVoiceParticipantDto participant;
+  final bool expanded;
+  final bool micEnabled;
+  final bool deafened;
+  final VoidCallback onTap;
+  final ValueChanged<Offset> onDragUpdate;
+  final VoidCallback onOpen;
+  final VoidCallback onToggleMic;
+  final VoidCallback onToggleDeafen;
+  final VoidCallback onLeave;
+
+  @override
+  Widget build(BuildContext context) {
+    final width = expanded ? 178.0 : 112.0;
+    final height = expanded ? 174.0 : 112.0;
+    final muted = !micEnabled || deafened;
+    return GestureDetector(
+      onTap: onTap,
+      onPanUpdate: (details) => onDragUpdate(details.delta),
+      child: AnimatedContainer(
+        key: const ValueKey('azoom-mobile-floating-voice-card'),
+        duration: const Duration(milliseconds: 180),
+        curve: Curves.easeOutCubic,
+        width: width,
+        height: height,
+        padding: EdgeInsets.all(expanded ? 10 : 12),
+        decoration: BoxDecoration(
+          color: const Color(0xFFEAF5FF),
+          borderRadius: BorderRadius.circular(expanded ? 22 : 20),
+          border: Border.all(color: _stageBorder),
+          boxShadow: [
+            BoxShadow(
+              color: _avaAccentDeep.withValues(alpha: 0.14),
+              blurRadius: 18,
+              offset: const Offset(0, 8),
+            ),
+          ],
+        ),
+        child: expanded
+            ? Column(
+                children: [
+                  SizedBox(
+                    height: 32,
+                    child: Row(
+                      children: [
+                        Expanded(
+                          child: Text(
+                            channel.name,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(
+                              color: _stageText,
+                              fontSize: 12,
+                              fontWeight: FontWeight.w800,
+                            ),
+                          ),
+                        ),
+                        _MiniVoiceIconButton(
+                          icon: Icons.open_in_full,
+                          onTap: onOpen,
+                          tooltip: '전체화면',
+                        ),
+                      ],
+                    ),
+                  ),
+                  Expanded(child: _miniAvatar()),
+                  const SizedBox(height: 8),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      _MiniVoiceIconButton(
+                        icon: muted ? Icons.mic_off : Icons.mic,
+                        selected: muted,
+                        tooltip: muted
+                            ? '\uB9C8\uC774\uD06C \uCF1C\uAE30'
+                            : '\uC74C\uC18C\uAC70',
+                        onTap: onToggleMic,
+                      ),
+                      _MiniVoiceIconButton(
+                        icon: deafened ? Icons.headset_off : Icons.headphones,
+                        selected: deafened,
+                        tooltip: deafened
+                            ? '\uC18C\uB9AC \uCF1C\uAE30'
+                            : '\uD5E4\uB4DC\uC14B \uC74C\uC18C\uAC70',
+                        onTap: onToggleDeafen,
+                      ),
+                      _MiniVoiceIconButton(
+                        icon: Icons.call_end,
+                        danger: true,
+                        onTap: onLeave,
+                        tooltip: '연결 끊기',
+                      ),
+                    ],
+                  ),
+                ],
+              )
+            : Center(child: _miniAvatar()),
+      ),
+    );
+  }
+
+  Widget _miniAvatar() {
+    return Stack(
+      clipBehavior: Clip.none,
+      alignment: Alignment.center,
+      children: [
+        _AzoomAvatar(
+          label: _avatarLabel(participant.displayName),
+          color: _colorFromHex(participant.avatarColor),
+          imageUrl: participant.avatarImageUrl,
+          size: expanded ? 68 : 74,
+        ),
+        if (participant.screenSharing || participant.cameraEnabled)
+          Positioned(
+            right: expanded ? 20 : 6,
+            bottom: expanded ? 4 : 6,
+            child: Container(
+              width: 22,
+              height: 22,
+              decoration: BoxDecoration(
+                color: _discordSidebarGreen,
+                shape: BoxShape.circle,
+                border: Border.all(color: const Color(0xFFEAF5FF), width: 2),
+              ),
+              child: Icon(
+                participant.screenSharing ? Icons.screen_share : Icons.videocam,
+                color: Colors.white,
+                size: 13,
+              ),
+            ),
+          ),
+      ],
+    );
+  }
+}
+
+class _MiniVoiceIconButton extends StatelessWidget {
+  const _MiniVoiceIconButton({
+    required this.icon,
+    required this.onTap,
+    required this.tooltip,
+    this.selected = false,
+    this.danger = false,
+  });
+
+  final IconData icon;
+  final VoidCallback onTap;
+  final String tooltip;
+  final bool selected;
+  final bool danger;
+
+  @override
+  Widget build(BuildContext context) {
+    final background = danger
+        ? _discordDanger
+        : selected
+        ? _discordSidebarSelected
+        : Colors.white.withValues(alpha: 0.54);
+    final foreground = danger
+        ? Colors.white
+        : selected
+        ? _discordSidebarText
+        : _discordSidebarText;
+    return Tooltip(
+      message: tooltip,
+      child: GestureDetector(
+        onTap: onTap,
+        child: Container(
+          width: 38,
+          height: 34,
+          alignment: Alignment.center,
+          decoration: BoxDecoration(
+            color: background,
+            borderRadius: BorderRadius.circular(12),
+          ),
+          child: Icon(icon, color: foreground, size: 19),
+        ),
+      ),
+    );
+  }
+}
+
 class _MobileVoiceJoinSheet extends StatelessWidget {
   const _MobileVoiceJoinSheet({
     required this.channel,
     required this.joining,
+    required this.micEnabled,
+    required this.deafened,
     required this.onCollapse,
+    required this.onToggleMic,
+    required this.onToggleDeafen,
     required this.onJoin,
     super.key,
   });
 
   final AzoomVoiceChannelDto channel;
   final bool joining;
+  final bool micEnabled;
+  final bool deafened;
   final VoidCallback onCollapse;
+  final VoidCallback onToggleMic;
+  final VoidCallback onToggleDeafen;
   final VoidCallback onJoin;
 
   @override
@@ -4379,14 +5382,15 @@ class _MobileVoiceJoinSheet extends StatelessWidget {
       child: Container(
         key: const ValueKey('azoom-mobile-voice-join-sheet'),
         height: _mobileAzoomBottomSheetHeight,
-        decoration: const BoxDecoration(
-          color: Color(0xFF1E1F22),
-          borderRadius: BorderRadius.vertical(top: Radius.circular(18)),
+        decoration: BoxDecoration(
+          color: _stagePanel,
+          borderRadius: const BorderRadius.vertical(top: Radius.circular(18)),
+          border: const Border(top: BorderSide(color: _stageBorder)),
           boxShadow: [
             BoxShadow(
-              color: Color(0x99000000),
-              blurRadius: 20,
-              offset: Offset(0, -6),
+              color: _avaAccentDeep.withValues(alpha: 0.14),
+              blurRadius: 22,
+              offset: const Offset(0, -6),
             ),
           ],
         ),
@@ -4467,12 +5471,17 @@ class _MobileVoiceJoinSheet extends StatelessWidget {
                 ),
                 child: Row(
                   children: [
-                    _MobileLargeCircleButton(icon: Icons.mic, onTap: () {}),
+                    _MobileLargeCircleButton(
+                      icon: micEnabled ? Icons.mic : Icons.mic_off,
+                      selected: !micEnabled,
+                      onTap: onToggleMic,
+                    ),
                     const SizedBox(width: 12),
                     Expanded(
                       child: SizedBox(
                         height: 48,
                         child: FilledButton(
+                          key: const ValueKey('azoom-mobile-voice-join-button'),
                           onPressed: joining ? null : onJoin,
                           style: FilledButton.styleFrom(
                             backgroundColor: _discordSidebarGreen,
@@ -4502,8 +5511,9 @@ class _MobileVoiceJoinSheet extends StatelessWidget {
                     ),
                     const SizedBox(width: 12),
                     _MobileLargeCircleButton(
-                      icon: Icons.chat_bubble,
-                      onTap: () {},
+                      icon: deafened ? Icons.headset_off : Icons.headphones,
+                      selected: deafened,
+                      onTap: onToggleDeafen,
                     ),
                   ],
                 ),
@@ -4541,7 +5551,13 @@ class _MobileAzoomVoiceRoom extends StatelessWidget {
     required this.onSelectCameraInput,
     required this.outputVolume,
     required this.onOutputVolumeChanged,
+    required this.mobileSpeakerOn,
+    required this.onMobileSpeakerChanged,
+    required this.noiseSuppressionMode,
+    required this.onNoiseSuppressionModeChanged,
     required this.onToggleScreenShare,
+    required this.onShowParticipants,
+    required this.onTriggerFirework,
     required this.onToggleNotiva,
     required this.onLeave,
     super.key,
@@ -4570,7 +5586,13 @@ class _MobileAzoomVoiceRoom extends StatelessWidget {
   final ValueChanged<lk.MediaDevice> onSelectCameraInput;
   final double outputVolume;
   final ValueChanged<double> onOutputVolumeChanged;
+  final bool mobileSpeakerOn;
+  final ValueChanged<bool> onMobileSpeakerChanged;
+  final _AzoomNoiseSuppressionMode noiseSuppressionMode;
+  final ValueChanged<_AzoomNoiseSuppressionMode> onNoiseSuppressionModeChanged;
   final VoidCallback onToggleScreenShare;
+  final VoidCallback onShowParticipants;
+  final VoidCallback onTriggerFirework;
   final VoidCallback onToggleNotiva;
   final VoidCallback onLeave;
 
@@ -4595,9 +5617,10 @@ class _MobileAzoomVoiceRoom extends StatelessWidget {
             Positioned.fill(
               child: Column(
                 children: [
-                  _MobileVoiceRoomHeader(
+                  _MobileVoiceRoomHeaderFixed(
                     channelName: channel.name,
                     onCollapse: onCollapse,
+                    onShowParticipants: onShowParticipants,
                     onToggleNotiva: onToggleNotiva,
                   ),
                   Expanded(
@@ -4637,7 +5660,13 @@ class _MobileAzoomVoiceRoom extends StatelessWidget {
                 onSelectCameraInput: onSelectCameraInput,
                 outputVolume: outputVolume,
                 onOutputVolumeChanged: onOutputVolumeChanged,
+                mobileSpeakerOn: mobileSpeakerOn,
+                onMobileSpeakerChanged: onMobileSpeakerChanged,
+                noiseSuppressionMode: noiseSuppressionMode,
+                onNoiseSuppressionModeChanged: onNoiseSuppressionModeChanged,
                 onToggleScreenShare: onToggleScreenShare,
+                onShowParticipants: onShowParticipants,
+                onTriggerFirework: onTriggerFirework,
                 onToggleNotiva: onToggleNotiva,
                 onLeave: onLeave,
               ),
@@ -4649,15 +5678,17 @@ class _MobileAzoomVoiceRoom extends StatelessWidget {
   }
 }
 
-class _MobileVoiceRoomHeader extends StatelessWidget {
-  const _MobileVoiceRoomHeader({
+class _MobileVoiceRoomHeaderFixed extends StatelessWidget {
+  const _MobileVoiceRoomHeaderFixed({
     required this.channelName,
     required this.onCollapse,
+    required this.onShowParticipants,
     required this.onToggleNotiva,
   });
 
   final String channelName;
   final VoidCallback onCollapse;
+  final VoidCallback onShowParticipants;
   final VoidCallback onToggleNotiva;
 
   @override
@@ -4671,24 +5702,35 @@ class _MobileVoiceRoomHeader extends StatelessWidget {
             onPressed: onCollapse,
             icon: const Icon(
               Icons.keyboard_arrow_down,
-              color: Colors.white,
+              color: _voiceRoomMutedText,
               size: 26,
             ),
           ),
-          Text(
-            channelName,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: const TextStyle(
-              color: Colors.white,
-              fontSize: 18,
-              fontWeight: FontWeight.w900,
-              height: 1,
+          Expanded(
+            child: Row(
+              children: [
+                Flexible(
+                  child: Text(
+                    channelName,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      color: _voiceRoomText,
+                      fontSize: 18,
+                      fontWeight: FontWeight.w900,
+                      height: 1,
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 4),
+                const Icon(
+                  Icons.chevron_right,
+                  color: _voiceRoomMutedText,
+                  size: 18,
+                ),
+              ],
             ),
           ),
-          const SizedBox(width: 4),
-          const Icon(Icons.chevron_right, color: Colors.white, size: 18),
-          const Spacer(),
           _MobileHeaderIcon(
             key: const ValueKey('azoom-mobile-notiva-header-button'),
             tooltip: 'Notiva AI',
@@ -4696,9 +5738,11 @@ class _MobileVoiceRoomHeader extends StatelessWidget {
             onTap: onToggleNotiva,
           ),
           const SizedBox(width: 8),
-          const _MobileHeaderIcon(tooltip: '참가자', icon: Icons.people),
-          const SizedBox(width: 8),
-          const _MobileHeaderIcon(tooltip: '더보기', icon: Icons.more_horiz),
+          _MobileHeaderIcon(
+            tooltip: '\uCC38\uC5EC\uC790',
+            icon: Icons.people,
+            onTap: onShowParticipants,
+          ),
           const SizedBox(width: 4),
         ],
       ),
@@ -4832,11 +5876,11 @@ class _MobileSingleParticipantTile extends StatelessWidget {
       curve: Curves.easeOutCubic,
       clipBehavior: Clip.antiAlias,
       decoration: BoxDecoration(
-        color: const Color(0xFFECE0AF),
+        color: _voiceRoomTile,
         borderRadius: BorderRadius.circular(20),
         border: Border.all(
-          color: speaking ? _discordSpeaking : Colors.transparent,
-          width: speaking ? 4 : 0,
+          color: speaking ? _discordSpeaking : _voiceRoomBorder,
+          width: speaking ? 4 : 1,
         ),
       ),
       child: Stack(
@@ -4927,37 +5971,22 @@ class _MobileVoiceInviteRow extends StatelessWidget {
       padding: const EdgeInsets.fromLTRB(28, 8, 20, 14),
       child: Row(
         children: [
-          const Icon(Icons.group_add, color: Colors.white, size: 25),
+          const Icon(Icons.group_add, color: _voiceRoomMutedText, size: 25),
           const SizedBox(width: 14),
           Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const Text(
-                  '\uC74C\uC131 \uCC44\uD305\uC5D0 \uC0AC\uB78C \uCD94\uAC00\uD558\uAE30',
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
-                    color: Colors.white,
-                    fontSize: 16,
-                    fontWeight: FontWeight.w900,
-                    height: 1,
-                  ),
-                ),
-                const SizedBox(height: 4),
-                Text(
-                  '$count\uBA85\uC774 \uCC38\uC5EC \uC911\uC785\uB2C8\uB2E4',
-                  style: const TextStyle(
-                    color: _stageMutedText,
-                    fontSize: 12,
-                    fontWeight: FontWeight.w700,
-                    height: 1,
-                  ),
-                ),
-              ],
+            child: Text(
+              '$count\uBA85\uC774 \uCC38\uC5EC \uC911\uC785\uB2C8\uB2E4',
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(
+                color: _voiceRoomText,
+                fontSize: 16,
+                fontWeight: FontWeight.w900,
+                height: 1,
+              ),
             ),
           ),
-          const Icon(Icons.chevron_right, color: Colors.white, size: 24),
+          const Icon(Icons.chevron_right, color: _voiceRoomMutedText, size: 24),
         ],
       ),
     );
@@ -4984,7 +6013,13 @@ class _MobileVoiceControlDock extends StatefulWidget {
     required this.onSelectCameraInput,
     required this.outputVolume,
     required this.onOutputVolumeChanged,
+    required this.mobileSpeakerOn,
+    required this.onMobileSpeakerChanged,
+    required this.noiseSuppressionMode,
+    required this.onNoiseSuppressionModeChanged,
     required this.onToggleScreenShare,
+    required this.onShowParticipants,
+    required this.onTriggerFirework,
     required this.onToggleNotiva,
     required this.onLeave,
   });
@@ -5007,7 +6042,13 @@ class _MobileVoiceControlDock extends StatefulWidget {
   final ValueChanged<lk.MediaDevice> onSelectCameraInput;
   final double outputVolume;
   final ValueChanged<double> onOutputVolumeChanged;
+  final bool mobileSpeakerOn;
+  final ValueChanged<bool> onMobileSpeakerChanged;
+  final _AzoomNoiseSuppressionMode noiseSuppressionMode;
+  final ValueChanged<_AzoomNoiseSuppressionMode> onNoiseSuppressionModeChanged;
   final VoidCallback onToggleScreenShare;
+  final VoidCallback onShowParticipants;
+  final VoidCallback onTriggerFirework;
   final VoidCallback onToggleNotiva;
   final VoidCallback onLeave;
 
@@ -5163,9 +6204,10 @@ class _MobileVoiceControlDockState extends State<_MobileVoiceControlDock> {
                 onTap: widget.onToggleNotiva,
               ),
               _MobileVoiceDockCircleButton(
+                key: const ValueKey('azoom-mobile-firework-button'),
                 tooltip: '사운드보드',
                 icon: Icons.celebration,
-                onTap: () {},
+                onTap: widget.onTriggerFirework,
               ),
               _MobileVoiceDockCircleButton(
                 tooltip: '연결 끊기',
@@ -5223,9 +6265,10 @@ class _MobileVoiceControlDockState extends State<_MobileVoiceControlDock> {
                 onTap: widget.onToggleNotiva,
               ),
               _MobileVoiceDockCircleButton(
+                key: const ValueKey('azoom-mobile-firework-expanded-button'),
                 tooltip: '사운드보드',
                 icon: Icons.celebration,
-                onTap: () {},
+                onTap: widget.onTriggerFirework,
               ),
               _MobileVoiceDockCircleButton(
                 tooltip: '연결 끊기',
@@ -5406,9 +6449,9 @@ class _MobileVoiceDockCircleButton extends StatelessWidget {
         ? _discordDanger
         : selected
         ? _discordSidebarSelected
-        : const Color(0xFF2B2D31);
+        : _stageControl;
     final foreground = enabled
-        ? Colors.white
+        ? _stageText
         : _stageMutedText.withValues(alpha: 0.52);
     return Tooltip(
       message: tooltip,
@@ -5419,7 +6462,7 @@ class _MobileVoiceDockCircleButton extends StatelessWidget {
           onPressed: enabled ? onTap : null,
           style: IconButton.styleFrom(
             backgroundColor: background,
-            disabledBackgroundColor: const Color(0xFF24262C),
+            disabledBackgroundColor: _stageBorder.withValues(alpha: 0.55),
             shape: const CircleBorder(),
           ),
           icon: busy
@@ -5467,7 +6510,8 @@ class _MobileVoiceSheetCard extends StatelessWidget {
   Widget build(BuildContext context) {
     return DecoratedBox(
       decoration: BoxDecoration(
-        color: const Color(0xFF2B2D33),
+        color: _stageMenu,
+        border: Border.all(color: _stageMenuBorder),
         borderRadius: BorderRadius.circular(12),
       ),
       child: Column(mainAxisSize: MainAxisSize.min, children: children),
@@ -5484,7 +6528,7 @@ class _MobileVoiceSheetDivider extends StatelessWidget {
       height: 1,
       indent: 44,
       endIndent: 12,
-      color: Color(0xFF3A3C43),
+      color: _stageMenuBorder,
     );
   }
 }
@@ -5561,66 +6605,437 @@ class _MobileVoiceSheetToggle extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      width: 34,
-      height: 34,
+    return AnimatedContainer(
+      duration: const Duration(milliseconds: 160),
+      curve: Curves.easeOutCubic,
+      width: 52,
+      height: 30,
+      padding: const EdgeInsets.all(3),
       decoration: BoxDecoration(
-        color: selected ? const Color(0xFF5865F2) : _stageText,
-        shape: BoxShape.circle,
+        color: selected ? _avaAccent : _stageControl,
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(color: _stageBorder),
       ),
-      child: Icon(
-        selected ? Icons.check : Icons.close,
-        color: selected ? Colors.white : _stageControl,
-        size: 20,
+      child: AnimatedAlign(
+        duration: const Duration(milliseconds: 160),
+        curve: Curves.easeOutCubic,
+        alignment: selected ? Alignment.centerRight : Alignment.centerLeft,
+        child: Container(
+          width: 24,
+          height: 24,
+          decoration: const BoxDecoration(
+            color: Color(0xFFF2F3F5),
+            shape: BoxShape.circle,
+          ),
+          child: Icon(
+            selected ? Icons.check : Icons.close,
+            color: selected ? _avaAccent : _stageControl,
+            size: 18,
+          ),
+        ),
       ),
     );
   }
 }
 
 class _MobileVoiceRadioRow extends StatelessWidget {
-  const _MobileVoiceRadioRow({required this.title, required this.selected});
+  const _MobileVoiceRadioRow({
+    required this.title,
+    required this.selected,
+    this.onTap,
+  });
 
   final String title;
   final bool selected;
+  final VoidCallback? onTap;
 
   @override
   Widget build(BuildContext context) {
+    return InkWell(
+      onTap: onTap,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 14),
+        child: Row(
+          children: [
+            Expanded(
+              child: Text(
+                title,
+                style: const TextStyle(
+                  color: _stageText,
+                  fontSize: 14,
+                  fontWeight: FontWeight.w900,
+                ),
+              ),
+            ),
+            Container(
+              width: 22,
+              height: 22,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                border: Border.all(
+                  color: selected ? _avaAccent : _stageText,
+                  width: 2,
+                ),
+              ),
+              child: selected
+                  ? Center(
+                      child: Container(
+                        width: 9,
+                        height: 9,
+                        decoration: const BoxDecoration(
+                          color: _avaAccent,
+                          shape: BoxShape.circle,
+                        ),
+                      ),
+                    )
+                  : null,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _MobileAudioOutputSheet extends StatelessWidget {
+  const _MobileAudioOutputSheet({
+    required this.speakerOn,
+    required this.onChanged,
+  });
+
+  final bool speakerOn;
+  final ValueChanged<bool> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    final bottomInset = MediaQuery.paddingOf(context).bottom;
     return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 14),
-      child: Row(
-        children: [
-          Expanded(
-            child: Text(
-              title,
-              style: const TextStyle(
-                color: _stageText,
-                fontSize: 14,
-                fontWeight: FontWeight.w900,
+      padding: EdgeInsets.only(bottom: bottomInset),
+      child: DecoratedBox(
+        decoration: const BoxDecoration(
+          color: _stagePanel,
+          borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+        ),
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(16, 10, 16, 22),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                width: 44,
+                height: 4,
+                decoration: BoxDecoration(
+                  color: _stageMutedText.withValues(alpha: 0.44),
+                  borderRadius: BorderRadius.circular(999),
+                ),
               ),
-            ),
+              const SizedBox(height: 18),
+              const Text(
+                '\uC624\uB514\uC624 \uCD9C\uB825 \uC120\uD0DD',
+                style: TextStyle(
+                  color: _stageText,
+                  fontSize: 16,
+                  fontWeight: FontWeight.w900,
+                ),
+              ),
+              const SizedBox(height: 16),
+              DecoratedBox(
+                decoration: BoxDecoration(
+                  color: _stageMenu,
+                  border: Border.all(color: _stageMenuBorder),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    _MobileAudioOutputOptionRow(
+                      icon: Icons.phone_android,
+                      title: '\uD734\uB300\uD3F0',
+                      subtitle: 'SM-F966N',
+                      selected: !speakerOn,
+                      onTap: () => onChanged(false),
+                    ),
+                    const _MobileVoiceSheetDivider(),
+                    _MobileAudioOutputOptionRow(
+                      icon: Icons.volume_up,
+                      title: '\uC2A4\uD53C\uCEE4',
+                      subtitle: 'SM-F966N',
+                      selected: speakerOn,
+                      onTap: () => onChanged(true),
+                    ),
+                  ],
+                ),
+              ),
+            ],
           ),
-          Container(
-            width: 22,
-            height: 22,
-            decoration: BoxDecoration(
-              shape: BoxShape.circle,
-              border: Border.all(
-                color: selected ? const Color(0xFF5865F2) : _stageText,
-                width: 2,
+        ),
+      ),
+    );
+  }
+}
+
+class _MobileAudioOutputOptionRow extends StatelessWidget {
+  const _MobileAudioOutputOptionRow({
+    required this.icon,
+    required this.title,
+    required this.subtitle,
+    required this.selected,
+    required this.onTap,
+  });
+
+  final IconData icon;
+  final String title;
+  final String subtitle;
+  final bool selected;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(12),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 13),
+        child: Row(
+          children: [
+            Icon(icon, color: _stageText, size: 22),
+            const SizedBox(width: 14),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    title,
+                    style: const TextStyle(
+                      color: _stageText,
+                      fontSize: 14,
+                      fontWeight: FontWeight.w900,
+                      height: 1.1,
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    subtitle,
+                    style: const TextStyle(
+                      color: _stageMutedText,
+                      fontSize: 11,
+                      fontWeight: FontWeight.w700,
+                      height: 1,
+                    ),
+                  ),
+                ],
               ),
             ),
-            child: selected
-                ? Center(
-                    child: Container(
-                      width: 9,
-                      height: 9,
-                      decoration: const BoxDecoration(
-                        color: Color(0xFF5865F2),
-                        shape: BoxShape.circle,
+            Container(
+              width: 22,
+              height: 22,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                border: Border.all(
+                  color: selected ? _avaAccent : _stageText,
+                  width: 2,
+                ),
+              ),
+              child: selected
+                  ? Center(
+                      child: Container(
+                        width: 9,
+                        height: 9,
+                        decoration: const BoxDecoration(
+                          color: _avaAccent,
+                          shape: BoxShape.circle,
+                        ),
+                      ),
+                    )
+                  : null,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _AzoomAboutEasterEggPanel extends StatelessWidget {
+  const _AzoomAboutEasterEggPanel({required this.onClose});
+
+  final VoidCallback onClose;
+
+  @override
+  Widget build(BuildContext context) {
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: _stageMenu.withValues(alpha: 0.98),
+        border: Border.all(color: _stageMenuBorder),
+        borderRadius: BorderRadius.circular(10),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.38),
+            blurRadius: 22,
+            offset: const Offset(0, 12),
+          ),
+        ],
+      ),
+      child: SizedBox(
+        height: 410,
+        child: Column(
+          children: [
+            Container(
+              height: 48,
+              padding: const EdgeInsets.fromLTRB(15, 0, 6, 0),
+              decoration: const BoxDecoration(
+                border: Border(bottom: BorderSide(color: _stageMenuBorder)),
+              ),
+              child: Row(
+                children: [
+                  const Icon(Icons.auto_awesome, color: _avaAccent, size: 20),
+                  const SizedBox(width: 8),
+                  const Expanded(
+                    child: Text(
+                      'AVA',
+                      style: TextStyle(
+                        color: _stageText,
+                        fontSize: 16,
+                        fontWeight: FontWeight.w900,
                       ),
                     ),
-                  )
-                : null,
+                  ),
+                  IconButton(
+                    onPressed: onClose,
+                    icon: const Icon(
+                      Icons.close,
+                      color: _stageMutedText,
+                      size: 20,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const Expanded(child: Center(child: _AvaEasterEggCharacter())),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _AvaEasterEggCharacter extends StatefulWidget {
+  const _AvaEasterEggCharacter();
+
+  @override
+  State<_AvaEasterEggCharacter> createState() => _AvaEasterEggCharacterState();
+}
+
+class _AvaEasterEggCharacterState extends State<_AvaEasterEggCharacter>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _controller;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 1400),
+    )..repeat(reverse: true);
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedBuilder(
+      animation: _controller,
+      builder: (context, child) {
+        final t = Curves.easeInOut.transform(_controller.value);
+        final bob = math.sin(t * math.pi) * 12;
+        final tilt = (t - 0.5) * 0.08;
+        return Transform.translate(
+          offset: Offset(0, -bob),
+          child: Transform.rotate(angle: tilt, child: child),
+        );
+      },
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Container(
+            width: 132,
+            height: 132,
+            decoration: BoxDecoration(
+              color: _stageControl,
+              borderRadius: BorderRadius.circular(38),
+              border: Border.all(color: _stageBorder),
+              boxShadow: [
+                BoxShadow(
+                  color: _avaAccent.withValues(alpha: 0.28),
+                  blurRadius: 26,
+                ),
+              ],
+            ),
+            child: Stack(
+              alignment: Alignment.center,
+              children: [
+                CustomPaint(
+                  size: const Size(88, 44),
+                  painter: _AvaLogoLinePainter(),
+                ),
+                Positioned(
+                  bottom: 28,
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 12,
+                      vertical: 5,
+                    ),
+                    decoration: BoxDecoration(
+                      color: _stagePanel.withValues(alpha: 0.92),
+                      borderRadius: BorderRadius.circular(999),
+                      border: Border.all(color: _stageBorder),
+                    ),
+                    child: const Text(
+                      'AVA',
+                      style: TextStyle(
+                        color: _stageText,
+                        fontSize: 16,
+                        fontWeight: FontWeight.w900,
+                        letterSpacing: 1.6,
+                      ),
+                    ),
+                  ),
+                ),
+                const Positioned(
+                  top: 37,
+                  left: 46,
+                  child: _AvaBlinkDot(color: Color(0xFF806BFF)),
+                ),
+                const Positioned(
+                  top: 37,
+                  right: 46,
+                  child: _AvaBlinkDot(color: Color(0xFF1D8CFF)),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 22),
+          const Text(
+            'Abbas Vanguard AI',
+            style: TextStyle(
+              color: _stageText,
+              fontSize: 18,
+              fontWeight: FontWeight.w900,
+            ),
+          ),
+          const SizedBox(height: 8),
+          const Text(
+            '앞선 기술로, 더 나은 미래를 만듭니다.',
+            textAlign: TextAlign.center,
+            style: TextStyle(
+              color: _stageMutedText,
+              fontSize: 12,
+              fontWeight: FontWeight.w700,
+            ),
           ),
         ],
       ),
@@ -5628,183 +7043,55 @@ class _MobileVoiceRadioRow extends StatelessWidget {
   }
 }
 
-// ignore: unused_element
-class _MobileVoiceControlDockLegacy extends StatelessWidget {
-  const _MobileVoiceControlDockLegacy({
-    required this.micEnabled,
-    required this.deafened,
-    required this.cameraEnabled,
-    required this.cameraBusy,
-    required this.cameraUnavailable,
-    required this.screenSharing,
-    required this.screenShareBusy,
-    required this.liveKitRoom,
-    required this.mediaControlsEnabled,
-    required this.onToggleMic,
-    required this.onToggleDeafen,
-    required this.onToggleCamera,
-    required this.onCameraUnavailable,
-    required this.onSelectAudioInput,
-    required this.onSelectAudioOutput,
-    required this.onSelectCameraInput,
-    required this.outputVolume,
-    required this.onOutputVolumeChanged,
-    required this.onToggleScreenShare,
-    required this.onToggleNotiva,
-    required this.onLeave,
-  });
+class _AvaBlinkDot extends StatelessWidget {
+  const _AvaBlinkDot({required this.color});
 
-  final bool micEnabled;
-  final bool deafened;
-  final bool cameraEnabled;
-  final bool cameraBusy;
-  final bool cameraUnavailable;
-  final bool screenSharing;
-  final bool screenShareBusy;
-  final lk.Room? liveKitRoom;
-  final bool mediaControlsEnabled;
-  final VoidCallback onToggleMic;
-  final VoidCallback onToggleDeafen;
-  final VoidCallback onToggleCamera;
-  final VoidCallback onCameraUnavailable;
-  final ValueChanged<lk.MediaDevice> onSelectAudioInput;
-  final ValueChanged<lk.MediaDevice> onSelectAudioOutput;
-  final ValueChanged<lk.MediaDevice> onSelectCameraInput;
-  final double outputVolume;
-  final ValueChanged<double> onOutputVolumeChanged;
-  final VoidCallback onToggleScreenShare;
-  final VoidCallback onToggleNotiva;
-  final VoidCallback onLeave;
+  final Color color;
 
   @override
   Widget build(BuildContext context) {
-    final resolvedCameraUnavailable = cameraUnavailable && !cameraEnabled;
-    return SafeArea(
-      top: false,
-      child: Container(
-        height: 92,
-        margin: const EdgeInsets.fromLTRB(12, 0, 12, 10),
-        padding: const EdgeInsets.symmetric(horizontal: 12),
-        decoration: BoxDecoration(
-          color: _stageControl,
-          border: Border.all(color: _stageBorder),
-          borderRadius: BorderRadius.circular(22),
-        ),
-        clipBehavior: Clip.antiAlias,
-        child: Center(
-          child: SingleChildScrollView(
-            scrollDirection: Axis.horizontal,
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                _DiscordIconButton(
-                  tooltip: '음성으로 초대하기',
-                  icon: Icons.group_add,
-                  onTap: () {},
-                ),
-                const SizedBox(width: 12),
-                _DiscordControlGroup(
-                  children: [
-                    _VoiceSplitMenuControl(
-                      key: const ValueKey('azoom-mobile-mic-device-control'),
-                      tooltip: micEnabled ? '마이크 끄기' : '마이크 켜기',
-                      kind: _VoiceDeviceMenuKind.microphone,
-                      icon: micEnabled ? Icons.mic : Icons.mic_off,
-                      selected: !micEnabled,
-                      enabled: mediaControlsEnabled,
-                      liveKitRoom: liveKitRoom,
-                      micEnabled: micEnabled,
-                      deafened: deafened,
-                      outputVolume: outputVolume,
-                      onMainTap: onToggleMic,
-                      onToggleDeafen: onToggleDeafen,
-                      onSelectAudioInput: onSelectAudioInput,
-                      onSelectAudioOutput: onSelectAudioOutput,
-                      onOutputVolumeChanged: onOutputVolumeChanged,
-                    ),
-                    const SizedBox(width: 8),
-                    _VoiceSplitMenuControl(
-                      key: const ValueKey('azoom-mobile-camera-device-control'),
-                      tooltip: resolvedCameraUnavailable
-                          ? '카메라 사용 불가'
-                          : cameraEnabled
-                          ? '카메라 끄기'
-                          : '카메라 켜기',
-                      kind: _VoiceDeviceMenuKind.camera,
-                      icon: cameraEnabled ? Icons.videocam : Icons.videocam_off,
-                      selected: cameraEnabled,
-                      busy: cameraBusy,
-                      unavailable: resolvedCameraUnavailable,
-                      enabled: mediaControlsEnabled && !cameraBusy,
-                      liveKitRoom: liveKitRoom,
-                      micEnabled: micEnabled,
-                      deafened: deafened,
-                      outputVolume: outputVolume,
-                      cameraUnavailableReason: resolvedCameraUnavailable
-                          ? '카메라를 사용할 수 없습니다.'
-                          : null,
-                      onMainTap: resolvedCameraUnavailable
-                          ? onCameraUnavailable
-                          : onToggleCamera,
-                      onToggleDeafen: onToggleDeafen,
-                      onSelectAudioInput: onSelectAudioInput,
-                      onSelectAudioOutput: onSelectAudioOutput,
-                      onSelectCameraInput: onSelectCameraInput,
-                      onOutputVolumeChanged: onOutputVolumeChanged,
-                    ),
-                  ],
-                ),
-                const SizedBox(width: 12),
-                _DiscordControlGroup(
-                  children: [
-                    _VoiceControlButton(
-                      tooltip: screenSharing ? '공유 중지' : '화면 공유',
-                      icon: Icons.screen_share,
-                      selected: screenSharing,
-                      busy: screenShareBusy,
-                      enabled: mediaControlsEnabled && !screenShareBusy,
-                      onTap: onToggleScreenShare,
-                    ),
-                    const SizedBox(width: 8),
-                    _DiscordIconButton(
-                      tooltip: '활동',
-                      icon: Icons.apps,
-                      onTap: () {},
-                    ),
-                    const SizedBox(width: 8),
-                    _DiscordIconButton(
-                      tooltip: '사운드보드',
-                      icon: Icons.celebration,
-                      onTap: () {},
-                    ),
-                    const SizedBox(width: 8),
-                    _DiscordIconButton(
-                      tooltip: 'Notiva AI',
-                      icon: Icons.chat_bubble,
-                      onTap: onToggleNotiva,
-                    ),
-                    const SizedBox(width: 8),
-                    _DiscordIconButton(
-                      tooltip: '더보기',
-                      icon: Icons.more_horiz,
-                      onTap: () {},
-                    ),
-                  ],
-                ),
-                const SizedBox(width: 12),
-                _VoiceControlButton(
-                  tooltip: '연결 끊기',
-                  icon: Icons.call_end,
-                  danger: true,
-                  onTap: onLeave,
-                ),
-              ],
-            ),
-          ),
-        ),
-      ),
+    return Container(
+      width: 11,
+      height: 11,
+      decoration: BoxDecoration(color: color, shape: BoxShape.circle),
     );
   }
+}
+
+class _AvaLogoLinePainter extends CustomPainter {
+  @override
+  void paint(Canvas canvas, Size size) {
+    final paint = Paint()
+      ..color = Colors.white
+      ..style = PaintingStyle.stroke
+      ..strokeCap = StrokeCap.round
+      ..strokeJoin = StrokeJoin.round
+      ..strokeWidth = 6.5;
+    final path = Path()
+      ..moveTo(0, size.height * 0.78)
+      ..quadraticBezierTo(
+        size.width * 0.18,
+        size.height * 0.04,
+        size.width * 0.36,
+        size.height * 0.70,
+      )
+      ..quadraticBezierTo(
+        size.width * 0.50,
+        size.height * 1.08,
+        size.width * 0.64,
+        size.height * 0.70,
+      )
+      ..quadraticBezierTo(
+        size.width * 0.82,
+        size.height * 0.04,
+        size.width,
+        size.height * 0.78,
+      );
+    canvas.drawPath(path, paint);
+  }
+
+  @override
+  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
 }
 
 class _MobileSmallCircleButton extends StatelessWidget {
@@ -5821,20 +7108,27 @@ class _MobileSmallCircleButton extends StatelessWidget {
         padding: EdgeInsets.zero,
         onPressed: onTap,
         style: IconButton.styleFrom(
-          backgroundColor: _stageBackground,
+          backgroundColor: Colors.white,
+          foregroundColor: _avaAccentDeep,
+          side: const BorderSide(color: _stageBorder),
           shape: const CircleBorder(),
         ),
-        icon: Icon(icon, color: Colors.white, size: 21),
+        icon: Icon(icon, color: _avaAccentDeep, size: 21),
       ),
     );
   }
 }
 
 class _MobileLargeCircleButton extends StatelessWidget {
-  const _MobileLargeCircleButton({required this.icon, required this.onTap});
+  const _MobileLargeCircleButton({
+    required this.icon,
+    required this.onTap,
+    this.selected = false,
+  });
 
   final IconData icon;
   final VoidCallback onTap;
+  final bool selected;
 
   @override
   Widget build(BuildContext context) {
@@ -5844,11 +7138,17 @@ class _MobileLargeCircleButton extends StatelessWidget {
         padding: EdgeInsets.zero,
         onPressed: onTap,
         style: IconButton.styleFrom(
-          backgroundColor: _discordSidebarSelected,
+          backgroundColor: selected ? _avaAccentDeep : Colors.white,
           disabledBackgroundColor: _stageControl,
+          foregroundColor: selected ? Colors.white : _avaAccentDeep,
+          side: BorderSide(color: selected ? _avaAccentDeep : _stageBorder),
           shape: const CircleBorder(),
         ),
-        icon: Icon(icon, color: Colors.white, size: 24),
+        icon: Icon(
+          icon,
+          color: selected ? Colors.white : _avaAccentDeep,
+          size: 24,
+        ),
       ),
     );
   }
@@ -5877,6 +7177,7 @@ class _DiscordLeftBottomDock extends StatelessWidget {
     required this.onSelectAudioOutput,
     required this.onOutputVolumeChanged,
     required this.onToggleScreenShare,
+    required this.onTriggerFirework,
   });
 
   final AzoomVoiceChannelDto? connectedVoiceChannel;
@@ -5900,6 +7201,7 @@ class _DiscordLeftBottomDock extends StatelessWidget {
   final ValueChanged<lk.MediaDevice> onSelectAudioOutput;
   final ValueChanged<double> onOutputVolumeChanged;
   final VoidCallback onToggleScreenShare;
+  final VoidCallback onTriggerFirework;
 
   @override
   Widget build(BuildContext context) {
@@ -5939,6 +7241,7 @@ class _DiscordLeftBottomDock extends StatelessWidget {
                 onToggleCamera: onToggleCamera,
                 onCameraUnavailable: onCameraUnavailable,
                 onToggleScreenShare: onToggleScreenShare,
+                onTriggerFirework: onTriggerFirework,
               ),
             _UserPanel(
               profile: currentUser,
@@ -6161,7 +7464,15 @@ class _UserPanelAvatar extends StatelessWidget {
 }
 
 class _AzoomServerHeader extends StatelessWidget {
-  const _AzoomServerHeader();
+  const _AzoomServerHeader({
+    this.searchQuery = '',
+    this.onSearchChanged,
+    this.onInvitePressed,
+  });
+
+  final String searchQuery;
+  final ValueChanged<String>? onSearchChanged;
+  final VoidCallback? onInvitePressed;
 
   @override
   Widget build(BuildContext context) {
@@ -6666,6 +7977,7 @@ class _DiscordVoiceConnectionPanel extends StatelessWidget {
     required this.onToggleCamera,
     required this.onCameraUnavailable,
     required this.onToggleScreenShare,
+    required this.onTriggerFirework,
   });
 
   final AzoomVoiceChannelDto channel;
@@ -6683,6 +7995,7 @@ class _DiscordVoiceConnectionPanel extends StatelessWidget {
   final VoidCallback onToggleCamera;
   final VoidCallback onCameraUnavailable;
   final VoidCallback onToggleScreenShare;
+  final VoidCallback onTriggerFirework;
 
   @override
   Widget build(BuildContext context) {
@@ -6785,9 +8098,10 @@ class _DiscordVoiceConnectionPanel extends StatelessWidget {
               const SizedBox(width: 8),
               Expanded(
                 child: _VoiceConnectionActionButton(
+                  key: const ValueKey('azoom-sidebar-firework-button'),
                   tooltip: 'Soundboard',
                   icon: Icons.celebration,
-                  onTap: () {},
+                  onTap: onTriggerFirework,
                 ),
               ),
             ],
@@ -6800,6 +8114,7 @@ class _DiscordVoiceConnectionPanel extends StatelessWidget {
 
 class _VoiceConnectionActionButton extends StatelessWidget {
   const _VoiceConnectionActionButton({
+    super.key,
     required this.tooltip,
     required this.icon,
     required this.onTap,
@@ -6854,7 +8169,6 @@ class _VoiceConnectionActionButton extends StatelessWidget {
   }
 }
 
-// ignore: unused_element
 class _VoiceConnectionPanel extends StatelessWidget {
   const _VoiceConnectionPanel({
     required this.channel,
@@ -7057,50 +8371,98 @@ class _MiniControlButton extends StatelessWidget {
   }
 }
 
-class _AzoomChatSurface extends StatelessWidget {
-  const _AzoomChatSurface({
-    required this.channel,
-    required this.messages,
+class _AzoomVoicePlaceholderSurface extends StatelessWidget {
+  const _AzoomVoicePlaceholderSurface({
+    required this.voiceChannels,
     required this.loading,
     required this.errorText,
-    required this.scrollController,
-    required this.messageController,
-    required this.sending,
-    required this.onSend,
+    required this.onVoiceChannelSelected,
   });
 
-  final AzoomTextChannelDto channel;
-  final List<ChatMessageDto> messages;
+  final List<AzoomVoiceChannelDto> voiceChannels;
   final bool loading;
   final String? errorText;
-  final ScrollController scrollController;
-  final TextEditingController messageController;
-  final bool sending;
-  final VoidCallback onSend;
+  final ValueChanged<AzoomVoiceChannelDto> onVoiceChannelSelected;
 
   @override
   Widget build(BuildContext context) {
     return ColoredBox(
-      color: _chatBackground,
-      child: Column(
-        children: [
-          _AzoomChannelHeader(channelName: channel.name),
-          Expanded(
-            child: _AzoomMessageArea(
-              channel: channel,
-              messages: messages,
-              loading: loading,
-              errorText: errorText,
-              scrollController: scrollController,
+      color: _stageBackground,
+      child: Center(
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 420),
+          child: Padding(
+            padding: const EdgeInsets.all(24),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                if (loading)
+                  const CircularProgressIndicator(color: _avaAccent)
+                else ...[
+                  const Icon(
+                    Icons.volume_up,
+                    color: _discordSidebarMuted,
+                    size: 42,
+                  ),
+                  const SizedBox(height: 16),
+                  Text(
+                    errorText ?? '음성 채널을 선택해주세요.',
+                    textAlign: TextAlign.center,
+                    style: const TextStyle(
+                      color: _discordSidebarText,
+                      fontSize: 16,
+                      fontWeight: FontWeight.w900,
+                    ),
+                  ),
+                  if (voiceChannels.isNotEmpty) ...[
+                    const SizedBox(height: 18),
+                    SizedBox(
+                      height: math.min(
+                        voiceChannels.length * 52.0,
+                        math.max(
+                          52.0,
+                          MediaQuery.sizeOf(context).height * 0.45,
+                        ),
+                      ),
+                      child: ListView.separated(
+                        padding: EdgeInsets.zero,
+                        itemCount: voiceChannels.length,
+                        separatorBuilder: (context, index) =>
+                            const SizedBox(height: 8),
+                        itemBuilder: (context, index) {
+                          final channel = voiceChannels[index];
+                          return SizedBox(
+                            width: double.infinity,
+                            height: 44,
+                            child: FilledButton.icon(
+                              onPressed: () => onVoiceChannelSelected(channel),
+                              style: FilledButton.styleFrom(
+                                backgroundColor: _stageControl,
+                                foregroundColor: _discordSidebarText,
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(8),
+                                ),
+                              ),
+                              icon: const Icon(Icons.volume_up, size: 18),
+                              label: Text(
+                                channel.name,
+                                overflow: TextOverflow.ellipsis,
+                                style: const TextStyle(
+                                  fontSize: 14,
+                                  fontWeight: FontWeight.w900,
+                                ),
+                              ),
+                            ),
+                          );
+                        },
+                      ),
+                    ),
+                  ],
+                ],
+              ],
             ),
           ),
-          _ComposerBar(
-            channelName: channel.name,
-            controller: messageController,
-            sending: sending,
-            onSend: onSend,
-          ),
-        ],
+        ),
       ),
     );
   }
@@ -7306,265 +8668,1290 @@ class _TranscriptStatusMessage extends StatelessWidget {
   }
 }
 
-class _AzoomChannelHeader extends StatelessWidget {
-  const _AzoomChannelHeader({required this.channelName});
+class _AzoomTranscriptSearchField extends StatefulWidget {
+  const _AzoomTranscriptSearchField({
+    required this.query,
+    required this.onChanged,
+  });
 
-  final String channelName;
+  final String query;
+  final ValueChanged<String> onChanged;
 
   @override
-  Widget build(BuildContext context) {
-    return Container(
-      height: _channelHeaderHeight,
-      decoration: const BoxDecoration(
-        border: Border(bottom: BorderSide(color: _borderColor)),
-      ),
-      padding: const EdgeInsets.fromLTRB(14, 0, 12, 0),
-      child: LayoutBuilder(
-        builder: (context, constraints) {
-          final compact = constraints.maxWidth < 560;
-          final searchWidth = compact
-              ? (constraints.maxWidth - 242).clamp(108.0, 174.0)
-              : 244.0;
-          return Row(
-            children: [
-              const Icon(Icons.tag, color: _discordSidebarMuted, size: 25),
-              const SizedBox(width: 10),
-              Text(
-                channelName,
-                key: const ValueKey('azoom-channel-title'),
-                style: const TextStyle(
-                  color: _discordSidebarText,
-                  fontSize: 16,
-                  fontWeight: FontWeight.w800,
-                  height: 1,
-                ),
-              ),
-              const Spacer(),
-              if (!compact) ...const [
-                _HeaderTool(icon: Icons.forum),
-                _HeaderTool(icon: Icons.mic_off),
-                _HeaderTool(icon: Icons.push_pin),
-              ],
-              const _HeaderTool(icon: Icons.groups),
-              _HeaderSearchBox(width: searchWidth, channelName: channelName),
-            ],
-          );
-        },
-      ),
-    );
-  }
+  State<_AzoomTranscriptSearchField> createState() =>
+      _AzoomTranscriptSearchFieldState();
 }
 
-class _HeaderTool extends StatelessWidget {
-  const _HeaderTool({required this.icon});
-
-  final IconData icon;
+class _AzoomTranscriptSearchFieldState
+    extends State<_AzoomTranscriptSearchField> {
+  late final TextEditingController _controller;
 
   @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.only(right: 18),
-      child: Icon(icon, color: _discordSidebarMuted, size: 21),
-    );
+  void initState() {
+    super.initState();
+    _controller = TextEditingController(text: widget.query);
   }
-}
 
-class _HeaderSearchBox extends StatelessWidget {
-  const _HeaderSearchBox({required this.width, required this.channelName});
+  @override
+  void didUpdateWidget(covariant _AzoomTranscriptSearchField oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.query != _controller.text) {
+      _controller.value = TextEditingValue(
+        text: widget.query,
+        selection: TextSelection.collapsed(offset: widget.query.length),
+      );
+    }
+  }
 
-  final double width;
-  final String channelName;
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      width: width,
-      height: 28,
-      margin: const EdgeInsets.only(left: 2),
-      padding: const EdgeInsets.symmetric(horizontal: 8),
-      decoration: BoxDecoration(
-        color: _searchBackground,
-        borderRadius: BorderRadius.circular(5),
-      ),
-      child: Row(
-        children: [
-          Expanded(
-            child: Text(
-              '$channelName 검색',
-              key: const ValueKey('azoom-channel-search-label'),
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: const TextStyle(
-                color: _discordSidebarMuted,
-                fontSize: 14,
-                height: 1,
-              ),
+    return SizedBox(
+      height: 32,
+      child: Material(
+        color: Colors.transparent,
+        child: TextField(
+          key: const ValueKey('azoom-transcript-date-search'),
+          controller: _controller,
+          onChanged: widget.onChanged,
+          cursorColor: _discordSidebarText,
+          textInputAction: TextInputAction.search,
+          style: const TextStyle(
+            color: _discordSidebarText,
+            fontSize: 13,
+            fontWeight: FontWeight.w800,
+            height: 1.1,
+          ),
+          decoration: InputDecoration(
+            isDense: true,
+            contentPadding: const EdgeInsets.symmetric(
+              horizontal: 12,
+              vertical: 8,
+            ),
+            hintText: '\uAC80\uC0C9\uD558\uAE30',
+            hintStyle: const TextStyle(
+              color: _discordSidebarMuted,
+              fontSize: 13,
+              fontWeight: FontWeight.w800,
+            ),
+            prefixIcon: const Icon(
+              Icons.search,
+              color: _discordSidebarMuted,
+              size: 18,
+            ),
+            prefixIconConstraints: const BoxConstraints(
+              minWidth: 34,
+              minHeight: 28,
+            ),
+            suffixIcon: widget.query.trim().isEmpty
+                ? null
+                : IconButton(
+                    padding: EdgeInsets.zero,
+                    visualDensity: VisualDensity.compact,
+                    onPressed: () {
+                      _controller.clear();
+                      widget.onChanged('');
+                    },
+                    icon: const Icon(
+                      Icons.close,
+                      color: _discordSidebarMuted,
+                      size: 17,
+                    ),
+                  ),
+            filled: true,
+            fillColor: _discordSidebarSelected,
+            border: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(16),
+              borderSide: BorderSide.none,
+            ),
+            enabledBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(16),
+              borderSide: BorderSide.none,
+            ),
+            focusedBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(16),
+              borderSide: const BorderSide(color: _avaAccent, width: 1),
             ),
           ),
-          const Icon(Icons.search, color: _discordSidebarMuted, size: 19),
+        ),
+      ),
+    );
+  }
+}
+
+class _AzoomManagerPanel extends StatefulWidget {
+  const _AzoomManagerPanel({
+    required this.api,
+    required this.accessToken,
+    required this.voiceChannels,
+    required this.onChanged,
+  });
+
+  final AzoomApi api;
+  final String accessToken;
+  final List<AzoomVoiceChannelDto> voiceChannels;
+  final VoidCallback onChanged;
+
+  @override
+  State<_AzoomManagerPanel> createState() => _AzoomManagerPanelState();
+}
+
+class _AzoomManagerPanelState extends State<_AzoomManagerPanel> {
+  bool _loading = true;
+  bool _inviting = false;
+  String? _savingChannelId;
+  String? _errorText;
+  List<AzoomInviteCandidateDto> _candidates = const [];
+  List<AzoomCompanyUserDto> _companyUsers = const [];
+  final Set<String> _selectedCandidateIds = <String>{};
+  final Map<String, String> _channelAccessModes = <String, String>{};
+  final Map<String, Set<String>> _channelDepartments = <String, Set<String>>{};
+  final Map<String, String> _departmentDrafts = <String, String>{};
+
+  @override
+  void initState() {
+    super.initState();
+    _syncChannelAccessState();
+    unawaited(_load());
+  }
+
+  @override
+  void didUpdateWidget(covariant _AzoomManagerPanel oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.voiceChannels != widget.voiceChannels) {
+      _syncChannelAccessState();
+    }
+  }
+
+  void _syncChannelAccessState() {
+    for (final channel in widget.voiceChannels) {
+      _channelAccessModes.putIfAbsent(
+        channel.id,
+        () => channel.accessMode.isEmpty ? 'ALL' : channel.accessMode,
+      );
+      _channelDepartments.putIfAbsent(
+        channel.id,
+        () => {...channel.allowedDepartments},
+      );
+    }
+  }
+
+  List<String> get _departmentOptions {
+    final departments = <String>{};
+    for (final user in _companyUsers) {
+      final value = user.department.trim();
+      if (value.isNotEmpty) {
+        departments.add(value);
+      }
+    }
+    for (final candidate in _candidates) {
+      final value = candidate.department.trim();
+      if (value.isNotEmpty) {
+        departments.add(value);
+      }
+    }
+    for (final channel in widget.voiceChannels) {
+      departments.addAll(channel.allowedDepartments.map((item) => item.trim()));
+    }
+    final result = departments.where((item) => item.isNotEmpty).toList();
+    result.sort((a, b) => a.toLowerCase().compareTo(b.toLowerCase()));
+    return result;
+  }
+
+  Future<void> _load() async {
+    setState(() {
+      _loading = true;
+      _errorText = null;
+    });
+    try {
+      final results = await Future.wait<Object>([
+        widget.api.inviteCandidates(accessToken: widget.accessToken),
+        widget.api.companyUsers(accessToken: widget.accessToken),
+      ]);
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        _candidates = results[0] as List<AzoomInviteCandidateDto>;
+        _companyUsers = results[1] as List<AzoomCompanyUserDto>;
+        _selectedCandidateIds.removeWhere(
+          (id) => !_candidates.any((candidate) => candidate.accountId == id),
+        );
+        _loading = false;
+      });
+    } on Object catch (error) {
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        _loading = false;
+        _errorText = error.toString();
+      });
+    }
+  }
+
+  Future<void> _inviteSelected() async {
+    if (_selectedCandidateIds.isEmpty || _inviting) {
+      showAvaToast(
+        context,
+        '\uCD08\uB300\uD560 \uC720\uC800\uB97C \uC120\uD0DD\uD574\uC8FC\uC138\uC694.',
+      );
+      return;
+    }
+    setState(() {
+      _inviting = true;
+      _errorText = null;
+    });
+    try {
+      await widget.api.inviteMembers(
+        accessToken: widget.accessToken,
+        accountIds: _selectedCandidateIds.toList(),
+      );
+      if (!mounted) {
+        return;
+      }
+      showAvaToast(context, '\uCD08\uB300\uD588\uC2B5\uB2C8\uB2E4.');
+      setState(() {
+        _selectedCandidateIds.clear();
+        _inviting = false;
+      });
+      widget.onChanged();
+      await _load();
+    } on Object catch (error) {
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        _inviting = false;
+        _errorText = error.toString();
+      });
+    }
+  }
+
+  Future<void> _saveChannelAccess(AzoomVoiceChannelDto channel) async {
+    if (_savingChannelId != null) {
+      return;
+    }
+    final mode = _channelAccessModes[channel.id] ?? 'ALL';
+    final departments =
+        (_channelDepartments[channel.id] ?? <String>{})
+            .where((item) => item.trim().isNotEmpty)
+            .toList()
+          ..sort((a, b) => a.toLowerCase().compareTo(b.toLowerCase()));
+    setState(() {
+      _savingChannelId = channel.id;
+      _errorText = null;
+    });
+    try {
+      await widget.api.updateChannelAccess(
+        accessToken: widget.accessToken,
+        channelId: channel.id,
+        accessMode: mode,
+        allowedDepartments: mode == 'DEPARTMENTS' ? departments : const [],
+      );
+      if (!mounted) {
+        return;
+      }
+      showAvaToast(context, '\uC800\uC7A5\uD588\uC2B5\uB2C8\uB2E4.');
+      setState(() {
+        _savingChannelId = null;
+      });
+      widget.onChanged();
+    } on Object catch (error) {
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        _savingChannelId = null;
+        _errorText = error.toString();
+      });
+    }
+  }
+
+  void _toggleCandidate(String accountId, bool selected) {
+    setState(() {
+      if (selected) {
+        _selectedCandidateIds.add(accountId);
+      } else {
+        _selectedCandidateIds.remove(accountId);
+      }
+    });
+  }
+
+  void _setChannelMode(String channelId, String mode) {
+    setState(() {
+      _channelAccessModes[channelId] = mode;
+    });
+  }
+
+  void _toggleDepartment(String channelId, String department, bool selected) {
+    setState(() {
+      final departments = _channelDepartments.putIfAbsent(
+        channelId,
+        () => <String>{},
+      );
+      if (selected) {
+        departments.add(department);
+      } else {
+        departments.remove(department);
+      }
+    });
+  }
+
+  void _addDepartment(AzoomVoiceChannelDto channel) {
+    final draft = (_departmentDrafts[channel.id] ?? '').trim();
+    if (draft.isEmpty) {
+      return;
+    }
+    setState(() {
+      _channelAccessModes[channel.id] = 'DEPARTMENTS';
+      _channelDepartments.putIfAbsent(channel.id, () => <String>{}).add(draft);
+      _departmentDrafts[channel.id] = '';
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final maxHeight = MediaQuery.sizeOf(context).height - 72;
+    return ConstrainedBox(
+      constraints: BoxConstraints(
+        maxWidth: 760,
+        maxHeight: maxHeight.clamp(420.0, 720.0).toDouble(),
+      ),
+      child: Material(
+        color: Colors.transparent,
+        child: Container(
+          decoration: BoxDecoration(
+            color: _stagePanel,
+            borderRadius: BorderRadius.circular(18),
+            border: Border.all(color: _stageBorder),
+            boxShadow: const [
+              BoxShadow(
+                color: Color(0xAA000000),
+                blurRadius: 26,
+                offset: Offset(0, 12),
+              ),
+            ],
+          ),
+          clipBehavior: Clip.antiAlias,
+          child: Column(
+            children: [
+              _AzoomPanelHeader(
+                icon: Icons.admin_panel_settings,
+                title: 'AZOOM \uAD00\uB9AC',
+                onClose: () => Navigator.of(context).pop(),
+              ),
+              if (_errorText != null)
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.fromLTRB(18, 10, 18, 10),
+                  color: _discordDanger.withValues(alpha: 0.16),
+                  child: Text(
+                    _errorText!,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      color: Color(0xFFFFB4B4),
+                      fontSize: 12,
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                ),
+              Expanded(
+                child: _loading
+                    ? const Center(
+                        child: CircularProgressIndicator(color: _stageText),
+                      )
+                    : ListView(
+                        padding: const EdgeInsets.fromLTRB(18, 16, 18, 18),
+                        children: [
+                          _buildInviteSection(),
+                          const SizedBox(height: 18),
+                          _buildAccessSection(),
+                        ],
+                      ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildInviteSection() {
+    return _AzoomPanelCard(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          _AzoomPanelSectionTitle(
+            icon: Icons.person_add_alt_1,
+            title: 'AZOOM \uC720\uC800 \uCD08\uB300',
+            trailing: FilledButton(
+              onPressed: _inviting ? null : _inviteSelected,
+              style: FilledButton.styleFrom(
+                backgroundColor: _discordSidebarGreen,
+                foregroundColor: Colors.white,
+              ),
+              child: _inviting
+                  ? const SizedBox.square(
+                      dimension: 16,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2,
+                        color: Colors.white,
+                      ),
+                    )
+                  : Text(
+                      '\uCD08\uB300 ${_selectedCandidateIds.length}',
+                      style: const TextStyle(fontWeight: FontWeight.w900),
+                    ),
+            ),
+          ),
+          const SizedBox(height: 10),
+          if (_candidates.isEmpty)
+            const _AzoomPanelEmptyText(
+              text:
+                  '\uCD08\uB300\uD560 \uC720\uC800\uAC00 \uC5C6\uC2B5\uB2C8\uB2E4.',
+            )
+          else
+            for (final candidate in _candidates)
+              _AzoomInviteCandidateRow(
+                candidate: candidate,
+                selected: _selectedCandidateIds.contains(candidate.accountId),
+                onChanged: (selected) =>
+                    _toggleCandidate(candidate.accountId, selected),
+              ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildAccessSection() {
+    return _AzoomPanelCard(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          const _AzoomPanelSectionTitle(
+            icon: Icons.lock_person,
+            title: '\uC74C\uC131 \uCC44\uB110 \uCC38\uAC00 \uAD8C\uD55C',
+          ),
+          const SizedBox(height: 10),
+          for (final channel in widget.voiceChannels) ...[
+            _AzoomChannelAccessEditor(
+              channel: channel,
+              mode: _channelAccessModes[channel.id] ?? 'ALL',
+              selectedDepartments:
+                  _channelDepartments[channel.id] ?? <String>{},
+              departmentOptions: _departmentOptions,
+              draft: _departmentDrafts[channel.id] ?? '',
+              saving: _savingChannelId == channel.id,
+              onModeChanged: (mode) => _setChannelMode(channel.id, mode),
+              onDepartmentChanged: (department, selected) =>
+                  _toggleDepartment(channel.id, department, selected),
+              onDraftChanged: (value) => _departmentDrafts[channel.id] = value,
+              onAddDepartment: () => _addDepartment(channel),
+              onSave: () => _saveChannelAccess(channel),
+            ),
+            if (channel != widget.voiceChannels.last)
+              const Divider(color: _stageBorder, height: 20),
+          ],
         ],
       ),
     );
   }
 }
 
-class _AzoomMessageArea extends StatelessWidget {
-  const _AzoomMessageArea({
-    required this.channel,
-    required this.messages,
-    required this.loading,
-    required this.errorText,
-    required this.scrollController,
+class _AzoomPanelHeader extends StatelessWidget {
+  const _AzoomPanelHeader({
+    required this.icon,
+    required this.title,
+    required this.onClose,
   });
 
-  final AzoomTextChannelDto channel;
-  final List<ChatMessageDto> messages;
-  final bool loading;
-  final String? errorText;
-  final ScrollController scrollController;
+  final IconData icon;
+  final String title;
+  final VoidCallback onClose;
 
   @override
   Widget build(BuildContext context) {
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        final dateLabel = messages.isEmpty
-            ? formatChatDateLabel(DateTime.now())
-            : formatChatDateLabel(messages.first.sentAt ?? DateTime.now());
-        return ListView(
-          controller: scrollController,
-          padding: const EdgeInsets.fromLTRB(14, 24, 28, 18),
-          children: [
-            _DateDivider(label: dateLabel),
-            const SizedBox(height: 16),
-            if (loading)
-              const _InlineStatus(text: '채팅 내역을 불러오는 중입니다.')
-            else if (errorText != null)
-              _InlineStatus(text: errorText!)
-            else if (messages.isEmpty)
-              _InlineStatus(text: '${channel.name} 채팅이 시작되었습니다.')
-            else
-              for (final message in messages) ...[
-                _AzoomMessage(
-                  avatarLabel: _avatarLabel(message.senderName),
-                  avatarColor: _colorForMessage(message),
-                  avatarImageUrl: message.senderAvatarImageUrl,
-                  name: message.senderName,
-                  time: formatChatTime(message.sentAt),
-                  lines: [message.content],
-                ),
-                const SizedBox(height: 20),
-              ],
-          ],
-        );
-      },
+    return Container(
+      height: 58,
+      padding: const EdgeInsets.fromLTRB(18, 0, 10, 0),
+      decoration: const BoxDecoration(
+        color: _stageControl,
+        border: Border(bottom: BorderSide(color: _stageBorder)),
+      ),
+      child: Row(
+        children: [
+          Icon(icon, color: _stageText, size: 21),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Text(
+              title,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(
+                color: _stageText,
+                fontSize: 17,
+                fontWeight: FontWeight.w900,
+              ),
+            ),
+          ),
+          IconButton(
+            tooltip: '\uB2EB\uAE30',
+            onPressed: onClose,
+            icon: const Icon(Icons.close, color: _stageMutedText, size: 22),
+          ),
+        ],
+      ),
     );
   }
 }
 
-class _InlineStatus extends StatelessWidget {
-  const _InlineStatus({required this.text});
+class _AzoomPanelCard extends StatelessWidget {
+  const _AzoomPanelCard({required this.child});
+
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: _stageControl,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: _stageBorder),
+      ),
+      child: Padding(padding: const EdgeInsets.all(14), child: child),
+    );
+  }
+}
+
+class _AzoomPanelSectionTitle extends StatelessWidget {
+  const _AzoomPanelSectionTitle({
+    required this.icon,
+    required this.title,
+    this.trailing,
+  });
+
+  final IconData icon;
+  final String title;
+  final Widget? trailing;
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      children: [
+        Icon(icon, color: _stageMutedText, size: 19),
+        const SizedBox(width: 8),
+        Expanded(
+          child: Text(
+            title,
+            style: const TextStyle(
+              color: _stageText,
+              fontSize: 14,
+              fontWeight: FontWeight.w900,
+            ),
+          ),
+        ),
+        ?trailing,
+      ],
+    );
+  }
+}
+
+class _AzoomPanelEmptyText extends StatelessWidget {
+  const _AzoomPanelEmptyText({required this.text});
 
   final String text;
 
   @override
   Widget build(BuildContext context) {
     return Padding(
-      padding: const EdgeInsets.only(left: 56, top: 4),
+      padding: const EdgeInsets.symmetric(vertical: 12),
       child: Text(
         text,
         style: const TextStyle(
-          color: _discordSidebarMuted,
-          fontSize: 15,
-          fontWeight: FontWeight.w700,
+          color: _stageMutedText,
+          fontSize: 13,
+          fontWeight: FontWeight.w800,
         ),
       ),
     );
   }
 }
 
-class _AzoomMessage extends StatelessWidget {
-  const _AzoomMessage({
-    required this.avatarLabel,
-    required this.avatarColor,
-    required this.avatarImageUrl,
-    required this.name,
-    required this.time,
-    required this.lines,
+class _AzoomInviteCandidateRow extends StatelessWidget {
+  const _AzoomInviteCandidateRow({
+    required this.candidate,
+    required this.selected,
+    required this.onChanged,
   });
 
-  final String avatarLabel;
-  final Color avatarColor;
-  final String avatarImageUrl;
-  final String name;
-  final String time;
-  final List<String> lines;
+  final AzoomInviteCandidateDto candidate;
+  final bool selected;
+  final ValueChanged<bool> onChanged;
 
   @override
   Widget build(BuildContext context) {
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        _AzoomAvatar(
-          label: avatarLabel,
-          color: avatarColor,
-          imageUrl: avatarImageUrl,
-          size: 40,
+    final name = candidate.displayName.trim().isEmpty
+        ? candidate.email
+        : candidate.displayName;
+    final subtitle = [
+      candidate.department,
+      candidate.position,
+      candidate.email,
+    ].where((item) => item.trim().isNotEmpty).join(' 쨌 ');
+    return InkWell(
+      borderRadius: BorderRadius.circular(8),
+      onTap: () => onChanged(!selected),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 7),
+        child: Row(
+          children: [
+            Checkbox(
+              value: selected,
+              onChanged: (value) => onChanged(value ?? false),
+              visualDensity: VisualDensity.compact,
+              activeColor: _discordSidebarGreen,
+            ),
+            _AzoomAvatar(
+              label: _avatarLabel(name),
+              color: _colorFromHex(candidate.avatarColor),
+              imageUrl: candidate.avatarImageUrl,
+              size: 34,
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    name,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      color: _stageText,
+                      fontSize: 13,
+                      fontWeight: FontWeight.w900,
+                    ),
+                  ),
+                  if (subtitle.isNotEmpty)
+                    Text(
+                      subtitle,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        color: _stageMutedText,
+                        fontSize: 12,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                ],
+              ),
+            ),
+          ],
         ),
-        const SizedBox(width: 16),
-        Expanded(
-          child: Padding(
-            padding: const EdgeInsets.only(top: 1),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  crossAxisAlignment: CrossAxisAlignment.end,
+      ),
+    );
+  }
+}
+
+class _AzoomChannelAccessEditor extends StatelessWidget {
+  const _AzoomChannelAccessEditor({
+    required this.channel,
+    required this.mode,
+    required this.selectedDepartments,
+    required this.departmentOptions,
+    required this.draft,
+    required this.saving,
+    required this.onModeChanged,
+    required this.onDepartmentChanged,
+    required this.onDraftChanged,
+    required this.onAddDepartment,
+    required this.onSave,
+  });
+
+  final AzoomVoiceChannelDto channel;
+  final String mode;
+  final Set<String> selectedDepartments;
+  final List<String> departmentOptions;
+  final String draft;
+  final bool saving;
+  final ValueChanged<String> onModeChanged;
+  final void Function(String department, bool selected) onDepartmentChanged;
+  final ValueChanged<String> onDraftChanged;
+  final VoidCallback onAddDepartment;
+  final VoidCallback onSave;
+
+  @override
+  Widget build(BuildContext context) {
+    final effectiveMode = mode == 'DEPARTMENTS' ? 'DEPARTMENTS' : 'ALL';
+    final departmentsEnabled = effectiveMode == 'DEPARTMENTS';
+    final availableDepartments =
+        {
+            ...departmentOptions,
+            ...selectedDepartments,
+          }.where((item) => item.trim().isNotEmpty).toList()
+          ..sort((a, b) => a.toLowerCase().compareTo(b.toLowerCase()));
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 8),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
+            children: [
+              const Icon(Icons.volume_up, color: _stageMutedText, size: 18),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  channel.name,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    color: _stageText,
+                    fontSize: 13,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+              ),
+              DecoratedBox(
+                decoration: BoxDecoration(
+                  color: _stageMenu,
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: _stageBorder),
+                ),
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 10),
+                  child: DropdownButtonHideUnderline(
+                    child: DropdownButton<String>(
+                      value: effectiveMode,
+                      dropdownColor: _stageControl,
+                      style: const TextStyle(
+                        color: _stageText,
+                        fontSize: 12,
+                        fontWeight: FontWeight.w900,
+                      ),
+                      iconEnabledColor: _stageMutedText,
+                      items: const [
+                        DropdownMenuItem(
+                          value: 'ALL',
+                          child: Text('\uC804\uCCB4 \uC785\uC7A5'),
+                        ),
+                        DropdownMenuItem(
+                          value: 'DEPARTMENTS',
+                          child: Text('\uBD80\uC11C \uC120\uD0DD'),
+                        ),
+                      ],
+                      onChanged: saving
+                          ? null
+                          : (value) => onModeChanged(value ?? 'ALL'),
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: [
+              if (availableDepartments.isEmpty)
+                const Text(
+                  '\uC120\uD0DD\uD560 \uBD80\uC11C\uAC00 \uC544\uC9C1 \uC5C6\uC2B5\uB2C8\uB2E4.',
+                  style: TextStyle(
+                    color: _stageMutedText,
+                    fontSize: 12,
+                    fontWeight: FontWeight.w700,
+                  ),
+                )
+              else
+                for (final department in availableDepartments)
+                  FilterChip(
+                    label: Text(department),
+                    selected:
+                        departmentsEnabled &&
+                        selectedDepartments.contains(department),
+                    showCheckmark: false,
+                    onSelected: departmentsEnabled
+                        ? (selected) =>
+                              onDepartmentChanged(department, selected)
+                        : null,
+                    selectedColor: _avaAccent.withValues(alpha: 0.34),
+                    disabledColor: _stageMenu,
+                    backgroundColor: _stageMenu,
+                    labelStyle: TextStyle(
+                      color: departmentsEnabled
+                          ? _stageText
+                          : _stageMutedText.withValues(alpha: 0.72),
+                      fontSize: 12,
+                      fontWeight: FontWeight.w800,
+                    ),
+                    side: BorderSide(
+                      color:
+                          departmentsEnabled &&
+                              selectedDepartments.contains(department)
+                          ? _avaAccent
+                          : _stageBorder,
+                    ),
+                  ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          Row(
+            children: [
+              Expanded(
+                child: SizedBox(
+                  height: 36,
+                  child: TextField(
+                    key: ValueKey('azoom-channel-department-${channel.id}'),
+                    enabled: !saving,
+                    onChanged: onDraftChanged,
+                    style: const TextStyle(
+                      color: _stageText,
+                      fontSize: 12,
+                      fontWeight: FontWeight.w800,
+                    ),
+                    decoration: InputDecoration(
+                      isDense: true,
+                      contentPadding: const EdgeInsets.symmetric(
+                        horizontal: 12,
+                        vertical: 9,
+                      ),
+                      hintText: '\uBD80\uC11C \uCD94\uAC00',
+                      hintStyle: const TextStyle(
+                        color: _stageMutedText,
+                        fontSize: 12,
+                        fontWeight: FontWeight.w700,
+                      ),
+                      filled: true,
+                      fillColor: _stageMenu,
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(8),
+                        borderSide: const BorderSide(color: _stageBorder),
+                      ),
+                      enabledBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(8),
+                        borderSide: const BorderSide(color: _stageBorder),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 8),
+              OutlinedButton(
+                onPressed: saving || draft.trim().isEmpty
+                    ? null
+                    : onAddDepartment,
+                child: const Text('\uCD94\uAC00'),
+              ),
+              const SizedBox(width: 8),
+              FilledButton(
+                onPressed: saving ? null : onSave,
+                style: FilledButton.styleFrom(
+                  backgroundColor: _avaAccent,
+                  foregroundColor: Colors.white,
+                ),
+                child: saving
+                    ? const SizedBox.square(
+                        dimension: 16,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2,
+                          color: Colors.white,
+                        ),
+                      )
+                    : const Text(
+                        '\uC800\uC7A5',
+                        style: TextStyle(fontWeight: FontWeight.w900),
+                      ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _AzoomParticipantsPanel extends StatelessWidget {
+  const _AzoomParticipantsPanel({required this.channel, required this.onClose});
+
+  final AzoomVoiceChannelDto channel;
+  final VoidCallback onClose;
+
+  @override
+  Widget build(BuildContext context) {
+    final participants = channel.participants;
+    final maxHeight = MediaQuery.sizeOf(context).height - 90;
+    return ConstrainedBox(
+      constraints: BoxConstraints(
+        maxWidth: 420,
+        maxHeight: maxHeight.clamp(320.0, 620.0).toDouble(),
+      ),
+      child: Material(
+        color: Colors.transparent,
+        child: Container(
+          decoration: BoxDecoration(
+            color: _stagePanel,
+            borderRadius: BorderRadius.circular(18),
+            border: Border.all(color: _stageBorder),
+            boxShadow: const [
+              BoxShadow(
+                color: Color(0xAA000000),
+                blurRadius: 26,
+                offset: Offset(0, 12),
+              ),
+            ],
+          ),
+          clipBehavior: Clip.antiAlias,
+          child: Column(
+            children: [
+              _AzoomPanelHeader(
+                icon: Icons.people,
+                title: '\uCC38\uC5EC\uC790',
+                onClose: onClose,
+              ),
+              Padding(
+                padding: const EdgeInsets.fromLTRB(18, 14, 18, 8),
+                child: Row(
                   children: [
-                    Flexible(
+                    const Icon(
+                      Icons.volume_up,
+                      color: _stageMutedText,
+                      size: 18,
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
                       child: Text(
-                        name,
+                        channel.name,
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                         style: const TextStyle(
-                          color: _discordSidebarText,
-                          fontSize: 16,
-                          fontWeight: FontWeight.w800,
-                          height: 1,
+                          color: _stageText,
+                          fontSize: 14,
+                          fontWeight: FontWeight.w900,
                         ),
                       ),
                     ),
-                    const SizedBox(width: 8),
                     Text(
-                      time,
+                      '${participants.length}',
                       style: const TextStyle(
-                        color: _discordSidebarMuted,
-                        fontSize: 12,
-                        fontWeight: FontWeight.w500,
-                        height: 1,
+                        color: _stageMutedText,
+                        fontSize: 13,
+                        fontWeight: FontWeight.w900,
                       ),
                     ),
                   ],
                 ),
-                const SizedBox(height: 5),
-                for (final line in lines)
-                  Padding(
-                    padding: const EdgeInsets.only(bottom: 4),
-                    child: Text(
-                      line,
-                      style: const TextStyle(
-                        color: _discordSidebarText,
-                        fontSize: 17,
-                        fontWeight: FontWeight.w500,
-                        height: 1.18,
+              ),
+              Expanded(
+                child: participants.isEmpty
+                    ? const Center(
+                        child: Text(
+                          '\uCC38\uC5EC \uC911\uC778 \uC720\uC800\uAC00 \uC5C6\uC2B5\uB2C8\uB2E4.',
+                          style: TextStyle(
+                            color: _stageMutedText,
+                            fontSize: 13,
+                            fontWeight: FontWeight.w800,
+                          ),
+                        ),
+                      )
+                    : ListView.separated(
+                        padding: const EdgeInsets.fromLTRB(18, 6, 18, 18),
+                        itemCount: participants.length,
+                        separatorBuilder: (_, _) =>
+                            const Divider(color: _stageBorder, height: 1),
+                        itemBuilder: (context, index) {
+                          return _AzoomParticipantDialogRow(
+                            participant: participants[index],
+                          );
+                        },
                       ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _AzoomParticipantDialogRow extends StatelessWidget {
+  const _AzoomParticipantDialogRow({required this.participant});
+
+  final AzoomVoiceParticipantDto participant;
+
+  @override
+  Widget build(BuildContext context) {
+    final name = participant.displayName.trim().isEmpty
+        ? participant.email
+        : participant.displayName;
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 10),
+      child: Row(
+        children: [
+          _AzoomAvatar(
+            label: _avatarLabel(name),
+            color: _colorFromHex(participant.avatarColor),
+            imageUrl: participant.avatarImageUrl,
+            size: 38,
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  name,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    color: _stageText,
+                    fontSize: 14,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+                if (participant.email.trim().isNotEmpty)
+                  Text(
+                    participant.email,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      color: _stageMutedText,
+                      fontSize: 12,
+                      fontWeight: FontWeight.w700,
                     ),
                   ),
               ],
             ),
           ),
-        ),
-      ],
+          if (participant.muted)
+            const Padding(
+              padding: EdgeInsets.only(left: 8),
+              child: Icon(Icons.mic_off, color: _stageMutedText, size: 18),
+            ),
+          if (participant.deafened)
+            const Padding(
+              padding: EdgeInsets.only(left: 8),
+              child: Icon(Icons.headset_off, color: _stageMutedText, size: 18),
+            ),
+        ],
+      ),
     );
+  }
+}
+
+class _AzoomFireworkOverlay extends StatelessWidget {
+  const _AzoomFireworkOverlay({required this.burstIds});
+
+  final List<int> burstIds;
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox.expand(
+      key: const ValueKey('azoom-firework-overlay'),
+      child: Stack(
+        children: [
+          for (final burstId in burstIds)
+            Positioned.fill(
+              child: _AzoomFireworkBurst(
+                key: ValueKey('azoom-firework-burst-$burstId'),
+                seedOffset: burstId,
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+}
+
+class _AzoomFireworkBurst extends StatefulWidget {
+  const _AzoomFireworkBurst({required this.seedOffset, super.key});
+
+  final int seedOffset;
+
+  @override
+  State<_AzoomFireworkBurst> createState() => _AzoomFireworkBurstState();
+}
+
+class _AzoomFireworkBurstState extends State<_AzoomFireworkBurst>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _controller;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = AnimationController(
+      vsync: this,
+      duration: _azoomFireworkDuration,
+    )..forward();
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedBuilder(
+      animation: _controller,
+      builder: (context, _) {
+        return CustomPaint(
+          painter: _AzoomFireworkPainter(
+            _controller.value,
+            seedOffset: widget.seedOffset,
+          ),
+        );
+      },
+    );
+  }
+}
+
+class _AzoomFireworkPainter extends CustomPainter {
+  const _AzoomFireworkPainter(this.progress, {required this.seedOffset});
+
+  final double progress;
+  final int seedOffset;
+
+  static const _colors = [
+    Color(0xFFFCE18A),
+    Color(0xFFFF726D),
+    Color(0xFFF4306D),
+    Color(0xFFB48DEF),
+    Color(0xFF63E6BE),
+    Color(0xFF74C0FC),
+  ];
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final veilOpacity = math.sin(progress * math.pi).clamp(0.0, 1.0).toDouble();
+    final veil = Paint()
+      ..color = Colors.black.withValues(alpha: 0.07 * veilOpacity);
+    canvas.drawRect(Offset.zero & size, veil);
+
+    final maxDistance = size.shortestSide * 0.58;
+    _paintKonfettiParty(
+      canvas,
+      size,
+      origin: Offset(size.width * 0.50, size.height * 0.30),
+      seed: 3 + seedOffset * 37,
+      start: 0.00,
+      count: 110,
+      maxDistance: maxDistance,
+    );
+    _paintKonfettiParty(
+      canvas,
+      size,
+      origin: Offset(size.width * 0.18, size.height * 0.25),
+      seed: 11 + seedOffset * 37,
+      start: 0.08,
+      count: 72,
+      maxDistance: maxDistance * 0.82,
+      wind: size.width * 0.08,
+    );
+    _paintKonfettiParty(
+      canvas,
+      size,
+      origin: Offset(size.width * 0.82, size.height * 0.24),
+      seed: 19 + seedOffset * 37,
+      start: 0.12,
+      count: 72,
+      maxDistance: maxDistance * 0.82,
+      wind: -size.width * 0.08,
+    );
+    _paintKonfettiParty(
+      canvas,
+      size,
+      origin: Offset(size.width * 0.50, size.height * 0.62),
+      seed: 29 + seedOffset * 37,
+      start: 0.22,
+      count: 64,
+      maxDistance: maxDistance * 0.54,
+      gravity: size.height * 0.09,
+    );
+  }
+
+  void _paintKonfettiParty(
+    Canvas canvas,
+    Size size, {
+    required Offset origin,
+    required int seed,
+    required double start,
+    required int count,
+    required double maxDistance,
+    double wind = 0,
+    double? gravity,
+  }) {
+    final local = ((progress - start) / 0.78).clamp(0.0, 1.0).toDouble();
+    if (local <= 0) {
+      return;
+    }
+
+    final travel = Curves.easeOutCubic.transform(local);
+    final fadeOut = local < 0.18
+        ? local / 0.18
+        : ((1 - local) / 0.42).clamp(0.0, 1.0).toDouble();
+    final damping = 1 - math.pow(0.9, 18 * travel).toDouble();
+    final fall = gravity ?? size.height * 0.14;
+    final paint = Paint()..style = PaintingStyle.fill;
+
+    for (var i = 0; i < count; i += 1) {
+      final angle = (((i * 137.5) + seed * 31) % 360) * math.pi / 180.0;
+      final speed = 0.54 + (((i * 17 + seed * 13) % 47) / 100);
+      final drag = 0.82 + (((i * 7 + seed) % 19) / 100);
+      final distance = maxDistance * speed * damping * drag;
+      final xWind = wind * travel * (0.35 + ((i + seed) % 9) / 14);
+      final yFall = fall * local * local * (0.56 + ((i * 5 + seed) % 13) / 14);
+      final position =
+          origin +
+          Offset(math.cos(angle), math.sin(angle)) * distance +
+          Offset(xWind, yFall);
+      if (position.dx < -24 ||
+          position.dx > size.width + 24 ||
+          position.dy < -24 ||
+          position.dy > size.height + 24) {
+        continue;
+      }
+
+      final opacity = (fadeOut * (0.72 + ((i + seed) % 6) / 20))
+          .clamp(0.0, 1.0)
+          .toDouble();
+      paint.color = _colors[(i + seed) % _colors.length].withValues(
+        alpha: opacity,
+      );
+
+      final confettiSize = 5.0 + ((i * 11 + seed) % 9);
+      final rotation = (progress * 8.0) + i * 0.37 + seed;
+      canvas.save();
+      canvas.translate(position.dx, position.dy);
+      canvas.rotate(rotation);
+      if ((i + seed) % 5 == 0) {
+        canvas.drawCircle(Offset.zero, confettiSize * 0.42, paint);
+      } else {
+        final rect = Rect.fromCenter(
+          center: Offset.zero,
+          width: confettiSize * 0.62,
+          height: confettiSize * (1.08 + ((i + seed) % 3) * 0.24),
+        );
+        canvas.drawRRect(
+          RRect.fromRectAndRadius(rect, const Radius.circular(1.6)),
+          paint,
+        );
+      }
+      canvas.restore();
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant _AzoomFireworkPainter oldDelegate) {
+    return oldDelegate.progress != progress ||
+        oldDelegate.seedOffset != seedOffset;
   }
 }
 
@@ -7633,132 +10020,6 @@ class _RoundAvatar extends StatelessWidget {
   }
 }
 
-class _DateDivider extends StatelessWidget {
-  const _DateDivider({required this.label});
-
-  final String label;
-
-  @override
-  Widget build(BuildContext context) {
-    return Row(
-      children: [
-        const Expanded(child: Divider(height: 1, color: _stageBorder)),
-        Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 8),
-          child: Text(
-            label,
-            style: const TextStyle(
-              color: _discordSidebarMuted,
-              fontSize: 12,
-              fontWeight: FontWeight.w800,
-              height: 1,
-            ),
-          ),
-        ),
-        const Expanded(child: Divider(height: 1, color: _stageBorder)),
-      ],
-    );
-  }
-}
-
-class _ComposerBar extends StatelessWidget {
-  const _ComposerBar({
-    required this.channelName,
-    required this.controller,
-    required this.sending,
-    required this.onSend,
-  });
-
-  final String channelName;
-  final TextEditingController controller;
-  final bool sending;
-  final VoidCallback onSend;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      key: const ValueKey('azoom-composer-bar'),
-      height: _composerHeight,
-      padding: const EdgeInsets.fromLTRB(8, 0, 8, 8),
-      color: _chatBackground,
-      child: Container(
-        key: const ValueKey('azoom-composer-input'),
-        height: 56,
-        padding: const EdgeInsets.symmetric(horizontal: 16),
-        decoration: BoxDecoration(
-          color: _composerBackground,
-          borderRadius: BorderRadius.circular(8),
-        ),
-        child: Row(
-          children: [
-            const Icon(Icons.add, color: _discordSidebarMuted, size: 24),
-            const SizedBox(width: 18),
-            Expanded(
-              child: Material(
-                color: Colors.transparent,
-                child: TextField(
-                  controller: controller,
-                  enabled: !sending,
-                  minLines: 1,
-                  maxLines: 1,
-                  textInputAction: TextInputAction.send,
-                  onSubmitted: (_) => onSend(),
-                  style: const TextStyle(
-                    color: _discordSidebarText,
-                    fontSize: 16,
-                    fontWeight: FontWeight.w500,
-                    height: 1,
-                  ),
-                  decoration: InputDecoration(
-                    hintText: '#$channelName에 메시지 보내기',
-                    hintStyle: const TextStyle(
-                      color: _discordSidebarMuted,
-                      fontSize: 16,
-                      fontWeight: FontWeight.w500,
-                      height: 1,
-                    ),
-                    border: InputBorder.none,
-                    isDense: true,
-                  ),
-                ),
-              ),
-            ),
-            IconButton(
-              tooltip: '전송',
-              onPressed: sending ? null : onSend,
-              icon: Icon(
-                sending ? Icons.hourglass_top : Icons.send,
-                color: _discordSidebarMuted,
-                size: 21,
-              ),
-            ),
-            const _ComposerIcon(icon: Icons.card_giftcard),
-            const _ComposerIcon(icon: Icons.gif_box),
-            const _ComposerIcon(icon: Icons.sticky_note_2),
-            const _ComposerIcon(icon: Icons.emoji_emotions),
-            const _ComposerIcon(icon: Icons.apps),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class _ComposerIcon extends StatelessWidget {
-  const _ComposerIcon({required this.icon});
-
-  final IconData icon;
-
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.only(left: 12),
-      child: Icon(icon, color: _discordSidebarMuted, size: 21),
-    );
-  }
-}
-
-// ignore: unused_element
 class _AzoomVoiceRoomSurface extends StatelessWidget {
   const _AzoomVoiceRoomSurface({
     required this.channel,
@@ -7942,7 +10203,7 @@ class _VoiceRoomHeader extends StatelessWidget {
           ),
           const SizedBox(width: 8),
           Text(
-            '$count명',
+            '$count\uBA85',
             style: const TextStyle(
               color: _voiceRoomMutedText,
               fontSize: 13,
@@ -7958,8 +10219,6 @@ class _VoiceRoomHeader extends StatelessWidget {
             icon: Icons.fullscreen,
             onTap: onToggleFullscreen,
           ),
-          const SizedBox(width: 18),
-          const _VoiceRoomHeaderIcon(icon: Icons.more_horiz),
         ],
       ),
     );
@@ -8117,7 +10376,7 @@ class _VoiceRoomTileFrame extends StatelessWidget {
               left: 16,
               bottom: 12,
               child: _VoiceRoomNamePill(
-                name: connected ? name : '$name 연결 대기',
+                name: connected ? name : '$name \uC5F0\uACB0 \uB300\uAE30',
                 muted: muted,
               ),
             ),
@@ -8426,6 +10685,8 @@ class _AzoomVoiceSurface extends StatefulWidget {
     required this.onToggleScreenShare,
     required this.onToggleFullscreen,
     required this.onToggleNotiva,
+    required this.onShowParticipants,
+    required this.onTriggerFirework,
     required this.onLeave,
   });
 
@@ -8460,6 +10721,8 @@ class _AzoomVoiceSurface extends StatefulWidget {
   final VoidCallback onToggleScreenShare;
   final VoidCallback onToggleFullscreen;
   final VoidCallback onToggleNotiva;
+  final VoidCallback onShowParticipants;
+  final VoidCallback onTriggerFirework;
   final VoidCallback onLeave;
 
   @override
@@ -8622,6 +10885,7 @@ class _AzoomVoiceSurfaceState extends State<_AzoomVoiceSurface> {
                     count: participantCount,
                     notivaOpen: widget.notivaOpen,
                     onNotivaPressed: widget.onToggleNotiva,
+                    onParticipantsPressed: widget.onShowParticipants,
                   ),
                 ),
                 if (widget.notivaOpen)
@@ -8665,6 +10929,7 @@ class _AzoomVoiceSurfaceState extends State<_AzoomVoiceSurface> {
                     onOutputVolumeChanged: widget.onOutputVolumeChanged,
                     onToggleScreenShare: widget.onToggleScreenShare,
                     onToggleFullscreen: widget.onToggleFullscreen,
+                    onTriggerFirework: widget.onTriggerFirework,
                     onLeave: widget.onLeave,
                     onDeviceMenuOpenChanged: _handleDeviceMenuOpenChanged,
                   ),
@@ -8685,6 +10950,7 @@ class _AzoomVoiceHeader extends StatelessWidget {
     required this.count,
     required this.notivaOpen,
     required this.onNotivaPressed,
+    required this.onParticipantsPressed,
   });
 
   final bool visible;
@@ -8692,6 +10958,7 @@ class _AzoomVoiceHeader extends StatelessWidget {
   final int count;
   final bool notivaOpen;
   final VoidCallback onNotivaPressed;
+  final VoidCallback onParticipantsPressed;
 
   @override
   Widget build(BuildContext context) {
@@ -8728,22 +10995,26 @@ class _AzoomVoiceHeader extends StatelessWidget {
                         fontWeight: FontWeight.w900,
                       ),
                     ),
-                    if (count < 0) ...[
-                      const SizedBox(width: 8),
-                      Text(
-                        '$count명',
-                        style: const TextStyle(
-                          color: _stageMutedText,
-                          fontSize: 13,
-                          fontWeight: FontWeight.w700,
-                        ),
+                    const SizedBox(width: 8),
+                    Text(
+                      '$count\uBA85',
+                      style: const TextStyle(
+                        color: _stageMutedText,
+                        fontSize: 13,
+                        fontWeight: FontWeight.w700,
                       ),
-                    ],
+                    ),
                     const Spacer(),
                     _VoiceHeaderIcon(
                       icon: Icons.chat_bubble,
                       selected: notivaOpen,
                       onTap: onNotivaPressed,
+                    ),
+                    const SizedBox(width: 10),
+                    _VoiceHeaderIcon(
+                      icon: Icons.people,
+                      selected: false,
+                      onTap: onParticipantsPressed,
                     ),
                   ],
                 ),
@@ -8778,8 +11049,63 @@ class _VoiceHeaderIcon extends StatelessWidget {
           padding: const EdgeInsets.all(6),
           child: Icon(
             icon,
-            color: selected ? Colors.white : _stageMutedText,
+            color: selected ? _stageText : _stageMutedText,
             size: 22,
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+String _meetingTranscriptMenuLabel(AzoomMeetingTranscriptSummaryDto item) {
+  if (item.status == 'PROCESSING') {
+    return '\uBCC0\uD658\uC911';
+  }
+  if (item.status == 'FAILED') {
+    return '\uC2E4\uD328';
+  }
+  if (item.kind == 'BATCH_AUDIO') {
+    return '\uD1B5\uD30C\uC77C';
+  }
+  return '\uC2E4\uC2DC\uAC04';
+}
+
+class _NotivaTranscriptMenuButton extends StatelessWidget {
+  const _NotivaTranscriptMenuButton({
+    required this.label,
+    required this.selected,
+    required this.onTap,
+  });
+
+  final String label;
+  final bool selected;
+  final VoidCallback? onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      height: 30,
+      child: TextButton(
+        onPressed: onTap,
+        style: TextButton.styleFrom(
+          padding: const EdgeInsets.symmetric(horizontal: 10),
+          minimumSize: Size.zero,
+          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+          foregroundColor: _stageText,
+          backgroundColor: selected ? _discordSidebarSelected : _stageControl,
+          disabledBackgroundColor: _discordSidebarSelected,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(8),
+            side: BorderSide(color: selected ? _stageMenuBorder : _stageBorder),
+          ),
+        ),
+        child: Text(
+          label,
+          style: const TextStyle(
+            color: _stageText,
+            fontSize: 11,
+            fontWeight: FontWeight.w900,
           ),
         ),
       ),
@@ -8794,6 +11120,8 @@ class _NotivaAiPanel extends StatelessWidget {
     required this.active,
     required this.errorText,
     required this.transcript,
+    this.relatedTranscripts = const [],
+    this.onTranscriptSelected,
     required this.onClose,
   });
 
@@ -8802,6 +11130,8 @@ class _NotivaAiPanel extends StatelessWidget {
   final bool active;
   final String? errorText;
   final AzoomMeetingTranscriptDto? transcript;
+  final List<AzoomMeetingTranscriptSummaryDto> relatedTranscripts;
+  final ValueChanged<AzoomMeetingTranscriptSummaryDto>? onTranscriptSelected;
   final VoidCallback onClose;
 
   @override
@@ -8813,10 +11143,17 @@ class _NotivaAiPanel extends StatelessWidget {
         : starting || !active
         ? const Color(0xFFF0B232)
         : _discordSidebarGreen;
+    final transcriptMenuItems =
+        transcript != null && onTranscriptSelected != null
+        ? _meetingTranscriptMenuItems(
+            transcript!,
+            _matchingMeetingTranscripts(transcript!, relatedTranscripts),
+          )
+        : const <AzoomMeetingTranscriptSummaryDto>[];
     return DecoratedBox(
       key: const ValueKey('azoom-notiva-ai-panel'),
       decoration: BoxDecoration(
-        color: const Color(0xFF111214).withValues(alpha: 0.96),
+        color: _stageMenu.withValues(alpha: 0.96),
         border: Border.all(color: _stageMenuBorder),
         borderRadius: BorderRadius.circular(8),
         boxShadow: [
@@ -8872,6 +11209,16 @@ class _NotivaAiPanel extends StatelessWidget {
                     ],
                   ),
                 ),
+                for (final item in transcriptMenuItems) ...[
+                  const SizedBox(width: 6),
+                  _NotivaTranscriptMenuButton(
+                    label: _meetingTranscriptMenuLabel(item),
+                    selected: item.id == transcript?.id,
+                    onTap: item.id == transcript?.id
+                        ? null
+                        : () => onTranscriptSelected?.call(item),
+                  ),
+                ],
                 IconButton(
                   padding: EdgeInsets.zero,
                   visualDensity: VisualDensity.compact,
@@ -8977,11 +11324,9 @@ class _NotivaAiPanel extends StatelessWidget {
                                 const SizedBox(height: 5),
                                 DecoratedBox(
                                   decoration: BoxDecoration(
-                                    color: const Color(0xFF2B2D31),
+                                    color: _stagePanel,
                                     borderRadius: BorderRadius.circular(12),
-                                    border: Border.all(
-                                      color: const Color(0xFF3F4148),
-                                    ),
+                                    border: Border.all(color: _stageBorder),
                                   ),
                                   child: Padding(
                                     padding: const EdgeInsets.fromLTRB(
@@ -9538,7 +11883,7 @@ class _VoiceNamePill extends StatelessWidget {
           ],
           Flexible(
             child: Text(
-              connected ? name : '$name 연결 대기',
+              connected ? name : '$name \uC5F0\uACB0 \uB300\uAE30',
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
               style: const TextStyle(
@@ -9711,8 +12056,8 @@ class _AvaDarkBrandLockup extends StatelessWidget {
           center: const Alignment(0.0, -0.20),
           radius: 0.92,
           colors: [
-            const Color(0xFF5D4DFF).withValues(alpha: 0.22),
-            const Color(0xFF11131F).withValues(alpha: 0.02),
+            _avaAccent.withValues(alpha: 0.18),
+            _stageBackground.withValues(alpha: 0.88),
             Colors.transparent,
           ],
           stops: const [0, 0.62, 1],
@@ -9882,6 +12227,7 @@ class _VoiceControlsBar extends StatelessWidget {
     required this.onOutputVolumeChanged,
     required this.onToggleScreenShare,
     required this.onToggleFullscreen,
+    required this.onTriggerFirework,
     required this.onLeave,
     this.onDeviceMenuOpenChanged,
   });
@@ -9908,6 +12254,7 @@ class _VoiceControlsBar extends StatelessWidget {
   final ValueChanged<double> onOutputVolumeChanged;
   final VoidCallback onToggleScreenShare;
   final VoidCallback onToggleFullscreen;
+  final VoidCallback onTriggerFirework;
   final VoidCallback onLeave;
   final ValueChanged<bool>? onDeviceMenuOpenChanged;
 
@@ -10035,15 +12382,9 @@ class _VoiceControlsBar extends StatelessWidget {
                                   ),
                                   const SizedBox(width: 8),
                                   _DiscordIconButton(
-                                    tooltip: '사운드보드',
+                                    tooltip: '\uC0AC\uC6B4\uB4DC\uBCF4\uB4DC',
                                     icon: Icons.celebration,
-                                    onTap: () {},
-                                  ),
-                                  const SizedBox(width: 8),
-                                  _DiscordIconButton(
-                                    tooltip: '더 보기',
-                                    icon: Icons.more_horiz,
-                                    onTap: () {},
+                                    onTap: onTriggerFirework,
                                   ),
                                 ],
                               ),
@@ -11058,59 +13399,6 @@ class _VoiceControlButton extends StatelessWidget {
   }
 }
 
-AzoomTextChannelDto? _matchingTextChannel(
-  List<AzoomTextChannelDto> channels,
-  String? id,
-) {
-  if (channels.isEmpty) {
-    return null;
-  }
-  for (final channel in channels) {
-    if (channel.id == id) {
-      return channel;
-    }
-  }
-  return channels.first;
-}
-
-List<ChatMessageDto> _fallbackMessages(AzoomTextChannelDto channel) {
-  final now = DateTime.now();
-  return [
-    ChatMessageDto(
-      id: 'seed-${channel.id}-1',
-      roomCode: channel.roomCode,
-      senderId: 'ava',
-      senderName: 'AVA 운영팀',
-      senderNickname: '',
-      senderAvatarColor: '#1D63AA',
-      senderAvatarImageUrl: '',
-      content: '${channel.name} 채널을 초기화했습니다.',
-      sentAt: now.subtract(const Duration(minutes: 4)),
-      unreadCount: 0,
-      systemMessage: false,
-      silent: false,
-      spoiler: false,
-      attachment: null,
-    ),
-    ChatMessageDto(
-      id: 'seed-${channel.id}-2',
-      roomCode: channel.roomCode,
-      senderId: 'ava',
-      senderName: 'AVA 운영팀',
-      senderNickname: '',
-      senderAvatarColor: '#1D63AA',
-      senderAvatarImageUrl: '',
-      content: '회의 안건과 공유 자료는 이곳에 남겨주세요.',
-      sentAt: now.subtract(const Duration(minutes: 3)),
-      unreadCount: 0,
-      systemMessage: false,
-      silent: false,
-      spoiler: false,
-      attachment: null,
-    ),
-  ];
-}
-
 AzoomVoiceParticipantDto _localVoiceParticipant() {
   return AzoomVoiceParticipantDto(
     userId: 'local',
@@ -11261,30 +13549,6 @@ String _avatarLabel(String value) {
     return 'A';
   }
   return trimmed.characters.first.toUpperCase();
-}
-
-Color _colorForMessage(ChatMessageDto message) {
-  final explicitColor = _colorFromHex(message.senderAvatarColor);
-  if (message.senderAvatarColor.trim().isNotEmpty) {
-    return explicitColor;
-  }
-  if (message.senderId == 'ava') {
-    return _avaAccent;
-  }
-  final hash =
-      (message.senderId.isNotEmpty ? message.senderId : message.senderName)
-          .hashCode;
-  const colors = [
-    Color(0xFF7AA06A),
-    Color(0xFF8BA6C9),
-    Color(0xFF9C8E82),
-    Color(0xFF6D91A8),
-    Color(0xFFA88976),
-    Color(0xFF7986A8),
-    Color(0xFF7A9A90),
-    Color(0xFFA0A76F),
-  ];
-  return colors[hash.abs() % colors.length];
 }
 
 Color _colorFromHex(String? hex) {

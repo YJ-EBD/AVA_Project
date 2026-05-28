@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:io';
 import 'dart:ui' as ui;
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -31,6 +32,13 @@ Map<String, Object?> _nativeMenuItem(
     item['children'] = children;
   }
   return item;
+}
+
+bool _isMobileRuntimeForChats() {
+  return Platform.isAndroid ||
+      Platform.isIOS ||
+      defaultTargetPlatform == TargetPlatform.android ||
+      defaultTargetPlatform == TargetPlatform.iOS;
 }
 
 Map<String, Object?> _nativeMenuSeparator() => {'separator': true};
@@ -181,6 +189,7 @@ class _ChatsHeader extends ConsumerStatefulWidget {
     required this.onSearch,
     required this.onOpenChat,
     required this.onNewChat,
+    required this.mobileLayout,
   });
 
   final Future<void> Function() onMarkAllRead;
@@ -189,13 +198,14 @@ class _ChatsHeader extends ConsumerStatefulWidget {
   final VoidCallback onSearch;
   final VoidCallback onOpenChat;
   final VoidCallback onNewChat;
+  final bool mobileLayout;
 
   @override
   ConsumerState<_ChatsHeader> createState() => _ChatsHeaderState();
 }
 
 class _ChatsHeaderState extends ConsumerState<_ChatsHeader> {
-  final GlobalKey _titleKey = GlobalKey();
+  final GlobalKey _menuAnchorKey = GlobalKey();
   bool _isMenuOpen = false;
 
   Future<void> _showSortMenu() async {
@@ -203,11 +213,12 @@ class _ChatsHeaderState extends ConsumerState<_ChatsHeader> {
       return;
     }
     final overlay = Overlay.of(context).context.findRenderObject() as RenderBox;
-    final titleBox = _titleKey.currentContext?.findRenderObject() as RenderBox?;
-    if (titleBox == null) {
+    final anchorBox =
+        _menuAnchorKey.currentContext?.findRenderObject() as RenderBox?;
+    if (anchorBox == null) {
       return;
     }
-    final topLeft = titleBox.localToGlobal(Offset.zero, ancestor: overlay);
+    final topLeft = anchorBox.localToGlobal(Offset.zero, ancestor: overlay);
     final sortMode = ref.read(chatSortModeProvider);
     setState(() => _isMenuOpen = true);
     String? result;
@@ -237,7 +248,7 @@ class _ChatsHeaderState extends ConsumerState<_ChatsHeader> {
             _nativeMenuItem('leave-many', '여러 채팅방 나가기'),
           ],
           x: topLeft.dx,
-          y: topLeft.dy + titleBox.size.height + 7,
+          y: topLeft.dy + anchorBox.size.height + 7,
         );
       } else {
         result = await showMenu<String>(
@@ -245,7 +256,7 @@ class _ChatsHeaderState extends ConsumerState<_ChatsHeader> {
           position: RelativeRect.fromRect(
             Rect.fromLTWH(
               topLeft.dx,
-              topLeft.dy + titleBox.size.height + 7,
+              topLeft.dy + anchorBox.size.height + 7,
               0,
               0,
             ),
@@ -311,7 +322,7 @@ class _ChatsHeaderState extends ConsumerState<_ChatsHeader> {
           MouseRegion(
             cursor: SystemMouseCursors.click,
             child: GestureDetector(
-              key: _titleKey,
+              key: _menuAnchorKey,
               behavior: HitTestBehavior.opaque,
               onTap: _showSortMenu,
               child: Row(
@@ -351,6 +362,143 @@ class _ChatsHeaderState extends ConsumerState<_ChatsHeader> {
             icon: Icons.add_comment_outlined,
             tooltip: '새 채팅',
             onPressed: widget.onNewChat,
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _MobileChatsHeader extends ConsumerStatefulWidget {
+  const _MobileChatsHeader({
+    required this.onMarkAllRead,
+    required this.onManageFolders,
+    required this.onLeaveMany,
+    required this.onSearch,
+    required this.onNewChat,
+  });
+
+  final Future<void> Function() onMarkAllRead;
+  final Future<void> Function() onManageFolders;
+  final Future<void> Function() onLeaveMany;
+  final VoidCallback onSearch;
+  final VoidCallback onNewChat;
+
+  @override
+  ConsumerState<_MobileChatsHeader> createState() => _MobileChatsHeaderState();
+}
+
+class _MobileChatsHeaderState extends ConsumerState<_MobileChatsHeader> {
+  final GlobalKey _settingsKey = GlobalKey();
+  bool _isMenuOpen = false;
+
+  Future<void> _showSettingsMenu() async {
+    if (_isMenuOpen) {
+      return;
+    }
+    final overlay = Overlay.of(context).context.findRenderObject() as RenderBox;
+    final anchorBox =
+        _settingsKey.currentContext?.findRenderObject() as RenderBox?;
+    if (anchorBox == null) {
+      return;
+    }
+    final topLeft = anchorBox.localToGlobal(Offset.zero, ancestor: overlay);
+    final sortMode = ref.read(chatSortModeProvider);
+    setState(() => _isMenuOpen = true);
+    final result = await showMenu<String>(
+      context: context,
+      position: RelativeRect.fromRect(
+        Rect.fromLTWH(topLeft.dx, topLeft.dy + anchorBox.size.height + 7, 0, 0),
+        Offset.zero & overlay.size,
+      ),
+      items: [
+        PopupMenuItem(
+          value: 'latest',
+          child: Text(
+            '${sortMode == ChatSortMode.latest ? '\u2713 ' : ''}\uCD5C\uC2E0\uC21C',
+          ),
+        ),
+        PopupMenuItem(
+          value: 'unread',
+          child: Text(
+            '${sortMode == ChatSortMode.unread ? '\u2713 ' : ''}\uC548\uC77D\uC740 \uCC44\uD305',
+          ),
+        ),
+        PopupMenuItem(
+          value: 'favorite',
+          child: Text(
+            '${sortMode == ChatSortMode.favorite ? '\u2713 ' : ''}\uC990\uACA8\uCC3E\uAE30',
+          ),
+        ),
+        const PopupMenuDivider(),
+        const PopupMenuItem(
+          value: 'read-all',
+          child: Text('\uBAA8\uB450 \uC77D\uC74C \uCC98\uB9AC'),
+        ),
+        const PopupMenuDivider(),
+        const PopupMenuItem(
+          value: 'folders',
+          child: Text('\uCC44\uD305\uBC29 \uD3F4\uB354 \uAD00\uB9AC'),
+        ),
+        const PopupMenuItem(
+          value: 'leave-many',
+          child: Text('\uC5EC\uB7EC \uCC44\uD305\uBC29 \uB098\uAC00\uAE30'),
+        ),
+      ],
+    );
+    if (mounted) {
+      setState(() => _isMenuOpen = false);
+    }
+    if (!mounted || result == null) {
+      return;
+    }
+    switch (result) {
+      case 'latest':
+        ref.read(chatSortModeProvider.notifier).setMode(ChatSortMode.latest);
+      case 'unread':
+        ref.read(chatSortModeProvider.notifier).setMode(ChatSortMode.unread);
+      case 'favorite':
+        ref.read(chatSortModeProvider.notifier).setMode(ChatSortMode.favorite);
+      case 'read-all':
+        await widget.onMarkAllRead();
+      case 'folders':
+        await widget.onManageFolders();
+      case 'leave-many':
+        await widget.onLeaveMany();
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(22, 28, 16, 8),
+      child: Row(
+        children: [
+          const Text(
+            '\uCC44\uD305',
+            style: TextStyle(
+              color: Colors.black,
+              fontSize: 18,
+              fontWeight: FontWeight.w800,
+              letterSpacing: 0,
+            ),
+          ),
+          const Spacer(),
+          HeaderIconButton(
+            icon: Icons.search,
+            tooltip: '\uAC80\uC0C9',
+            onPressed: widget.onSearch,
+          ),
+          HeaderIconButton(
+            icon: Icons.add_comment_outlined,
+            tooltip: '\uC0C8 \uCC44\uD305',
+            onPressed: widget.onNewChat,
+          ),
+          HeaderIconButton(
+            key: _settingsKey,
+            icon: Icons.settings_outlined,
+            tooltip: '\uCC44\uD305 \uC124\uC815',
+            onPressed: _showSettingsMenu,
           ),
         ],
       ),
@@ -463,6 +611,146 @@ class _ChatSearchBar extends StatelessWidget {
   }
 }
 
+class _MobileNewChatResult {
+  const _MobileNewChatResult({required this.userIds, required this.title});
+
+  final List<String> userIds;
+  final String title;
+}
+
+class _MobileNewChatDialog extends StatefulWidget {
+  const _MobileNewChatDialog({required this.users});
+
+  final List<PersonProfile> users;
+
+  @override
+  State<_MobileNewChatDialog> createState() => _MobileNewChatDialogState();
+}
+
+class _MobileNewChatDialogState extends State<_MobileNewChatDialog> {
+  final TextEditingController _titleController = TextEditingController();
+  final Set<String> _selectedIds = {};
+
+  @override
+  void dispose() {
+    _titleController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Dialog(
+      insetPadding: const EdgeInsets.symmetric(horizontal: 28, vertical: 36),
+      backgroundColor: Colors.white,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxHeight: 520),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(18, 18, 12, 8),
+              child: Row(
+                children: [
+                  const Expanded(
+                    child: Text(
+                      '\uC0C8 \uCC44\uD305',
+                      style: TextStyle(
+                        color: Colors.black,
+                        fontSize: 18,
+                        fontWeight: FontWeight.w900,
+                      ),
+                    ),
+                  ),
+                  IconButton(
+                    onPressed: () => Navigator.of(context).pop(),
+                    icon: const Icon(Icons.close),
+                  ),
+                ],
+              ),
+            ),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 18),
+              child: TextField(
+                controller: _titleController,
+                decoration: InputDecoration(
+                  hintText: '\uCC44\uD305\uBC29 \uC774\uB984(\uC120\uD0DD)',
+                  filled: true,
+                  fillColor: const Color(0xFFF4F6F8),
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(8),
+                    borderSide: BorderSide.none,
+                  ),
+                  isDense: true,
+                ),
+              ),
+            ),
+            const SizedBox(height: 10),
+            Flexible(
+              child: ListView.builder(
+                shrinkWrap: true,
+                padding: const EdgeInsets.symmetric(horizontal: 10),
+                itemCount: widget.users.length,
+                itemBuilder: (context, index) {
+                  final user = widget.users[index];
+                  final id = user.id ?? '';
+                  final selected = _selectedIds.contains(id);
+                  return CheckboxListTile(
+                    value: selected,
+                    onChanged: id.isEmpty
+                        ? null
+                        : (value) {
+                            setState(() {
+                              if (value == true) {
+                                _selectedIds.add(id);
+                              } else {
+                                _selectedIds.remove(id);
+                              }
+                            });
+                          },
+                    secondary: ProfileAvatar(profile: user, size: 36),
+                    title: Text(
+                      user.name,
+                      style: const TextStyle(
+                        color: Colors.black,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                    subtitle: Text(user.email ?? ''),
+                    controlAffinity: ListTileControlAffinity.trailing,
+                  );
+                },
+              ),
+            ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(18, 8, 18, 18),
+              child: SizedBox(
+                width: double.infinity,
+                height: 44,
+                child: FilledButton(
+                  onPressed: _selectedIds.isEmpty
+                      ? null
+                      : () => Navigator.of(context).pop(
+                          _MobileNewChatResult(
+                            userIds: _selectedIds.toList(),
+                            title: _titleController.text.trim(),
+                          ),
+                        ),
+                  style: FilledButton.styleFrom(
+                    backgroundColor: const Color(0xFF4663CF),
+                    foregroundColor: Colors.white,
+                  ),
+                  child: const Text('\uB9CC\uB4E4\uAE30'),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
 class ChatsPanel extends ConsumerStatefulWidget {
   const ChatsPanel({super.key});
 
@@ -520,7 +808,6 @@ class _ChatsPanelState extends ConsumerState<ChatsPanel> {
 
   @override
   Widget build(BuildContext context) {
-    final focusedRoomId = ref.watch(focusedChatRoomIdProvider);
     final activeFolderId = ref.watch(activeChatFolderProvider);
     final folders = ref.watch(chatFoldersProvider);
     final filterOrder = ref.watch(chatFilterOrderProvider);
@@ -580,8 +867,7 @@ class _ChatsPanelState extends ConsumerState<ChatsPanel> {
     final showQuietTile =
         !_isSearching && activeFolderId == null && quietRooms.isNotEmpty;
     final mobileLayout =
-        (Platform.isAndroid || Platform.isIOS) &&
-        MediaQuery.sizeOf(context).width <= 720;
+        _isMobileRuntimeForChats() && MediaQuery.sizeOf(context).width <= 720;
 
     return Shortcuts(
       shortcuts: <ShortcutActivator, Intent>{
@@ -603,17 +889,29 @@ class _ChatsPanelState extends ConsumerState<ChatsPanel> {
             color: Colors.white,
             child: Column(
               children: [
-                _ChatsHeader(
-                  onSearch: _openSearch,
-                  onOpenChat: () => _showBlackToast(
-                    context,
-                    '\uBBF8 \uAD6C\uD604 \uAE30\uB2A5',
+                if (mobileLayout)
+                  _MobileChatsHeader(
+                    onSearch: _openSearch,
+                    onNewChat: () => _showNewChatPopup(context, ref),
+                    onMarkAllRead: () => _markAllRoomsRead(context, ref),
+                    onManageFolders: () =>
+                        _showFolderManageDialog(context, ref),
+                    onLeaveMany: () => _showMultiLeaveRoomsPopup(context, ref),
+                  )
+                else
+                  _ChatsHeader(
+                    mobileLayout: false,
+                    onSearch: _openSearch,
+                    onOpenChat: () => _showBlackToast(
+                      context,
+                      '\uBBF8 \uAD6C\uD604 \uAE30\uB2A5',
+                    ),
+                    onNewChat: () => _showNewChatPopup(context, ref),
+                    onMarkAllRead: () => _markAllRoomsRead(context, ref),
+                    onManageFolders: () =>
+                        _showFolderManageDialog(context, ref),
+                    onLeaveMany: () => _showMultiLeaveRoomsPopup(context, ref),
                   ),
-                  onNewChat: () => _showNewChatPopup(context, ref),
-                  onMarkAllRead: () => _markAllRoomsRead(context, ref),
-                  onManageFolders: () => _showFolderManageDialog(context, ref),
-                  onLeaveMany: () => _showMultiLeaveRoomsPopup(context, ref),
-                ),
                 if (_isSearching)
                   _ChatSearchBar(
                     controller: _searchController,
@@ -638,9 +936,14 @@ class _ChatsPanelState extends ConsumerState<ChatsPanel> {
                 Expanded(
                   child: ListView.builder(
                     padding: const EdgeInsets.only(top: 4, bottom: 16),
-                    itemCount: displayedRooms.length + (showQuietTile ? 1 : 0),
+                    itemCount:
+                        displayedRooms.length + (showQuietTile ? 1 : 0) + 1,
                     itemBuilder: (context, index) {
-                      if (showQuietTile && index == 0) {
+                      if (index == 0) {
+                        return const _RotatingChatBanner();
+                      }
+                      final roomIndexBase = index - 1;
+                      if (showQuietTile && roomIndexBase == 0) {
                         return _QuietChatRoomsTile(
                           rooms: quietRooms,
                           onDoubleTap: () =>
@@ -655,16 +958,20 @@ class _ChatsPanelState extends ConsumerState<ChatsPanel> {
                         );
                       }
                       final room =
-                          displayedRooms[index - (showQuietTile ? 1 : 0)];
-                      return _ChatRoomTile(
+                          displayedRooms[roomIndexBase -
+                              (showQuietTile ? 1 : 0)];
+                      return _ChatRoomTileSelection(
                         key: ValueKey('chat-room-${room.id}'),
                         room: room,
-                        isSelected: focusedRoomId == room.id,
+                        mobileLayout: mobileLayout,
                         onTap: () {
                           ref
                               .read(focusedChatRoomIdProvider.notifier)
                               .focus(room);
                           if (mobileLayout) {
+                            _openRoom(ref, room);
+                          } else if (ref.read(selectedChatRoomProvider) !=
+                              null) {
                             _openRoom(ref, room);
                           }
                         },
@@ -786,11 +1093,6 @@ class _ChatsPanelState extends ConsumerState<ChatsPanel> {
   }
 
   Future<void> _showNewChatPopup(BuildContext context, WidgetRef ref) async {
-    if (!Platform.isWindows) {
-      _showBlackToast(context, '\uBBF8 \uAD6C\uD604 \uAE30\uB2A5');
-      return;
-    }
-
     var users = ref.read(userProfilesProvider).value ?? const <PersonProfile>[];
     if (users.isEmpty) {
       try {
@@ -816,6 +1118,43 @@ class _ChatsPanelState extends ConsumerState<ChatsPanel> {
           context,
           '\uB300\uD654\uC0C1\uB300\uAC00 \uC5C6\uC2B5\uB2C8\uB2E4',
         );
+      }
+      return;
+    }
+
+    if (!Platform.isWindows) {
+      if (!context.mounted) {
+        return;
+      }
+      final result = await showDialog<_MobileNewChatResult>(
+        context: context,
+        barrierColor: Colors.black.withValues(alpha: 0.48),
+        builder: (_) => _MobileNewChatDialog(users: selectableUsers),
+      );
+      if (result == null || result.userIds.isEmpty || !context.mounted) {
+        return;
+      }
+      final session = ref.read(authControllerProvider).value?.session;
+      if (session == null || session.accessToken.isEmpty) {
+        return;
+      }
+      try {
+        final remoteRoom = await ref
+            .read(chatApiProvider)
+            .startGroupRoom(
+              accessToken: session.accessToken,
+              targetUserIds: result.userIds,
+              title: result.title,
+            );
+        final room = ref
+            .read(chatRoomsProvider.notifier)
+            .roomFromRemoteRoom(remoteRoom);
+        ref.read(chatRoomsProvider.notifier).upsert(room);
+        _openRoom(ref, room);
+      } on Object catch (error) {
+        if (context.mounted) {
+          showAvaToast(context, authErrorMessage(error));
+        }
       }
       return;
     }
@@ -964,6 +1303,21 @@ class _ChatsPanelState extends ConsumerState<ChatsPanel> {
       return;
     }
 
+    if (_isMobileRuntimeForChats() && MediaQuery.sizeOf(context).width <= 720) {
+      final result = await _showMobileRoomContextMenu(
+        context,
+        ref,
+        room,
+        isInsideUserFolder: isInsideUserFolder,
+        hasFolders: folders.isNotEmpty,
+      );
+      if (!context.mounted || result == null) {
+        return;
+      }
+      await handleResult(result);
+      return;
+    }
+
     final result = await showMenu<String>(
       context: context,
       position: RelativeRect.fromRect(
@@ -1066,6 +1420,104 @@ class _ChatsPanelState extends ConsumerState<ChatsPanel> {
     }
 
     await handleResult(result);
+  }
+
+  Future<String?> _showMobileRoomContextMenu(
+    BuildContext context,
+    WidgetRef ref,
+    ChatRoom room, {
+    required bool isInsideUserFolder,
+    required bool hasFolders,
+  }) async {
+    final favorite = ref
+        .read(chatFoldersProvider.notifier)
+        .isFavoriteRoom(room.id);
+    final result = await showDialog<String>(
+      context: context,
+      barrierColor: Colors.black.withValues(alpha: 0.46),
+      builder: (context) => _MobileRoomContextMenu(
+        title: room.title,
+        actions: [
+          const _MobileRoomMenuAction(
+            value: 'open',
+            label: '\uCC44\uD305\uBC29 \uC815\uBCF4 \uC124\uC815',
+          ),
+          _MobileRoomMenuAction(
+            value: 'favorite',
+            label: favorite
+                ? '\uC990\uACA8\uCC3E\uAE30 \uD574\uC81C'
+                : '\uC990\uACA8\uCC3E\uAE30 \uCD94\uAC00',
+          ),
+          _MobileRoomMenuAction(
+            value: 'pin',
+            label: room.isPinned
+                ? '\uCC44\uD305\uBC29 \uC0C1\uB2E8 \uACE0\uC815 \uD574\uC81C'
+                : '\uCC44\uD305\uBC29 \uC0C1\uB2E8 \uACE0\uC815',
+          ),
+          _MobileRoomMenuAction(
+            value: 'mute',
+            label: room.isMuted
+                ? '\uCC44\uD305\uBC29 \uC54C\uB9BC \uCF1C\uAE30'
+                : '\uCC44\uD305\uBC29 \uC54C\uB9BC \uB044\uAE30',
+          ),
+          const _MobileRoomMenuAction(
+            value: 'floating',
+            label:
+                '\uD648 \uD654\uBA74\uC5D0 \uBC14\uB85C\uAC00\uAE30 \uCD94\uAC00',
+          ),
+          if (!isInsideUserFolder && hasFolders)
+            const _MobileRoomMenuAction(
+              value: 'folder-choose',
+              label: '\uD3F4\uB354\uC5D0 \uCD94\uAC00',
+            ),
+          if (!isInsideUserFolder)
+            const _MobileRoomMenuAction(
+              value: 'folder',
+              label: '\uC0C8\uD3F4\uB354 \uB9CC\uB4E4\uAE30',
+            ),
+          if (isInsideUserFolder)
+            const _MobileRoomMenuAction(
+              value: 'folder-remove',
+              label: '\uD3F4\uB354\uC5D0\uC11C \uD574\uC81C',
+            ),
+          const _MobileRoomMenuAction(
+            value: 'store',
+            label:
+                '\uC870\uC6A9\uD55C \uCC44\uD305\uBC29\uC73C\uB85C \uBCF4\uAD00',
+          ),
+          const _MobileRoomMenuAction(
+            value: 'leave',
+            label: '\uB098\uAC00\uAE30',
+          ),
+        ],
+      ),
+    );
+    if (!context.mounted || result != 'folder-choose') {
+      return result;
+    }
+    final folderId = await _showMobileFolderChoiceDialog(context, ref);
+    return folderId == null ? null : 'folder:$folderId';
+  }
+
+  Future<String?> _showMobileFolderChoiceDialog(
+    BuildContext context,
+    WidgetRef ref,
+  ) {
+    final folders = ref.read(chatFoldersProvider);
+    return showDialog<String>(
+      context: context,
+      barrierColor: Colors.black.withValues(alpha: 0.46),
+      builder: (context) => _MobileRoomContextMenu(
+        title: '\uD3F4\uB354\uC5D0 \uCD94\uAC00',
+        actions: [
+          for (final folder in folders)
+            _MobileRoomMenuAction(
+              value: folder.id,
+              label: '${folder.icon} ${folder.name}',
+            ),
+        ],
+      ),
+    );
   }
 
   Future<void> _markRoomRead(
@@ -2173,6 +2625,7 @@ class _RoomSelectDialogState extends State<_RoomSelectDialog> {
                 return _SelectableRoomRow(
                   room: room,
                   isSelected: isSelected,
+                  mobileLayout: false,
                   onTap: () {
                     setState(() {
                       if (isSelected) {
@@ -2545,11 +2998,13 @@ class _SelectableRoomRow extends StatelessWidget {
   const _SelectableRoomRow({
     required this.room,
     required this.isSelected,
+    required this.mobileLayout,
     required this.onTap,
   });
 
   final ChatRoom room;
   final bool isSelected;
+  final bool mobileLayout;
   final VoidCallback onTap;
 
   @override
@@ -3331,6 +3786,85 @@ class _RoomMenuItemContentState extends State<_RoomMenuItemContent> {
   }
 }
 
+class _MobileRoomMenuAction {
+  const _MobileRoomMenuAction({required this.value, required this.label});
+
+  final String value;
+  final String label;
+}
+
+class _MobileRoomContextMenu extends StatelessWidget {
+  const _MobileRoomContextMenu({required this.title, required this.actions});
+
+  final String title;
+  final List<_MobileRoomMenuAction> actions;
+
+  @override
+  Widget build(BuildContext context) {
+    final dialogWidth = (MediaQuery.sizeOf(context).width - 76)
+        .clamp(280.0, 320.0)
+        .toDouble();
+    return Dialog(
+      alignment: Alignment.center,
+      insetPadding: const EdgeInsets.symmetric(horizontal: 32),
+      backgroundColor: Colors.transparent,
+      elevation: 0,
+      child: Material(
+        color: const Color(0xFF242424),
+        borderRadius: BorderRadius.circular(12),
+        clipBehavior: Clip.antiAlias,
+        child: SizedBox(
+          width: dialogWidth,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Padding(
+                padding: const EdgeInsets.fromLTRB(22, 22, 22, 14),
+                child: Text(
+                  title,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 18,
+                    fontWeight: FontWeight.w800,
+                    height: 1.1,
+                    letterSpacing: 0,
+                  ),
+                ),
+              ),
+              for (final action in actions)
+                InkWell(
+                  onTap: () => Navigator.of(context).pop(action.value),
+                  splashColor: Colors.white.withValues(alpha: 0.08),
+                  highlightColor: Colors.white.withValues(alpha: 0.06),
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 22,
+                      vertical: 13,
+                    ),
+                    child: Text(
+                      action.label,
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 14,
+                        fontWeight: FontWeight.w700,
+                        height: 1.15,
+                        letterSpacing: 0,
+                      ),
+                    ),
+                  ),
+                ),
+              const SizedBox(height: 12),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 class _RoomFolderMenuItemContent extends StatefulWidget {
   const _RoomFolderMenuItemContent({required this.folders});
 
@@ -3772,11 +4306,150 @@ class _QuietRoomDialogTileState extends State<_QuietRoomDialogTile> {
   }
 }
 
-class _ChatRoomTile extends StatefulWidget {
-  const _ChatRoomTile({
+const List<String> _chatBannerAssets = [
+  'assets/images/AVA_IMG/banner/02.png',
+  'assets/images/AVA_IMG/banner/03.png',
+  'assets/images/AVA_IMG/banner/04.png',
+  'assets/images/AVA_IMG/banner/05.png',
+  'assets/images/AVA_IMG/banner/06.png',
+  'assets/images/AVA_IMG/banner/07.png',
+  'assets/images/AVA_IMG/banner/08.png',
+];
+
+class _RotatingChatBanner extends StatefulWidget {
+  const _RotatingChatBanner();
+
+  @override
+  State<_RotatingChatBanner> createState() => _RotatingChatBannerState();
+}
+
+class _RotatingChatBannerState extends State<_RotatingChatBanner> {
+  Timer? _timer;
+  int _index = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    if (Platform.isWindows || Platform.isMacOS || Platform.isLinux) {
+      return;
+    }
+    _timer = Timer.periodic(const Duration(seconds: 2), (_) {
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        _index = (_index + 1) % _chatBannerAssets.length;
+      });
+    });
+  }
+
+  @override
+  void dispose() {
+    _timer?.cancel();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 8, 16, 10),
+      child: RepaintBoundary(
+        child: DecoratedBox(
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(10),
+            border: Border.all(color: const Color(0xFFE5EAF0)),
+            boxShadow: const [
+              BoxShadow(
+                color: Color(0x10000000),
+                blurRadius: 14,
+                offset: Offset(0, 5),
+              ),
+            ],
+          ),
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(10),
+            child: SizedBox(
+              height: 76,
+              width: double.infinity,
+              child: AnimatedSwitcher(
+                duration: const Duration(milliseconds: 520),
+                switchInCurve: Curves.easeOutCubic,
+                switchOutCurve: Curves.easeInCubic,
+                layoutBuilder: (currentChild, previousChildren) {
+                  return Stack(
+                    fit: StackFit.expand,
+                    children: [...previousChildren, ?currentChild],
+                  );
+                },
+                transitionBuilder: (child, animation) {
+                  final isIncoming =
+                      child.key == ValueKey<String>(_chatBannerAssets[_index]);
+                  final offsetAnimation = Tween<Offset>(
+                    begin: isIncoming
+                        ? const Offset(0, 1)
+                        : const Offset(0, -1),
+                    end: Offset.zero,
+                  ).animate(animation);
+                  return ClipRect(
+                    child: SlideTransition(
+                      position: offsetAnimation,
+                      child: child,
+                    ),
+                  );
+                },
+                child: Image.asset(
+                  _chatBannerAssets[_index],
+                  key: ValueKey(_chatBannerAssets[_index]),
+                  fit: BoxFit.cover,
+                  alignment: Alignment.center,
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _ChatRoomTileSelection extends ConsumerWidget {
+  const _ChatRoomTileSelection({
     super.key,
     required this.room,
+    required this.mobileLayout,
+    required this.onTap,
+    required this.onDoubleTap,
+    required this.onContextMenu,
+  });
+
+  final ChatRoom room;
+  final bool mobileLayout;
+  final VoidCallback onTap;
+  final VoidCallback onDoubleTap;
+  final ValueChanged<Offset> onContextMenu;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final isSelected = ref.watch(
+      focusedChatRoomIdProvider.select((roomId) => roomId == room.id),
+    );
+    return _ChatRoomTile(
+      room: room,
+      isSelected: isSelected,
+      mobileLayout: mobileLayout,
+      onTap: onTap,
+      onDoubleTap: onDoubleTap,
+      onContextMenu: onContextMenu,
+    );
+  }
+}
+
+class _ChatRoomTile extends StatelessWidget {
+  const _ChatRoomTile({
+    required this.room,
     required this.isSelected,
+    required this.mobileLayout,
     required this.onTap,
     required this.onDoubleTap,
     required this.onContextMenu,
@@ -3784,96 +4457,107 @@ class _ChatRoomTile extends StatefulWidget {
 
   final ChatRoom room;
   final bool isSelected;
+  final bool mobileLayout;
   final VoidCallback onTap;
   final VoidCallback onDoubleTap;
   final ValueChanged<Offset> onContextMenu;
 
   @override
-  State<_ChatRoomTile> createState() => _ChatRoomTileState();
-}
-
-class _ChatRoomTileState extends State<_ChatRoomTile> {
-  bool _isHovered = false;
-
-  @override
   Widget build(BuildContext context) {
-    final background = widget.isSelected || _isHovered
-        ? const Color(0xFFEFEFEF)
-        : Colors.white;
+    final background = isSelected ? const Color(0xFFEFEFEF) : Colors.white;
 
-    return MouseRegion(
-      cursor: SystemMouseCursors.click,
-      onEnter: (_) => setState(() => _isHovered = true),
-      onExit: (_) => setState(() => _isHovered = false),
-      child: Listener(
-        behavior: HitTestBehavior.opaque,
-        onPointerDown: (event) {
-          if (event.buttons == kPrimaryButton) {
-            widget.onTap();
-          }
-        },
-        child: GestureDetector(
-          behavior: HitTestBehavior.opaque,
-          onDoubleTap: widget.onDoubleTap,
+    if (mobileLayout) {
+      return Material(
+        color: background,
+        child: InkWell(
+          onTap: onTap,
+          onLongPress: () => onContextMenu(Offset.zero),
+          splashColor: const Color(0xFFE6E6E6),
+          highlightColor: const Color(0xFFEFEFEF),
+          child: _buildContent(),
+        ),
+      );
+    }
+
+    return Listener(
+      behavior: HitTestBehavior.opaque,
+      onPointerDown: (event) {
+        if (event.buttons == kPrimaryButton) {
+          onTap();
+        }
+      },
+      child: Material(
+        color: background,
+        child: InkWell(
+          mouseCursor: SystemMouseCursors.click,
+          onTap: () {},
+          onDoubleTap: onDoubleTap,
           onSecondaryTapDown: (details) {
-            widget.onTap();
-            widget.onContextMenu(details.globalPosition);
+            onTap();
+            onContextMenu(details.globalPosition);
           },
-          child: Container(
-            color: background,
-            constraints: const BoxConstraints(minHeight: 72),
-            padding: const EdgeInsets.fromLTRB(18, 12, 18, 8),
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                _StackedAvatars(room: widget.room),
-                const SizedBox(width: 14),
-                Expanded(
-                  child: SizedBox(
-                    height: 52,
-                    child: Stack(
-                      clipBehavior: Clip.none,
+          hoverColor: const Color(0xFFEFEFEF),
+          highlightColor: const Color(0xFFEFEFEF),
+          splashColor: Colors.transparent,
+          child: _buildContent(),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildContent() {
+    return Container(
+      constraints: const BoxConstraints(minHeight: 72),
+      padding: const EdgeInsets.fromLTRB(18, 12, 18, 8),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          _StackedAvatars(room: room),
+          const SizedBox(width: 14),
+          Expanded(
+            child: SizedBox(
+              height: 52,
+              child: Stack(
+                clipBehavior: Clip.none,
+                children: [
+                  Positioned.fill(
+                    right: 68,
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Positioned.fill(
-                          right: 68,
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              _RoomTitleLine(room: widget.room),
-                              const SizedBox(height: 3),
-                              _RoomPreviewText(room: widget.room, maxLines: 2),
-                            ],
-                          ),
-                        ),
-                        Positioned(
-                          top: 1,
-                          right: 0,
-                          child: Text(
-                            widget.room.time,
-                            style: const TextStyle(
-                              color: Color(0xFF747474),
-                              fontSize: 11,
-                              height: 1.1,
-                            ),
-                          ),
-                        ),
-                        if (widget.room.unreadCount > 0)
-                          Positioned(
-                            top: 25,
-                            right: 0,
-                            child: _UnreadBadge(
-                              key: ValueKey('unread-badge-${widget.room.id}'),
-                              count: widget.room.unreadCount,
-                            ),
-                          ),
+                        _RoomTitleLine(room: room),
+                        const SizedBox(height: 3),
+                        _RoomPreviewText(room: room, maxLines: 2),
                       ],
                     ),
                   ),
-                ),
-              ],
+                  Positioned(
+                    top: 1,
+                    right: 0,
+                    child: Text(
+                      room.time,
+                      style: const TextStyle(
+                        color: Color(0xFF747474),
+                        fontSize: 11,
+                        height: 1.1,
+                      ),
+                    ),
+                  ),
+                  if (room.unreadCount > 0)
+                    Positioned(
+                      top: 25,
+                      right: 0,
+                      child: _UnreadBadge(
+                        key: ValueKey('unread-badge-${room.id}'),
+                        count: room.unreadCount,
+                        mention: room.hasUnreadMention,
+                      ),
+                    ),
+                ],
+              ),
             ),
           ),
-        ),
+        ],
       ),
     );
   }
@@ -3887,9 +4571,31 @@ class _RoomPreviewText extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final leadingIcon = _previewLeadingIcon(room.preview);
+    final preview = normalizeChatRoomPreview(room.preview);
+    final stickerId = _previewStickerId(preview);
+    if (stickerId != null && !room.previewIsSpoiler) {
+      return Row(
+        children: [
+          _ChatListStickerPreview(stickerId: stickerId),
+          const SizedBox(width: 5),
+          const Expanded(
+            child: Text(
+              '\uC774\uBAA8\uD2F0\uCF58',
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                color: Color(0xFF555D66),
+                fontSize: 12,
+                height: 1.18,
+              ),
+            ),
+          ),
+        ],
+      );
+    }
+    final leadingIcon = _previewLeadingIcon(preview);
     final text = Text(
-      room.preview,
+      preview,
       maxLines: maxLines,
       overflow: TextOverflow.ellipsis,
       style: TextStyle(
@@ -3898,7 +4604,7 @@ class _RoomPreviewText extends StatelessWidget {
         height: maxLines > 1 ? 1.18 : null,
       ),
     );
-    if (!room.previewIsSpoiler || room.preview.isEmpty) {
+    if (!room.previewIsSpoiler || preview.isEmpty) {
       if (leadingIcon == null) {
         return text;
       }
@@ -3923,14 +4629,196 @@ class _RoomPreviewText extends StatelessWidget {
   }
 }
 
+const _previewStickerTokenPrefix = '[[AVA_STICKER:';
+const _previewStickerTokenSuffix = ']]';
+
+String? _previewStickerId(String preview) {
+  final trimmed = preview.trim();
+  if (!trimmed.startsWith(_previewStickerTokenPrefix) ||
+      !trimmed.endsWith(_previewStickerTokenSuffix)) {
+    return null;
+  }
+  final stickerId = trimmed.substring(
+    _previewStickerTokenPrefix.length,
+    trimmed.length - _previewStickerTokenSuffix.length,
+  );
+  return stickerId.isEmpty ? null : stickerId;
+}
+
+class _ChatListStickerPreview extends StatelessWidget {
+  const _ChatListStickerPreview({required this.stickerId});
+
+  final String stickerId;
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      width: 22,
+      height: 22,
+      child: Image.asset(
+        _previewStickerAssetPath(stickerId),
+        fit: BoxFit.contain,
+        gaplessPlayback: true,
+        errorBuilder: (context, error, stackTrace) =>
+            CustomPaint(painter: _ChatListStickerPainter(stickerId)),
+      ),
+    );
+  }
+}
+
+String _previewStickerAssetPath(String stickerId) {
+  final raw = RegExp(r'(\d+)$').firstMatch(stickerId)?.group(1);
+  final number = (int.tryParse(raw ?? '1') ?? 1).clamp(1, 30);
+  return 'assets/images/AVA_IMG/emoticon/kakaofreinds/'
+      'emoticon_${number.toString().padLeft(2, '0')}.gif';
+}
+
+class _ChatListStickerPainter extends CustomPainter {
+  const _ChatListStickerPainter(this.stickerId);
+
+  final String stickerId;
+
+  int get _variant {
+    final raw = RegExp(r'(\d+)$').firstMatch(stickerId)?.group(1);
+    return (int.tryParse(raw ?? '1') ?? 1) % 6;
+  }
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final paint = Paint()..isAntiAlias = true;
+    final center = Offset(size.width / 2, size.height / 2);
+    final radius = size.shortestSide * 0.34;
+    final variant = _variant;
+
+    paint.color = const Color(0xFFFFB642);
+    canvas.drawCircle(center, radius, paint);
+    canvas.drawCircle(
+      center + Offset(-radius * 0.72, -radius * 0.72),
+      radius * 0.24,
+      paint,
+    );
+    canvas.drawCircle(
+      center + Offset(radius * 0.72, -radius * 0.72),
+      radius * 0.24,
+      paint,
+    );
+
+    paint.color = const Color(0xFF3A2718).withValues(alpha: 0.12);
+    canvas.drawCircle(
+      center + Offset(-radius * 0.72, -radius * 0.72),
+      radius * 0.12,
+      paint,
+    );
+    canvas.drawCircle(
+      center + Offset(radius * 0.72, -radius * 0.72),
+      radius * 0.12,
+      paint,
+    );
+
+    paint.color = const Color(0xFF3A2718);
+    canvas.drawCircle(
+      center + Offset(-radius * 0.35, -radius * 0.15),
+      radius * 0.09,
+      paint,
+    );
+    canvas.drawCircle(
+      center + Offset(radius * 0.35, -radius * 0.15),
+      radius * 0.09,
+      paint,
+    );
+
+    final muzzle = RRect.fromRectAndRadius(
+      Rect.fromCenter(
+        center: center + Offset(0, radius * 0.12),
+        width: radius * 0.62,
+        height: radius * 0.4,
+      ),
+      Radius.circular(radius * 0.2),
+    );
+    paint.color = const Color(0xFFFFE5B3);
+    canvas.drawRRect(muzzle, paint);
+
+    paint.color = const Color(0xFF3A2718);
+    canvas.drawCircle(center + Offset(0, radius * 0.05), radius * 0.075, paint);
+    final mouth = Path()
+      ..moveTo(center.dx - radius * 0.18, center.dy + radius * 0.2)
+      ..quadraticBezierTo(
+        center.dx,
+        center.dy + radius * 0.35,
+        center.dx + radius * 0.18,
+        center.dy + radius * 0.2,
+      );
+    canvas.drawPath(
+      mouth,
+      Paint()
+        ..isAntiAlias = true
+        ..color = const Color(0xFF3A2718)
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 1.4,
+    );
+
+    if (variant == 0 || variant == 3) {
+      paint.color = const Color(0xFFFF6E8D);
+      canvas.drawCircle(
+        center + Offset(-radius * 0.52, radius * 0.08),
+        radius * 0.11,
+        paint,
+      );
+      canvas.drawCircle(
+        center + Offset(radius * 0.52, radius * 0.08),
+        radius * 0.11,
+        paint,
+      );
+    } else if (variant == 1 || variant == 4) {
+      final heart = Path()
+        ..moveTo(center.dx + radius * 0.72, center.dy - radius * 0.5)
+        ..cubicTo(
+          center.dx + radius * 0.56,
+          center.dy - radius * 0.66,
+          center.dx + radius * 0.34,
+          center.dy - radius * 0.36,
+          center.dx + radius * 0.72,
+          center.dy - radius * 0.18,
+        )
+        ..cubicTo(
+          center.dx + radius * 1.08,
+          center.dy - radius * 0.36,
+          center.dx + radius * 0.88,
+          center.dy - radius * 0.66,
+          center.dx + radius * 0.72,
+          center.dy - radius * 0.5,
+        );
+      paint.color = const Color(0xFFFF5A76);
+      canvas.drawPath(heart, paint);
+    } else if (variant == 5) {
+      paint.color = const Color(0xFF4C63D9);
+      canvas.drawCircle(
+        center + Offset(-radius * 0.82, -radius * 0.38),
+        radius * 0.08,
+        paint,
+      );
+      canvas.drawCircle(
+        center + Offset(radius * 0.82, radius * 0.34),
+        radius * 0.08,
+        paint,
+      );
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant _ChatListStickerPainter oldDelegate) {
+    return oldDelegate.stickerId != stickerId;
+  }
+}
+
 IconData? _previewLeadingIcon(String preview) {
-  if (preview.startsWith('[이미지]')) {
+  if (preview.startsWith('[\uC774\uBBF8\uC9C0]')) {
     return Icons.image_outlined;
   }
-  if (preview.startsWith('[동영상]')) {
+  if (preview.startsWith('[\uB3D9\uC601\uC0C1]')) {
     return Icons.movie_outlined;
   }
-  if (preview.startsWith('[파일]')) {
+  if (preview.startsWith('[\uD30C\uC77C]')) {
     return Icons.insert_drive_file_outlined;
   }
   return null;
@@ -3988,14 +4876,16 @@ class _RoomTitleLine extends StatelessWidget {
 }
 
 class _UnreadBadge extends StatelessWidget {
-  const _UnreadBadge({required this.count, super.key});
+  const _UnreadBadge({required this.count, this.mention = false, super.key});
 
   final int count;
+  final bool mention;
 
   @override
   Widget build(BuildContext context) {
     const size = 19.0;
-    final horizontalPadding = count > 9 ? 5.0 : 0.0;
+    final label = mention ? '@$count' : '$count';
+    final horizontalPadding = label.length > 1 ? 5.0 : 0.0;
 
     return Container(
       constraints: BoxConstraints(minWidth: size, minHeight: size),
@@ -4006,7 +4896,7 @@ class _UnreadBadge extends StatelessWidget {
         borderRadius: BorderRadius.circular(size / 2),
       ),
       child: Text(
-        '$count',
+        label,
         textAlign: TextAlign.center,
         style: const TextStyle(
           color: Colors.white,

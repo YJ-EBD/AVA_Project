@@ -1,9 +1,13 @@
 package com.ava.backend.azoom.service;
 
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.time.Instant;
 import java.util.Base64;
+import java.util.HashMap;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 
 import javax.crypto.Mac;
@@ -38,9 +42,10 @@ public class AzoomLiveKitTokenService {
 		@Value("${ava.azoom.livekit.token-minutes:120}") long tokenMinutes
 	) {
 		this.objectMapper = objectMapper;
-		this.liveKitUrl = normalize(liveKitUrl);
-		this.apiKey = normalize(apiKey);
-		this.apiSecret = normalize(apiSecret);
+		Map<String, String> localEnv = readLocalLiveKitEnv();
+		this.liveKitUrl = firstNonBlank(liveKitUrl, localEnv.get("AVA_LIVEKIT_URL"));
+		this.apiKey = firstNonBlank(apiKey, localEnv.get("AVA_LIVEKIT_API_KEY"));
+		this.apiSecret = firstNonBlank(apiSecret, localEnv.get("AVA_LIVEKIT_API_SECRET"));
 		this.tokenMinutes = tokenMinutes;
 	}
 
@@ -108,6 +113,45 @@ public class AzoomLiveKitTokenService {
 
 	private String normalize(String value) {
 		return value == null ? "" : value.trim();
+	}
+
+	private String firstNonBlank(String primary, String fallback) {
+		String normalized = normalize(primary);
+		if (!normalized.isBlank()) {
+			return normalized;
+		}
+		return normalize(fallback);
+	}
+
+	private Map<String, String> readLocalLiveKitEnv() {
+		for (Path path : List.of(
+			Path.of("LiveKit", "azoom-livekit.env"),
+			Path.of("SpringBoot", "LiveKit", "azoom-livekit.env")
+		)) {
+			if (!Files.isRegularFile(path)) {
+				continue;
+			}
+			try {
+				Map<String, String> values = new HashMap<>();
+				for (String line : Files.readAllLines(path, StandardCharsets.UTF_8)) {
+					String trimmed = line.replace("\uFEFF", "").trim();
+					if (trimmed.isBlank() || trimmed.startsWith("#")) {
+						continue;
+					}
+					int index = trimmed.indexOf('=');
+					if (index <= 0) {
+						continue;
+					}
+					values.put(trimmed.substring(0, index).trim(), trimmed.substring(index + 1).trim());
+				}
+				if (!values.isEmpty()) {
+					return values;
+				}
+			} catch (Exception ignored) {
+				// Explicit application properties still remain the primary path.
+			}
+		}
+		return Map.of();
 	}
 
 	private Map<String, Object> profileMetadata(

@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
 
 import '../../../../platform/window_control.dart';
 
@@ -7,6 +8,10 @@ class AuthWindowTitleBar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    if (kIsWeb || defaultTargetPlatform != TargetPlatform.windows) {
+      return const SizedBox.shrink();
+    }
+
     return Container(
       height: 34,
       decoration: const BoxDecoration(

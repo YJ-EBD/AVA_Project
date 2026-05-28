@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io' show exit, Platform;
 
 import 'package:flutter/material.dart';
@@ -5,7 +6,10 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../../platform/window_control.dart';
+import '../../../../shared/ava_toast.dart';
 import '../../../auth/application/auth_controller.dart';
+import '../../../azoom/data/azoom_api.dart';
+import '../../application/notification_center_controller.dart';
 import '../../domain/messenger_models.dart';
 import '../messenger_page.dart';
 
@@ -24,6 +28,12 @@ class MessengerSideNav extends ConsumerWidget {
           (count, room) =>
               quietRoomIds.contains(room.id) ? count : count + room.unreadCount,
         );
+    final hasUnreadMention = ref
+        .watch(chatRoomsProvider)
+        .any((room) => room.hasUnreadMention);
+    final hasActiveVoiceNotification = ref
+        .watch(azoomVoiceStartNotificationsProvider)
+        .any((item) => item.active && !item.checked);
 
     return Container(
       width: 64,
@@ -34,39 +44,51 @@ class MessengerSideNav extends ConsumerWidget {
           _NavIcon(
             icon: Icons.person,
             isActive: activeTab == MessengerTab.friends,
-            onTap: () => _selectTab(ref, MessengerTab.friends),
+            onTap: () => _selectTab(context, ref, MessengerTab.friends),
           ),
           const SizedBox(height: 22),
           _NavIcon(
             icon: Icons.chat_bubble,
             isActive: activeTab == MessengerTab.chats,
             badge: unreadCount > 0 ? '$unreadCount' : null,
-            onTap: () => _selectTab(ref, MessengerTab.chats),
+            onTap: () => _selectTab(context, ref, MessengerTab.chats),
+          ),
+          const SizedBox(height: 22),
+          _NavIcon(
+            key: const ValueKey('side-nav-notifications-button'),
+            icon: Icons.notifications,
+            isActive: activeTab == MessengerTab.notifications,
+            showDot: hasUnreadMention || hasActiveVoiceNotification,
+            onTap: () => _selectTab(context, ref, MessengerTab.notifications),
+          ),
+          const SizedBox(height: 22),
+          _NavIcon(
+            key: const ValueKey('side-nav-calendar-button'),
+            icon: Icons.calendar_month,
+            isActive: activeTab == MessengerTab.calendar,
+            onTap: () => _selectTab(context, ref, MessengerTab.calendar),
           ),
           const SizedBox(height: 22),
           _NavIcon(
             key: const ValueKey('side-nav-azoom-button'),
             icon: Icons.videocam,
             isActive: activeTab == MessengerTab.azoom,
-            onTap: () => _selectTab(ref, MessengerTab.azoom),
+            onTap: () => _selectTab(context, ref, MessengerTab.azoom),
           ),
           const SizedBox(height: 22),
           _NavIcon(
             icon: Icons.auto_awesome,
             isActive: activeTab == MessengerTab.avaAi,
-            onTap: () => _selectTab(ref, MessengerTab.avaAi),
+            onTap: () => _selectTab(context, ref, MessengerTab.avaAi),
           ),
           const SizedBox(height: 28),
           _NavIcon(
             icon: Icons.more_horiz,
             isActive: activeTab == MessengerTab.more,
-            onTap: () => _selectTab(ref, MessengerTab.more),
+            onTap: () => _selectTab(context, ref, MessengerTab.more),
           ),
           const Spacer(),
           const _MutedIcon(icon: Icons.tag_faces_outlined),
-          const SizedBox(height: 20),
-          const _MutedIcon(icon: Icons.notifications_none),
-          const SizedBox(height: 20),
           _SettingsMenuButton(
             onLogout: () => _logout(context, ref),
             onExit: _exitApp,
@@ -77,8 +99,36 @@ class MessengerSideNav extends ConsumerWidget {
     );
   }
 
-  void _selectTab(WidgetRef ref, MessengerTab tab) {
-    ref.read(activeMessengerTabProvider.notifier).setTab(tab);
+  void _selectTab(BuildContext context, WidgetRef ref, MessengerTab tab) {
+    if (tab != MessengerTab.azoom) {
+      ref.read(activeMessengerTabProvider.notifier).setTab(tab);
+      return;
+    }
+    unawaited(_selectAzoomTab(context, ref));
+  }
+
+  Future<void> _selectAzoomTab(BuildContext context, WidgetRef ref) async {
+    final session = ref.read(authControllerProvider).value?.session;
+    if (session == null || session.accessToken.isEmpty) {
+      ref.read(activeMessengerTabProvider.notifier).setTab(MessengerTab.azoom);
+      return;
+    }
+    final role = session.user.role.toUpperCase();
+    if (role == 'ADMIN' || role == 'SUPERUSER') {
+      ref.read(activeMessengerTabProvider.notifier).setTab(MessengerTab.azoom);
+      return;
+    }
+    try {
+      await ref.read(azoomApiProvider).channels(session.accessToken);
+      if (!context.mounted) {
+        return;
+      }
+      ref.read(activeMessengerTabProvider.notifier).setTab(MessengerTab.azoom);
+    } on Object {
+      if (context.mounted) {
+        showAvaToast(context, '\uAD8C\uD55C\uC5C6\uC74C');
+      }
+    }
   }
 
   Future<void> _logout(BuildContext context, WidgetRef ref) async {
@@ -103,12 +153,14 @@ class _NavIcon extends StatelessWidget {
     required this.isActive,
     required this.onTap,
     this.badge,
+    this.showDot = false,
   });
 
   final IconData icon;
   final bool isActive;
   final VoidCallback onTap;
   final String? badge;
+  final bool showDot;
 
   @override
   Widget build(BuildContext context) {
@@ -129,7 +181,26 @@ class _NavIcon extends StatelessWidget {
           ),
           if (badge != null)
             Positioned(top: 0, right: 3, child: _Badge(text: badge!)),
+          if (badge == null && showDot)
+            const Positioned(top: 4, right: 8, child: _RedDot()),
         ],
+      ),
+    );
+  }
+}
+
+class _RedDot extends StatelessWidget {
+  const _RedDot();
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      key: const ValueKey('side-nav-notification-dot'),
+      width: 5,
+      height: 5,
+      decoration: const BoxDecoration(
+        color: Color(0xFFFF5A55),
+        shape: BoxShape.circle,
       ),
     );
   }

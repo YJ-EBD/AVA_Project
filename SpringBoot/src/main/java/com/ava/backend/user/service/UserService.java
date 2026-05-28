@@ -31,6 +31,7 @@ public class UserService {
 	private static final String ONLINE = "\uC628\uB77C\uC778";
 	private static final String BACKGROUND = "\uBC31\uADF8\uB77C\uC6B4\uB4DC";
 	private static final String OFFLINE = "\uC624\uD504\uB77C\uC778";
+	private static final String AWAY = "\uC790\uB9AC\uBE44\uC6C0";
 	private static final String DEFAULT_DEPARTMENT = "\uBBF8\uC9C0\uC815";
 	private static final String DEFAULT_POSITION = "\uC0AC\uC6D0";
 
@@ -217,10 +218,22 @@ public class UserService {
 	}
 
 	private String normalizePresence(String status) {
-		if (ONLINE.equals(status) || BACKGROUND.equals(status) || OFFLINE.equals(status)) {
-			return status;
+		if (status == null || status.isBlank()) {
+			return OFFLINE;
 		}
-		return OFFLINE;
+		String trimmed = status.trim();
+		if (ONLINE.equals(trimmed) || BACKGROUND.equals(trimmed) || OFFLINE.equals(trimmed)) {
+			return trimmed;
+		}
+		if (AWAY.equals(trimmed)) {
+			return BACKGROUND;
+		}
+		return switch (trimmed.toLowerCase(Locale.ROOT)) {
+			case "online" -> ONLINE;
+			case "background", "away", "idle" -> BACKGROUND;
+			case "offline" -> OFFLINE;
+			default -> OFFLINE;
+		};
 	}
 
 	private String trimToLimit(String value, int maxLength) {

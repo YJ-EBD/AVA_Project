@@ -1,4 +1,4 @@
-spring:
+﻿spring:
   application:
     name: ava-backend
   servlet:
@@ -38,6 +38,10 @@ spring:
     properties:
       hibernate:
         format_sql: true
+  flyway:
+    enabled: ${AVA_FLYWAY_ENABLED:true}
+    baseline-on-migrate: ${AVA_FLYWAY_BASELINE_ON_MIGRATE:true}
+    locations: classpath:db/migration
 
 server:
   address: ${AVA_BACKEND_HOST:0.0.0.0}
@@ -72,15 +76,15 @@ ava:
   app-update:
     directory: ${AVA_APP_UPDATE_DIR:AppUpdates}
     windows:
-      latest-version: ${AVA_APP_WINDOWS_LATEST_VERSION:0.1.138}
-      file-name: ${AVA_APP_WINDOWS_FILE_NAME:ava-windows-${AVA_APP_WINDOWS_LATEST_VERSION:0.1.138}.zip}
+      latest-version: ${AVA_APP_WINDOWS_LATEST_VERSION:0.1.278}
+      file-name: ${AVA_APP_WINDOWS_FILE_NAME:ava-windows-${AVA_APP_WINDOWS_LATEST_VERSION:0.1.278}.zip}
       required: ${AVA_APP_WINDOWS_REQUIRED:false}
-      release-notes: ${AVA_APP_WINDOWS_RELEASE_NOTES:Mobile AZOOM side rail logo update}
+      release-notes: "${AVA_APP_WINDOWS_RELEASE_NOTES:Windows desktop now enforces single-instance launch and restores the existing AVA window from tray}"
     android:
-      latest-version: ${AVA_APP_ANDROID_LATEST_VERSION:0.1.138}
-      file-name: ${AVA_APP_ANDROID_FILE_NAME:ava-android-${AVA_APP_ANDROID_LATEST_VERSION:0.1.138}.apk}
-      required: ${AVA_APP_ANDROID_REQUIRED:false}
-      release-notes: ${AVA_APP_ANDROID_RELEASE_NOTES:Mobile AZOOM side rail logo update}
+      latest-version: ${AVA_APP_ANDROID_LATEST_VERSION:0.1.278}
+      file-name: ${AVA_APP_ANDROID_FILE_NAME:ava-android-${AVA_APP_ANDROID_LATEST_VERSION:0.1.278}.apk}
+      required: ${AVA_APP_ANDROID_REQUIRED:true}
+      release-notes: "${AVA_APP_ANDROID_RELEASE_NOTES:Windows desktop now enforces single-instance launch and restores the existing AVA window from tray}"
   ai:
     llm-base-url: ${AVA_AI_LLM_BASE_URL:http://127.0.0.1:8088/v1}
     model: ${AVA_AI_MODEL:ava-qwen3.5-27b-q4km}
@@ -91,14 +95,27 @@ ava:
       script-path: ${AVA_AI_LOCAL_SERVER_SCRIPT_PATH:../LLM_Server/start_server.ps1}
     max-tokens: ${AVA_AI_MAX_TOKENS:1024}
     temperature: ${AVA_AI_TEMPERATURE:0.2}
+    embedding-model: ${AVA_AI_EMBEDDING_MODEL:}
+    embedding-dimensions: ${AVA_AI_EMBEDDING_DIMENSIONS:384}
+    embedding-remote-enabled: ${AVA_AI_EMBEDDING_REMOTE_ENABLED:true}
+    embedding-timeout-seconds: ${AVA_AI_EMBEDDING_TIMEOUT_SECONDS:30}
     history-limit: ${AVA_AI_HISTORY_LIMIT:24}
     shared-reference-limit: ${AVA_AI_SHARED_REFERENCE_LIMIT:5}
+    agent:
+      command-timeout-seconds: ${AVA_AI_AGENT_COMMAND_TIMEOUT_SECONDS:240}
     web-search-enabled: ${AVA_AI_WEB_SEARCH_ENABLED:true}
     web-search-max-results: ${AVA_AI_WEB_SEARCH_MAX_RESULTS:5}
     web-search-fallback-min-results: ${AVA_AI_WEB_SEARCH_FALLBACK_MIN_RESULTS:3}
     web-search-timeout-seconds: ${AVA_AI_WEB_SEARCH_TIMEOUT_SECONDS:12}
     google-search-api-key: ${AVA_AI_GOOGLE_SEARCH_API_KEY:}
     google-search-engine-id: ${AVA_AI_GOOGLE_SEARCH_ENGINE_ID:}
+    notion:
+      token: ${AVA_NOTION_API_TOKEN:}
+      data-api-version: ${AVA_NOTION_DATA_API_VERSION:2022-06-28}
+      file-api-version: ${AVA_NOTION_FILE_API_VERSION:2026-03-11}
+      timeout-seconds: ${AVA_NOTION_TIMEOUT_SECONDS:25}
+      research-page-id: ${AVA_NOTION_RESEARCH_PAGE_ID:2c0cc184-a41e-80bd-b384-ccf77802a170}
+      development-status-database-id: ${AVA_NOTION_DEVELOPMENT_STATUS_DATABASE_ID:345cc184-a41e-8025-8e4c-d0b101e8de6b}
     workspace:
       root: ${AVA_AI_WORKSPACE_ROOT:F:/}
       upload-directory: ${AVA_AI_WORKSPACE_UPLOAD_DIR:AVA_AI_Workspace}
@@ -116,6 +133,9 @@ ava:
       product-name: ${MAIL_PRODUCT_NAME:AVA}
 
 management:
+  health:
+    mail:
+      enabled: ${AVA_MAIL_HEALTH_ENABLED:false}
   endpoints:
     web:
       exposure:

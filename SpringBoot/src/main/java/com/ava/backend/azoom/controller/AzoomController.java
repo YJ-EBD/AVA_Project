@@ -17,8 +17,11 @@ import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.multipart.MultipartFile;
 
 import com.ava.backend.auth.security.AuthPrincipal;
+import com.ava.backend.azoom.dto.AzoomChannelAccessRequest;
 import com.ava.backend.azoom.dto.AzoomChannelMutationRequest;
 import com.ava.backend.azoom.dto.AzoomChannelsResponse;
+import com.ava.backend.azoom.dto.AzoomInviteCandidateResponse;
+import com.ava.backend.azoom.dto.AzoomInviteMembersRequest;
 import com.ava.backend.azoom.dto.AzoomLiveKitTokenResponse;
 import com.ava.backend.azoom.dto.AzoomMeetingTranscriptResponse;
 import com.ava.backend.azoom.dto.AzoomMeetingTranscriptSummaryResponse;
@@ -27,15 +30,13 @@ import com.ava.backend.azoom.dto.AzoomNotivaAudioResponse;
 import com.ava.backend.azoom.dto.AzoomNotivaEventResponse;
 import com.ava.backend.azoom.dto.AzoomNotivaSessionResponse;
 import com.ava.backend.azoom.dto.AzoomNotivaUtteranceRequest;
-import com.ava.backend.azoom.dto.AzoomTextChannelResponse;
 import com.ava.backend.azoom.dto.AzoomVoiceChannelResponse;
+import com.ava.backend.azoom.dto.AzoomVoiceEffectResponse;
 import com.ava.backend.azoom.dto.AzoomVoiceJoinResponse;
 import com.ava.backend.azoom.dto.AzoomVoiceStatusRequest;
 import com.ava.backend.azoom.dto.AzoomWorkspaceResponse;
 import com.ava.backend.azoom.service.AzoomNotivaService;
 import com.ava.backend.azoom.service.AzoomService;
-import com.ava.backend.chat.dto.ChatMessageRequest;
-import com.ava.backend.chat.dto.ChatMessageResponse;
 
 import jakarta.validation.Valid;
 
@@ -65,23 +66,6 @@ public class AzoomController {
 	@GetMapping("/workspace")
 	public AzoomWorkspaceResponse workspace(@AuthenticationPrincipal AuthPrincipal principal) {
 		return azoomService.workspace(principal);
-	}
-
-	@PostMapping("/text-channels")
-	public AzoomTextChannelResponse createTextChannel(
-		@Valid @RequestBody AzoomChannelMutationRequest request,
-		@AuthenticationPrincipal AuthPrincipal principal
-	) {
-		return azoomService.createTextChannel(request, principal);
-	}
-
-	@PutMapping("/text-channels/{channelId}")
-	public AzoomTextChannelResponse updateTextChannel(
-		@PathVariable String channelId,
-		@Valid @RequestBody AzoomChannelMutationRequest request,
-		@AuthenticationPrincipal AuthPrincipal principal
-	) {
-		return azoomService.updateTextChannel(channelId, request, principal);
 	}
 
 	@PostMapping("/voice-channels")
@@ -117,22 +101,29 @@ public class AzoomController {
 		return azoomService.addMember(request, principal);
 	}
 
-	@GetMapping("/text-channels/{channelId}/messages")
-	public List<ChatMessageResponse> textMessages(
-		@PathVariable String channelId,
+	@GetMapping("/invite-candidates")
+	public List<AzoomInviteCandidateResponse> inviteCandidates(
 		@AuthenticationPrincipal AuthPrincipal principal
 	) {
-		return azoomService.textMessages(channelId, principal);
+		return azoomService.inviteCandidates(principal);
 	}
 
-	@PostMapping("/text-channels/{channelId}/messages")
-	public ChatMessageResponse sendTextMessage(
-		@PathVariable String channelId,
-		@Valid @RequestBody ChatMessageRequest request,
+	@PostMapping("/invite-members")
+	public AzoomWorkspaceResponse inviteMembers(
+		@RequestBody AzoomInviteMembersRequest request,
 		@AuthenticationPrincipal AuthPrincipal principal
 	) {
-		ChatMessageResponse response = azoomService.sendText(channelId, request, principal);
-		messagingTemplate.convertAndSend("/topic/azoom/text/" + response.roomCode(), response);
+		return azoomService.inviteMembers(request, principal);
+	}
+
+	@PutMapping("/voice-channels/{channelId}/access")
+	public AzoomVoiceChannelResponse updateChannelAccess(
+		@PathVariable String channelId,
+		@RequestBody AzoomChannelAccessRequest request,
+		@AuthenticationPrincipal AuthPrincipal principal
+	) {
+		AzoomVoiceChannelResponse response = azoomService.updateChannelAccess(channelId, request, principal);
+		publishVoiceStates(azoomService.voiceStates(principal));
 		return response;
 	}
 
@@ -182,6 +173,16 @@ public class AzoomController {
 		@AuthenticationPrincipal AuthPrincipal principal
 	) {
 		return azoomService.liveKitToken(channelId, principal);
+	}
+
+	@PostMapping("/voice-channels/{channelId}/effects/firework")
+	public AzoomVoiceEffectResponse triggerFirework(
+		@PathVariable String channelId,
+		@AuthenticationPrincipal AuthPrincipal principal
+	) {
+		AzoomVoiceEffectResponse response = azoomService.voiceEffect(channelId, "FIREWORK", principal);
+		messagingTemplate.convertAndSend("/topic/azoom/voice-effects/" + response.roomName(), response);
+		return response;
 	}
 
 	@GetMapping("/meeting-transcripts")

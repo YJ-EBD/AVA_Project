@@ -12,6 +12,7 @@ import org.springframework.jdbc.core.namedparam.MapSqlParameterSource;
 import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate;
 import org.springframework.security.crypto.password.PasswordEncoder;
 
+import com.ava.backend.chat.service.CompanyAllStaffChatService;
 import com.ava.backend.chat.repository.ChatMessageRepository;
 import com.ava.backend.company.CompanyScopeService;
 import com.ava.backend.user.entity.UserAccount;
@@ -40,7 +41,8 @@ public class DemoDataSeeder {
 		PasswordEncoder passwordEncoder,
 		NamedParameterJdbcTemplate jdbcTemplate,
 		ChatMessageRepository mongoMessageRepository,
-		CompanyScopeService companyScopeService
+		CompanyScopeService companyScopeService,
+		CompanyAllStaffChatService allStaffChatService
 	) {
 		return args -> {
 			ensureUserAccountRoleConstraint(jdbcTemplate);
@@ -48,6 +50,8 @@ public class DemoDataSeeder {
 			removeDemoData(jdbcTemplate, mongoMessageRepository);
 			normalizeCompanies(profileRepository, companyScopeService);
 			ensureSuperuser(accountRepository, profileRepository, passwordEncoder);
+			ensureAbbaDepartmentDemoUsers(accountRepository, profileRepository, passwordEncoder);
+			allStaffChatService.ensureKnownCompanyRoomsAndMemberships();
 		};
 	}
 
@@ -126,11 +130,13 @@ public class DemoDataSeeder {
 			from user_accounts
 			where lower(email) like :avaLocalPattern
 			   or lower(email) like :candidatePattern
+			   or lower(email) like :inviteTestPattern
 			   or lower(email) = :oldAdmin
 			""",
 			Map.of(
 				"avaLocalPattern", "%@ava.local",
 				"candidatePattern", "candidate%@ava.local",
+				"inviteTestPattern", "ava.invite.test%@abba-s.local",
 				"oldAdmin", "admin@ava.local"
 			),
 			UUID.class
@@ -250,7 +256,7 @@ public class DemoDataSeeder {
 				"Superuser",
 				"010-0000-0000",
 				null,
-				"offline",
+				"\uC624\uD504\uB77C\uC778",
 				"#0F1530"
 			));
 		profile.setCompanyName(CompanyScopeService.DEFAULT_COMPANY);
@@ -258,5 +264,75 @@ public class DemoDataSeeder {
 		profile.setPosition("Superuser");
 		profile.setNickname("Superuser");
 		profileRepository.save(profile);
+	}
+
+	private void ensureAbbaDepartmentDemoUsers(
+		UserAccountRepository accountRepository,
+		UserProfileRepository profileRepository,
+		PasswordEncoder passwordEncoder
+	) {
+		List<DepartmentSeed> departments = List.of(
+			new DepartmentSeed("RA팀", "ra", List.of("김태희", "송혜교", "전지현", "손예진", "한지민", "공효진")),
+			new DepartmentSeed("연구소", "research", List.of("이민호", "김수현", "박보검", "정우성", "이정재", "조인성")),
+			new DepartmentSeed("경영지원부", "management-support", List.of("한효주", "박신혜", "문채원", "김고은", "신세경", "서현진")),
+			new DepartmentSeed("생산기술", "production-engineering", List.of("강동원", "지창욱", "이종석", "여진구", "서인국", "김우빈")),
+			new DepartmentSeed("QA", "qa", List.of("임윤아", "권유리", "김태연", "정수정", "배수지", "손나은")),
+			new DepartmentSeed("디자인팀", "design", List.of("김유정", "김소현", "김지원", "박보영", "천우희", "전여빈")),
+			new DepartmentSeed("기구설계팀", "mechanical-design", List.of("공지철", "이동욱", "유연석", "남주혁", "류준열", "이제훈"))
+		);
+
+		for (DepartmentSeed department : departments) {
+			for (int index = 0; index < department.names().size(); index++) {
+				String name = department.names().get(index);
+				int userNumber = index + 1;
+				String email = "ava.demo.%s.%02d@abba-s.local".formatted(department.slug(), userNumber);
+				UserAccount account = accountRepository.findByEmailIgnoreCase(email)
+					.orElseGet(() -> new UserAccount(
+						email,
+						passwordEncoder.encode("Ava1234!"),
+						name,
+						UserRole.USER
+					));
+				account.setDisplayName(name);
+				account.setRole(UserRole.USER);
+				account.setEnabled(true);
+				account = accountRepository.save(account);
+
+				final UserAccount savedAccount = account;
+				final String avatarColor = testUserAvatarColor(Math.abs(email.hashCode()));
+				UserProfile profile = profileRepository.findByAccountId(savedAccount.getId())
+					.orElseGet(() -> new UserProfile(
+						savedAccount,
+						department.name(),
+						name,
+						null,
+						null,
+						"\uC624\uD504\uB77C\uC778",
+						avatarColor
+					));
+				profile.setCompanyName(CompanyScopeService.DEFAULT_COMPANY);
+				profile.setDepartment(department.name());
+				profile.setPosition("\uC0AC\uC6D0");
+				profile.setNickname(name);
+				profile.setContactEmail(email);
+				profile.setAvatarColor(avatarColor);
+				profileRepository.save(profile);
+			}
+		}
+	}
+
+	private record DepartmentSeed(String name, String slug, List<String> names) {
+	}
+
+	private String testUserAvatarColor(int index) {
+		String[] colors = {
+			"#7C6BFF",
+			"#4F8DFF",
+			"#42AFC9",
+			"#74A76F",
+			"#D7A04E",
+			"#D77772"
+		};
+		return colors[Math.floorMod(index - 1, colors.length)];
 	}
 }

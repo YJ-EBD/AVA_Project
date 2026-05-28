@@ -6,6 +6,7 @@ import 'package:go_router/go_router.dart';
 
 import '../../../config/app_config.dart';
 import '../../../shared/ava_dialog.dart';
+import '../../push/application/mobile_push_controller.dart';
 import '../application/auth_controller.dart';
 import '../data/auth_api.dart';
 import '../data/auth_models.dart';
@@ -57,6 +58,7 @@ class _AuthSessionGateState extends ConsumerState<AuthSessionGate> {
     }
     _disposeRealtime();
     _activeAccessToken = accessToken;
+    unawaited(ref.read(mobilePushControllerProvider).sync(session));
     if (accessToken == null || accessToken.isEmpty) {
       return;
     }

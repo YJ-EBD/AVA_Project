@@ -12,6 +12,11 @@ public interface ChatMessageReadReceiptRepository extends JpaRepository<ChatMess
 
 	List<ChatMessageReadReceiptEntity> findByMessage_IdInAndAccountId(Collection<UUID> messageIds, UUID accountId);
 
+	List<ChatMessageReadReceiptEntity> findByMessage_IdInAndAccountIdIn(
+		Collection<UUID> messageIds,
+		Collection<UUID> accountIds
+	);
+
 	List<ChatMessageReadReceiptEntity> findByRoomCode(String roomCode);
 
 	long countByMessage_Id(UUID messageId);

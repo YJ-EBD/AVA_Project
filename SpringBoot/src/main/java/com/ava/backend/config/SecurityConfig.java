@@ -54,6 +54,10 @@ public class SecurityConfig {
 					"/api/auth/refresh",
 					"/api/auth/find-account",
 					"/api/app-updates/**",
+					"/stock",
+					"/stock/**",
+					"/ava-stock-web/**",
+					"/ava-stock-assets/**",
 					"/ws/**",
 					"/rtc/**"
 				).permitAll()

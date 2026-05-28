@@ -17,7 +17,7 @@ AVA is an internal desktop messenger, AZOOM collaboration space, and AVA AI clie
 - Auth: signup, login, refresh, logout, duplicate-login handling, JWT access/refresh tokens
 - Users and profiles: profile update, presence, company user list, employee add/block flows
 - Messenger chat: rooms, direct/group/self rooms, messages, attachments, read receipts, notices, pinning, WebSocket realtime
-- AZOOM: persisted workspace/channels/members, separate text channels, voice presence, LiveKit token flow, screen share/camera client UI, Notiva AI live/batch meeting transcripts
+- AZOOM: persisted workspace/voice channels/members, voice presence, LiveKit token flow, screen share/camera client UI, Notiva AI live/batch meeting transcripts
 - AVA AI: per-user conversation, persisted user/assistant messages, local LLM abstraction, web-search support
 - Admin: overview, user role/enabled management, app settings, audit/system log list, Flutter admin panel
 - Notifications: persisted user notifications and user WebSocket delivery
@@ -27,7 +27,7 @@ AVA is an internal desktop messenger, AZOOM collaboration space, and AVA AI clie
 ## Important Rules
 
 - Do not use Docker for AVA development or verification.
-- AZOOM chat must stay separate from normal messenger chat.
+- AZOOM text chat channels are removed; keep AZOOM focused on voice, Notiva AI, and meeting transcripts.
 - User-visible changes require a Flutter version bump and matching Windows update package.
 - Windows packages must use public backend URL `http://112.166.136.198:8080`.
 

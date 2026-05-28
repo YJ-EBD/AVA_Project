@@ -28,7 +28,34 @@ class ChatRealtimeClient {
 
   bool get isConnected => _client?.connected ?? false;
 
+  void _addMessage(ChatMessageDto message) {
+    if (!_messages.isClosed) {
+      _messages.add(message);
+    }
+  }
+
+  void _addReadState(ChatReadStateDto readState) {
+    if (!_readStates.isClosed) {
+      _readStates.add(readState);
+    }
+  }
+
+  void _addTypingEvent(ChatTypingEventDto event) {
+    if (!_typingEvents.isClosed) {
+      _typingEvents.add(event);
+    }
+  }
+
+  void _addError(Object error) {
+    if (!_messages.isClosed) {
+      _messages.addError(error);
+    }
+  }
+
   void connect() {
+    if (websocketUrl.trim().isEmpty || accessToken.trim().isEmpty) {
+      return;
+    }
     final headers = {'Authorization': 'Bearer $accessToken'};
     _client = StompClient(
       config: StompConfig(
@@ -40,22 +67,22 @@ class ChatRealtimeClient {
         onConnect: (_) {
           _subscribe(
             '/topic/rooms/$roomCode',
-            (json) => _messages.add(ChatMessageDto.fromJson(json)),
+            (json) => _addMessage(ChatMessageDto.fromJson(json)),
           );
           _subscribe(
             '/topic/rooms/$roomCode/read-state',
-            (json) => _readStates.add(ChatReadStateDto.fromJson(json)),
+            (json) => _addReadState(ChatReadStateDto.fromJson(json)),
           );
           _subscribe(
             '/topic/rooms/$roomCode/typing',
-            (json) => _typingEvents.add(ChatTypingEventDto.fromJson(json)),
+            (json) => _addTypingEvent(ChatTypingEventDto.fromJson(json)),
           );
         },
         onWebSocketError: (error) {
-          _messages.addError(error);
+          _addError(error);
         },
         onStompError: (frame) {
-          _messages.addError(frame.body ?? 'STOMP error');
+          _addError(frame.body ?? 'STOMP error');
         },
       ),
     )..activate();
@@ -83,7 +110,12 @@ class ChatRealtimeClient {
     }
   }
 
-  bool send(String content, {bool silent = false, bool spoiler = false}) {
+  bool send(
+    String content, {
+    bool silent = false,
+    bool spoiler = false,
+    List<ChatMentionDto> mentions = const [],
+  }) {
     final client = _client;
     if (client == null || !client.connected) {
       return false;
@@ -96,6 +128,7 @@ class ChatRealtimeClient {
         'content': content,
         'silent': silent,
         'spoiler': spoiler,
+        'mentions': [for (final mention in mentions) mention.toJson()],
       }),
     );
     return true;
@@ -143,7 +176,22 @@ class ChatInboxRealtimeClient {
 
   Stream<ChatRealtimeEventDto> get events => _events.stream;
 
+  void _addEvent(ChatRealtimeEventDto event) {
+    if (!_events.isClosed) {
+      _events.add(event);
+    }
+  }
+
+  void _addError(Object error) {
+    if (!_events.isClosed) {
+      _events.addError(error);
+    }
+  }
+
   void connect() {
+    if (websocketUrl.trim().isEmpty || accessToken.trim().isEmpty) {
+      return;
+    }
     final headers = {'Authorization': 'Bearer $accessToken'};
     _client = StompClient(
       config: StompConfig(
@@ -162,7 +210,7 @@ class ChatInboxRealtimeClient {
               }
               final json = jsonDecode(body);
               if (json is Map) {
-                _events.add(
+                _addEvent(
                   ChatRealtimeEventDto.fromJson(json.cast<String, dynamic>()),
                 );
               }
@@ -170,10 +218,10 @@ class ChatInboxRealtimeClient {
           );
         },
         onWebSocketError: (error) {
-          _events.addError(error);
+          _addError(error);
         },
         onStompError: (frame) {
-          _events.addError(frame.body ?? 'STOMP error');
+          _addError(frame.body ?? 'STOMP error');
         },
       ),
     )..activate();

@@ -12,6 +12,7 @@ import java.time.Instant;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.HexFormat;
 import java.util.LinkedHashSet;
@@ -24,6 +25,9 @@ import java.util.UUID;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.core.io.Resource;
 import org.springframework.core.io.UrlResource;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Pageable;
+import org.springframework.security.access.AccessDeniedException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
@@ -33,6 +37,9 @@ import com.ava.backend.chat.dao.ChatRoomDao;
 import com.ava.backend.chat.dto.ChatMessageReadState;
 import com.ava.backend.chat.dto.ChatMessageRequest;
 import com.ava.backend.chat.dto.ChatMessageResponse;
+import com.ava.backend.chat.dto.ChatMentionRequest;
+import com.ava.backend.chat.dto.ChatMentionResponse;
+import com.ava.backend.chat.dto.ChatMentionNotificationResponse;
 import com.ava.backend.chat.dto.ChatNoticeRequest;
 import com.ava.backend.chat.dto.ChatPinRequest;
 import com.ava.backend.chat.dto.ChatReadStateResponse;
@@ -43,6 +50,7 @@ import com.ava.backend.chat.dto.DirectChatRoomRequest;
 import com.ava.backend.chat.dto.GroupChatRoomRequest;
 import com.ava.backend.chat.entity.ChatMessageEntity;
 import com.ava.backend.chat.entity.ChatMessageDocument;
+import com.ava.backend.chat.entity.ChatMentionNotificationEntity;
 import com.ava.backend.chat.entity.ChatMessageReadReceiptEntity;
 import com.ava.backend.chat.entity.ChatRoomEntity;
 import com.ava.backend.chat.entity.ChatRoomMemberEntity;
@@ -51,6 +59,7 @@ import com.ava.backend.chat.entity.ChatTalkDrawerItemEntity;
 import com.ava.backend.chat.entity.ChatTalkDrawerMediaType;
 import com.ava.backend.chat.mapper.ChatMapper;
 import com.ava.backend.chat.repository.ChatMessageJpaRepository;
+import com.ava.backend.chat.repository.ChatMentionNotificationRepository;
 import com.ava.backend.chat.repository.ChatMessageReadReceiptRepository;
 import com.ava.backend.chat.repository.ChatMessageRepository;
 import com.ava.backend.chat.repository.ChatRoomMemberRepository;
@@ -59,6 +68,7 @@ import com.ava.backend.chat.repository.ChatTalkDrawerItemRepository;
 import com.ava.backend.company.CompanyScopeService;
 import com.ava.backend.user.entity.UserAccount;
 import com.ava.backend.user.entity.UserProfile;
+import com.ava.backend.user.entity.UserRole;
 import com.ava.backend.user.dto.UserProfileResponse;
 import com.ava.backend.user.mapper.UserMapper;
 import com.ava.backend.user.repository.UserAccountRepository;
@@ -72,6 +82,7 @@ public class ChatService {
 	private final ChatRoomRepository roomRepository;
 	private final ChatRoomMemberRepository memberRepository;
 	private final ChatMessageJpaRepository messageJpaRepository;
+	private final ChatMentionNotificationRepository mentionNotificationRepository;
 	private final ChatMessageReadReceiptRepository readReceiptRepository;
 	private final ChatMessageRepository messageRepository;
 	private final ChatTalkDrawerItemRepository talkDrawerItemRepository;
@@ -81,6 +92,7 @@ public class ChatService {
 	private final ChatMapper chatMapper;
 	private final ChatFolderSettingsService chatFolderSettingsService;
 	private final CompanyScopeService companyScopeService;
+	private final CompanyAllStaffChatService allStaffChatService;
 	private final Path backupDirectory;
 	private final Path attachmentDirectory;
 	private final boolean mongoEnabled;
@@ -90,6 +102,7 @@ public class ChatService {
 		ChatRoomRepository roomRepository,
 		ChatRoomMemberRepository memberRepository,
 		ChatMessageJpaRepository messageJpaRepository,
+		ChatMentionNotificationRepository mentionNotificationRepository,
 		ChatMessageReadReceiptRepository readReceiptRepository,
 		ChatMessageRepository messageRepository,
 		ChatTalkDrawerItemRepository talkDrawerItemRepository,
@@ -99,6 +112,7 @@ public class ChatService {
 		ChatMapper chatMapper,
 		ChatFolderSettingsService chatFolderSettingsService,
 		CompanyScopeService companyScopeService,
+		CompanyAllStaffChatService allStaffChatService,
 		@Value("${ava.chat.backup-directory:ChatBackUp}") String backupDirectory,
 		@Value("${ava.chat.attachment-directory:ChatUploads}") String attachmentDirectory,
 		@Value("${ava.chat.mongo-enabled:true}") boolean mongoEnabled
@@ -107,6 +121,7 @@ public class ChatService {
 		this.roomRepository = roomRepository;
 		this.memberRepository = memberRepository;
 		this.messageJpaRepository = messageJpaRepository;
+		this.mentionNotificationRepository = mentionNotificationRepository;
 		this.readReceiptRepository = readReceiptRepository;
 		this.messageRepository = messageRepository;
 		this.talkDrawerItemRepository = talkDrawerItemRepository;
@@ -116,6 +131,7 @@ public class ChatService {
 		this.chatMapper = chatMapper;
 		this.chatFolderSettingsService = chatFolderSettingsService;
 		this.companyScopeService = companyScopeService;
+		this.allStaffChatService = allStaffChatService;
 		this.backupDirectory = Path.of(backupDirectory);
 		this.attachmentDirectory = Path.of(attachmentDirectory);
 		this.mongoEnabled = mongoEnabled;
@@ -125,10 +141,9 @@ public class ChatService {
 	public List<ChatRoomResponse> rooms(AuthPrincipal principal) {
 		Map<String, Instant> pinnedRoomOrder = chatFolderSettingsService.pinnedRoomOrder(principal);
 		String companyName = companyScopeService.effectiveCompany(principal);
-		boolean superuser = principal.role() == com.ava.backend.user.entity.UserRole.SUPERUSER;
 		return chatRoomDao.findAllRooms().stream()
 			.filter(room -> companyName.equalsIgnoreCase(roomCompanyName(room)))
-			.filter(room -> superuser || memberRepository.existsByRoomCodeAndAccountId(room.getCode(), principal.userId()))
+			.filter(room -> roomVisibleToPrincipal(room, principal))
 			.filter(room -> shouldDisplayInRoomList(room, principal))
 			.sorted(Comparator
 				.comparing((ChatRoomEntity room) -> !pinnedRoomOrder.containsKey(room.getCode()))
@@ -146,11 +161,24 @@ public class ChatService {
 			.toList();
 	}
 
+	private boolean roomVisibleToPrincipal(ChatRoomEntity room, AuthPrincipal principal) {
+		if (memberRepository.existsByRoomCodeAndAccountId(room.getCode(), principal.userId())) {
+			return true;
+		}
+		if (principal.role() != UserRole.SUPERUSER) {
+			return false;
+		}
+		return room.getType() == ChatRoomType.GROUP;
+	}
+
 	private boolean shouldDisplayInRoomList(ChatRoomEntity room, AuthPrincipal principal) {
 		if (isAzoomRoom(room)) {
 			return false;
 		}
 		if (room.getType() != ChatRoomType.SELF) {
+			if (allStaffChatService.isAllStaffRoom(room)) {
+				return true;
+			}
 			if (hasLastMessage(room)) {
 				return true;
 			}
@@ -179,6 +207,20 @@ public class ChatService {
 	@Transactional(readOnly = true)
 	public ChatRoomResponse room(String roomCode) {
 		return toRoomResponse(chatRoomDao.findByCode(roomCode));
+	}
+
+	@Transactional(readOnly = true)
+	public ChatRoomResponse roomForMember(String roomCode, UUID accountId) {
+		ChatRoomEntity room = chatRoomDao.findByCode(roomCode);
+		UserAccount account = accountRepository.findById(accountId)
+			.orElseThrow(() -> new IllegalArgumentException("Account not found."));
+		return toRoomResponse(room, new AuthPrincipal(
+			account.getId(),
+			account.getEmail(),
+			account.getDisplayName(),
+			account.getRole(),
+			""
+		));
 	}
 
 	@Transactional
@@ -267,17 +309,73 @@ public class ChatService {
 		return toRoomResponse(room, principal);
 	}
 
+	@Transactional
+	public ChatRoomResponse inviteMembers(String roomCode, GroupChatRoomRequest request, AuthPrincipal principal) {
+		assertMember(roomCode, principal);
+		ChatRoomEntity room = chatRoomDao.findByCode(roomCode);
+		if (room.getType() == ChatRoomType.SELF) {
+			throw new IllegalArgumentException("Cannot invite members to this room.");
+		}
+		LinkedHashSet<UUID> targetIds = new LinkedHashSet<>(request.targetUserIds());
+		targetIds.remove(principal.userId());
+		if (targetIds.isEmpty()) {
+			throw new IllegalArgumentException("Invite target is empty.");
+		}
+		if (room.getType() == ChatRoomType.DIRECT) {
+			for (ChatRoomMemberEntity member : memberRepository.findByRoomCode(roomCode)) {
+				UUID accountId = member.getAccount().getId();
+				if (!accountId.equals(principal.userId())) {
+					targetIds.add(accountId);
+				}
+			}
+			return startGroupRoom(
+				new GroupChatRoomRequest(
+					new ArrayList<>(targetIds),
+					request.title(),
+					request.avatarImageUrl()
+				),
+				principal
+			);
+		}
+
+		String companyName = companyScopeService.effectiveCompany(principal);
+		List<String> addedNames = new ArrayList<>();
+		for (UUID targetId : targetIds) {
+			UserAccount targetUser = accountRepository.findById(targetId)
+				.orElseThrow(() -> new IllegalArgumentException("Invite target not found."));
+			assertTargetInCompany(targetUser, companyName);
+			if (!memberRepository.existsByRoomCodeAndAccountId(roomCode, targetUser.getId())) {
+				ensureMember(room, targetUser);
+				addedNames.add(targetUser.getDisplayName());
+			}
+		}
+		if (!addedNames.isEmpty()) {
+			String content = principal.displayName() + "\uB2D8\uC774 " + String.join(", ", addedNames)
+				+ "\uB2D8\uC744 \uCD08\uB300\uD588\uC2B5\uB2C8\uB2E4.";
+			messageJpaRepository.save(ChatMessageEntity.system(
+				roomCode,
+				principal.userId(),
+				principal.displayName(),
+				content
+			));
+			room.updateLastMessage(content);
+			roomRepository.save(room);
+		}
+		return toRoomResponse(room, principal);
+	}
+
 	@Transactional(readOnly = true)
-	public List<ChatMessageResponse> recentMessages(String roomCode, AuthPrincipal principal) {
+	public List<ChatMessageResponse> recentMessages(String roomCode, AuthPrincipal principal, int limit) {
 		ChatRoomMemberEntity membership = assertMember(roomCode, principal);
 		Instant visibleSince = membership == null ? null : membership.getJoinedAt();
+		Pageable page = PageRequest.of(0, normalizeMessageLimit(limit));
 		List<ChatMessageEntity> visibleMessages = visibleSince == null
-			? messageJpaRepository.findTop50ByRoomCodeOrderBySentAtDesc(roomCode)
-			: messageJpaRepository.findTop50ByRoomCodeAndSentAtGreaterThanEqualOrderBySentAtDesc(roomCode, visibleSince);
-		List<ChatMessageResponse> savedMessages = visibleMessages.stream()
+			? messageJpaRepository.findByRoomCodeOrderBySentAtDesc(roomCode, page)
+			: messageJpaRepository.findByRoomCodeAndSentAtGreaterThanEqualOrderBySentAtDesc(roomCode, visibleSince, page);
+		List<ChatMessageEntity> sortedMessages = visibleMessages.stream()
 			.sorted(Comparator.comparing(ChatMessageEntity::getSentAt))
-			.map(this::toMessageResponse)
 			.toList();
+		List<ChatMessageResponse> savedMessages = toMessageResponses(roomCode, sortedMessages);
 		if (!savedMessages.isEmpty() || !mongoEnabled || visibleSince != null) {
 			return savedMessages;
 		}
@@ -293,13 +391,89 @@ public class ChatService {
 	}
 
 	@Transactional(readOnly = true)
-	public List<ChatMessageResponse> recentMessagesIgnoringJoin(String roomCode, AuthPrincipal principal) {
-		assertMember(roomCode, principal);
-		List<ChatMessageResponse> savedMessages = messageJpaRepository.findTop50ByRoomCodeOrderBySentAtDesc(roomCode)
+	public List<ChatMessageResponse> recentMessages(String roomCode, AuthPrincipal principal) {
+		return recentMessages(roomCode, principal, 80);
+	}
+
+	@Transactional(readOnly = true)
+	public List<ChatMessageResponse> messagesAround(
+		String roomCode,
+		UUID messageId,
+		AuthPrincipal principal,
+		int before,
+		int after
+	) {
+		ChatRoomMemberEntity membership = assertMember(roomCode, principal);
+		ChatMessageEntity target = messageJpaRepository.findById(messageId)
+			.filter(message -> roomCode.equals(message.getRoomCode()))
+			.orElseThrow(() -> new IllegalArgumentException("Chat message not found."));
+		if (membership != null && membership.getJoinedAt() != null && target.getSentAt().isBefore(membership.getJoinedAt())) {
+			throw new IllegalArgumentException("Chat message is not visible.");
+		}
+		int beforeLimit = Math.max(0, Math.min(before, 80));
+		int afterLimit = Math.max(0, Math.min(after, 80));
+		List<ChatMessageEntity> messages = new ArrayList<>();
+		List<ChatMessageEntity> previous = messageJpaRepository
+			.findByRoomCodeAndSentAtLessThanOrderBySentAtDesc(
+				roomCode,
+				target.getSentAt(),
+				PageRequest.of(0, beforeLimit)
+			)
 			.stream()
 			.sorted(Comparator.comparing(ChatMessageEntity::getSentAt))
-			.map(this::toMessageResponse)
 			.toList();
+		messages.addAll(previous);
+		messages.add(target);
+		messages.addAll(messageJpaRepository.findByRoomCodeAndSentAtGreaterThanOrderBySentAtAsc(
+			roomCode,
+			target.getSentAt(),
+			PageRequest.of(0, afterLimit)
+		));
+		return toMessageResponses(roomCode, messages);
+	}
+
+	@Transactional(readOnly = true)
+	public List<ChatMessageResponse> messagesBefore(
+		String roomCode,
+		UUID messageId,
+		AuthPrincipal principal,
+		int limit
+	) {
+		ChatRoomMemberEntity membership = assertMember(roomCode, principal);
+		ChatMessageEntity boundary = messageJpaRepository.findById(messageId)
+			.filter(message -> roomCode.equals(message.getRoomCode()))
+			.orElseThrow(() -> new IllegalArgumentException("Chat message not found."));
+		Instant visibleSince = membership == null ? null : membership.getJoinedAt();
+		if (visibleSince != null && boundary.getSentAt().isBefore(visibleSince)) {
+			throw new IllegalArgumentException("Chat message is not visible.");
+		}
+		Pageable page = PageRequest.of(0, normalizeMessageLimit(limit));
+		List<ChatMessageEntity> olderMessages = visibleSince == null
+			? messageJpaRepository.findByRoomCodeAndSentAtLessThanOrderBySentAtDesc(
+				roomCode,
+				boundary.getSentAt(),
+				page
+			)
+			: messageJpaRepository.findByRoomCodeAndSentAtGreaterThanEqualAndSentAtLessThanOrderBySentAtDesc(
+				roomCode,
+				visibleSince,
+				boundary.getSentAt(),
+				page
+			);
+		List<ChatMessageEntity> sortedMessages = olderMessages.stream()
+			.sorted(Comparator.comparing(ChatMessageEntity::getSentAt))
+			.toList();
+		return toMessageResponses(roomCode, sortedMessages);
+	}
+
+	@Transactional(readOnly = true)
+	public List<ChatMessageResponse> recentMessagesIgnoringJoin(String roomCode, AuthPrincipal principal) {
+		assertMember(roomCode, principal);
+		List<ChatMessageEntity> sortedMessages = messageJpaRepository.findTop50ByRoomCodeOrderBySentAtDesc(roomCode)
+			.stream()
+			.sorted(Comparator.comparing(ChatMessageEntity::getSentAt))
+			.toList();
+		List<ChatMessageResponse> savedMessages = toMessageResponses(roomCode, sortedMessages);
 		if (!savedMessages.isEmpty() || !mongoEnabled) {
 			return savedMessages;
 		}
@@ -322,17 +496,21 @@ public class ChatService {
 		boolean silent = request.isSilent();
 		boolean spoiler = request.isSpoiler();
 		String senderName = displayNameFor(principal.userId(), principal.displayName());
+		List<ChatMentionResponse> mentions = resolveMentions(roomCode, content, request.normalizedMentions());
 		var savedMessage = messageJpaRepository.save(new ChatMessageEntity(
 			roomCode,
 			principal.userId(),
 			senderName,
 			content,
 			silent,
-			spoiler
+			spoiler,
+			mentions.stream().map(ChatMentionResponse::userId).toList(),
+			mentions.stream().map(ChatMentionResponse::displayName).toList()
 		));
 		readReceiptRepository.save(new ChatMessageReadReceiptEntity(savedMessage, principal.userId()));
+		createMentionNotifications(savedMessage, mentions, principal.userId());
 		if (mongoEnabled) {
-			archiveToMongo(roomCode, principal, senderName, content, silent, spoiler);
+			archiveToMongo(roomCode, principal, senderName, content, silent, spoiler, mentions);
 		}
 		room.updateLastMessage(content, spoiler);
 		roomRepository.save(room);
@@ -531,9 +709,39 @@ public class ChatService {
 	}
 
 	@Transactional
+	public ChatMessageResponse deleteMessageForEveryone(String roomCode, UUID messageId, AuthPrincipal principal) {
+		assertMember(roomCode, principal);
+		ChatMessageEntity message = messageJpaRepository.findById(messageId)
+			.filter(item -> roomCode.equals(item.getRoomCode()))
+			.orElseThrow(() -> new IllegalArgumentException("Message not found."));
+		if (!message.getSenderId().equals(principal.userId()) &&
+			principal.role() != UserRole.ADMIN &&
+			principal.role() != UserRole.SUPERUSER) {
+			throw new AccessDeniedException("Only the sender can delete this message for everyone.");
+		}
+
+		message.markDeletedForEveryone();
+		ChatMessageEntity savedMessage = messageJpaRepository.save(message);
+		for (ChatTalkDrawerItemEntity item : talkDrawerItemRepository.findByRoomCodeAndMessageId(roomCode, messageId)) {
+			item.markDeleted();
+			talkDrawerItemRepository.save(item);
+		}
+		ChatRoomEntity room = chatRoomDao.findByCode(roomCode);
+		if (room.getLastMessageAt() == null ||
+			!savedMessage.getSentAt().isBefore(room.getLastMessageAt().minusSeconds(2))) {
+			room.updateLastMessage("\uC0AD\uC81C\uB41C \uBA54\uC2DC\uC9C0\uC785\uB2C8\uB2E4", false);
+			roomRepository.save(room);
+		}
+		return toMessageResponse(savedMessage);
+	}
+
+	@Transactional
 	public ChatRoomLeaveResponse leaveRoom(String roomCode, AuthPrincipal principal) {
 		assertMember(roomCode, principal);
 		ChatRoomEntity room = chatRoomDao.findByCode(roomCode);
+		if (allStaffChatService.isAllStaffRoom(room)) {
+			throw new IllegalArgumentException("\uC804\uC9C1\uC6D0 \uCC44\uD305\uBC29\uC740 \uB098\uAC08 \uC218 \uC5C6\uC2B5\uB2C8\uB2E4.");
+		}
 		if (room.getType() == ChatRoomType.DIRECT) {
 			return leaveDirectRoom(room, principal);
 		}
@@ -754,8 +962,8 @@ public class ChatService {
 		ChatTalkDrawerMediaType mediaType = mediaTypeFor(fileName, contentType);
 		String safeName = fileName == null || fileName.isBlank() ? "attachment" : fileName.trim();
 		return switch (mediaType) {
-			case IMAGE -> "[이미지] " + safeName;
-			case VIDEO -> "[동영상] " + safeName;
+			case IMAGE -> "[이미지]";
+			case VIDEO -> "[동영상]";
 			case FILE -> "[파일] " + safeName;
 		};
 	}
@@ -895,20 +1103,54 @@ public class ChatService {
 			membersOf(room.getCode()),
 			pinned,
 			pinnedAt,
-			unreadCountForRoom(room, principal.userId())
+			unreadCountForRoom(room, principal.userId()),
+			unreadMentionForRoom(room, principal.userId())
 		);
 	}
 
 	private ChatReadStateResponse readStateFor(String roomCode, List<ChatMessageEntity> messages) {
+		Map<UUID, Integer> unreadCounts = unreadCounts(roomCode, messages);
 		return new ChatReadStateResponse(
 			roomCode,
 			messages.stream()
 				.map(message -> new ChatMessageReadState(
 					message.getId().toString(),
-					unreadCount(message)
+					unreadCounts.getOrDefault(message.getId(), 0)
 				))
 				.toList()
 		);
+	}
+
+	private List<ChatMessageResponse> toMessageResponses(String roomCode, List<ChatMessageEntity> messages) {
+		if (messages.isEmpty()) {
+			return List.of();
+		}
+		Set<UUID> senderIds = new LinkedHashSet<>();
+		for (ChatMessageEntity message : messages) {
+			if (message.getSenderId() != null) {
+				senderIds.add(message.getSenderId());
+			}
+		}
+		Map<UUID, String> senderNames = new HashMap<>();
+		Map<UUID, UserProfile> profiles = new HashMap<>();
+		if (!senderIds.isEmpty()) {
+			for (UserAccount account : accountRepository.findAllById(senderIds)) {
+				senderNames.put(account.getId(), account.getDisplayName());
+			}
+			for (UserProfile profile : profileRepository.findByAccount_IdIn(senderIds)) {
+				profiles.put(profile.getAccount().getId(), profile);
+			}
+		}
+		Map<UUID, Integer> unreadCounts = unreadCounts(roomCode, messages);
+		List<ChatMessageResponse> responses = new ArrayList<>(messages.size());
+		for (ChatMessageEntity message : messages) {
+			ChatMessageResponse response = chatMapper.toMessageResponse(
+				message,
+				unreadCounts.getOrDefault(message.getId(), 0)
+			);
+			responses.add(withSenderProfile(response, senderNames, profiles));
+		}
+		return responses;
 	}
 
 	private ChatMessageResponse toMessageResponse(ChatMessageEntity message) {
@@ -919,12 +1161,29 @@ public class ChatService {
 		if (message.senderId() == null) {
 			return message;
 		}
-		String senderName = accountRepository.findById(message.senderId())
+		Map<UUID, String> senderNames = new HashMap<>();
+		accountRepository.findById(message.senderId())
 			.map(UserAccount::getDisplayName)
+			.ifPresent(senderName -> senderNames.put(message.senderId(), senderName));
+		Map<UUID, UserProfile> profiles = new HashMap<>();
+		profileRepository.findByAccountId(message.senderId())
+			.ifPresent(profile -> profiles.put(message.senderId(), profile));
+		return withSenderProfile(message, senderNames, profiles);
+	}
+
+	private ChatMessageResponse withSenderProfile(
+		ChatMessageResponse message,
+		Map<UUID, String> senderNames,
+		Map<UUID, UserProfile> profiles
+	) {
+		if (message.senderId() == null) {
+			return message;
+		}
+		String senderName = Optional.ofNullable(senderNames.get(message.senderId()))
 			.map(String::trim)
 			.filter(value -> !value.isBlank())
 			.orElse(message.senderName());
-		UserProfile profile = profileRepository.findByAccountId(message.senderId()).orElse(null);
+		UserProfile profile = profiles.get(message.senderId());
 		String nickname = profile == null ? "" : blankToDefault(profile.getNickname(), "");
 		String avatarColor = profile == null ? "#7AA06A" : blankToDefault(profile.getAvatarColor(), "#7AA06A");
 		String avatarImageUrl = profile == null ? "" : blankToDefault(profile.getAvatarImageUrl(), "");
@@ -942,8 +1201,69 @@ public class ChatService {
 			message.systemMessage(),
 			message.silent(),
 			message.spoiler(),
-			message.attachment()
+			message.deletedForEveryone(),
+			message.attachment(),
+			message.mentions()
 		);
+	}
+
+	private Map<UUID, Integer> unreadCounts(String roomCode, List<ChatMessageEntity> messages) {
+		if (messages.isEmpty()) {
+			return Map.of();
+		}
+		List<ChatRoomMemberEntity> members = memberRepository.findByRoomCode(roomCode);
+		if (members.isEmpty()) {
+			return Map.of();
+		}
+		Set<UUID> messageIds = new LinkedHashSet<>();
+		Set<UUID> memberIds = new LinkedHashSet<>();
+		for (ChatMessageEntity message : messages) {
+			messageIds.add(message.getId());
+		}
+		for (ChatRoomMemberEntity member : members) {
+			memberIds.add(member.getAccount().getId());
+		}
+		Map<UUID, Set<UUID>> readAccountIdsByMessage = new HashMap<>();
+		if (!messageIds.isEmpty() && !memberIds.isEmpty()) {
+			for (ChatMessageReadReceiptEntity receipt : readReceiptRepository.findByMessage_IdInAndAccountIdIn(
+				messageIds,
+				memberIds
+			)) {
+				readAccountIdsByMessage
+					.computeIfAbsent(receipt.getMessage().getId(), key -> new HashSet<>())
+					.add(receipt.getAccountId());
+			}
+		}
+		Map<UUID, Integer> result = new HashMap<>();
+		for (ChatMessageEntity message : messages) {
+			if (message.isSystemMessage()) {
+				result.put(message.getId(), 0);
+				continue;
+			}
+			Set<UUID> readableMemberIds = new HashSet<>();
+			for (ChatRoomMemberEntity member : members) {
+				if (member.getJoinedAt() == null || !member.getJoinedAt().isAfter(message.getSentAt())) {
+					readableMemberIds.add(member.getAccount().getId());
+				}
+			}
+			if (readableMemberIds.isEmpty()) {
+				result.put(message.getId(), 0);
+				continue;
+			}
+			Set<UUID> readAccountIds = readAccountIdsByMessage.getOrDefault(message.getId(), Set.of());
+			int readCount = 0;
+			for (UUID accountId : readAccountIds) {
+				if (readableMemberIds.contains(accountId)) {
+					readCount++;
+				}
+			}
+			UUID senderId = message.getSenderId();
+			if (senderId != null && readableMemberIds.contains(senderId) && !readAccountIds.contains(senderId)) {
+				readCount++;
+			}
+			result.put(message.getId(), Math.max(0, readableMemberIds.size() - readCount));
+		}
+		return result;
 	}
 
 	private int unreadCount(ChatMessageEntity message) {
@@ -990,6 +1310,229 @@ public class ChatService {
 			.filter(messageId -> !readMessageIds.contains(messageId))
 			.count();
 		return unreadCount > Integer.MAX_VALUE ? Integer.MAX_VALUE : (int) unreadCount;
+	}
+
+	private boolean unreadMentionForRoom(ChatRoomEntity room, UUID accountId) {
+		Optional<ChatRoomMemberEntity> membership = memberRepository.findByRoomCodeAndAccountId(room.getCode(), accountId);
+		if (membership.isEmpty()) {
+			return false;
+		}
+		Instant visibleSince = membership.get().getJoinedAt();
+		List<ChatMessageEntity> messages = visibleSince == null
+			? messageJpaRepository.findByRoomCodeOrderBySentAtAsc(room.getCode())
+			: messageJpaRepository.findByRoomCodeAndSentAtGreaterThanEqualOrderBySentAtAsc(room.getCode(), visibleSince);
+		List<UUID> mentionedUnreadMessageIds = messages.stream()
+			.filter(message -> !message.isSystemMessage())
+			.filter(message -> !accountId.equals(message.getSenderId()))
+			.filter(message -> message.mentions(accountId))
+			.map(ChatMessageEntity::getId)
+			.toList();
+		if (mentionedUnreadMessageIds.isEmpty()) {
+			return false;
+		}
+		Set<UUID> readMessageIds = readReceiptRepository.findByMessage_IdInAndAccountId(
+			mentionedUnreadMessageIds,
+			accountId
+		)
+			.stream()
+			.map(receipt -> receipt.getMessage().getId())
+			.collect(java.util.stream.Collectors.toSet());
+		return mentionedUnreadMessageIds.stream().anyMatch(messageId -> !readMessageIds.contains(messageId));
+	}
+
+	@Transactional
+	public List<ChatMentionNotificationResponse> mentionNotifications(
+		String status,
+		AuthPrincipal principal,
+		int limit
+	) {
+		backfillMentionNotifications(principal);
+		Pageable page = PageRequest.of(0, normalizeNotificationLimit(limit));
+		List<ChatMentionNotificationEntity> notifications = switch (normalizeMentionStatus(status)) {
+			case "checked" -> mentionNotificationRepository
+				.findByMentionedAccount_IdAndCheckedAtIsNotNullOrderByCreatedAtDesc(principal.userId(), page);
+			case "requested" -> mentionNotificationRepository
+				.findByMentionedAccount_IdAndCheckedAtIsNullOrderByCreatedAtDesc(principal.userId(), page);
+			default -> mentionNotificationRepository.findByMentionedAccount_IdOrderByCreatedAtDesc(principal.userId(), page);
+		};
+		String companyName = companyScopeService.effectiveCompany(principal);
+		return notifications.stream()
+			.filter(notification -> roomRepository.findByCode(notification.getRoomCode())
+				.map(room -> companyName.equalsIgnoreCase(roomCompanyName(room)))
+				.orElse(false))
+			.map(this::toMentionNotificationResponse)
+			.toList();
+	}
+
+	@Transactional
+	public ChatMentionNotificationResponse markMentionNotificationChecked(UUID notificationId, AuthPrincipal principal) {
+		ChatMentionNotificationEntity notification = mentionNotificationRepository
+			.findByIdAndMentionedAccount_Id(notificationId, principal.userId())
+			.orElseThrow(() -> new IllegalArgumentException("Mention notification not found."));
+		notification.markChecked();
+		ChatMessageEntity message = notification.getMessage();
+		if (!readReceiptRepository.existsByMessage_IdAndAccountId(message.getId(), principal.userId())) {
+			readReceiptRepository.save(new ChatMessageReadReceiptEntity(message, principal.userId()));
+		}
+		return toMentionNotificationResponse(notification);
+	}
+
+	@Transactional(readOnly = true)
+	public long unreadMentionNotificationCount(AuthPrincipal principal) {
+		return mentionNotificationRepository.countByMentionedAccount_IdAndCheckedAtIsNull(principal.userId());
+	}
+
+	private void createMentionNotifications(
+		ChatMessageEntity message,
+		List<ChatMentionResponse> mentions,
+		UUID senderId
+	) {
+		for (ChatMentionResponse mention : mentions) {
+			if (mention.userId() == null || mention.userId().equals(senderId)) {
+				continue;
+			}
+			if (mentionNotificationRepository.existsByMessage_IdAndMentionedAccount_Id(message.getId(), mention.userId())) {
+				continue;
+			}
+			accountRepository.findById(mention.userId()).ifPresent(account ->
+				mentionNotificationRepository.save(new ChatMentionNotificationEntity(
+					message,
+					account,
+					blankToDefault(mention.displayName(), account.getDisplayName())
+				))
+			);
+		}
+	}
+
+	private void backfillMentionNotifications(AuthPrincipal principal) {
+		for (ChatRoomResponse room : rooms(principal)) {
+			for (ChatMessageEntity message : messageJpaRepository.findByRoomCodeOrderBySentAtAsc(room.code())) {
+				if (message.isSystemMessage() || principal.userId().equals(message.getSenderId()) || !message.mentions(principal.userId())) {
+					continue;
+				}
+				if (mentionNotificationRepository.existsByMessage_IdAndMentionedAccount_Id(message.getId(), principal.userId())) {
+					continue;
+				}
+				String displayName = mentionDisplayNameFor(message, principal.userId(), principal.displayName());
+				accountRepository.findById(principal.userId()).ifPresent(account ->
+					mentionNotificationRepository.save(new ChatMentionNotificationEntity(message, account, displayName))
+				);
+			}
+		}
+	}
+
+	private String mentionDisplayNameFor(ChatMessageEntity message, UUID accountId, String fallback) {
+		List<UUID> ids = message.getMentionUserIds();
+		List<String> names = message.getMentionDisplayNames();
+		for (int index = 0; index < ids.size(); index++) {
+			if (ids.get(index).equals(accountId) && index < names.size()) {
+				return blankToDefault(names.get(index), fallback);
+			}
+		}
+		return blankToDefault(fallback, "");
+	}
+
+	private ChatMentionNotificationResponse toMentionNotificationResponse(ChatMentionNotificationEntity notification) {
+		ChatMessageEntity message = notification.getMessage();
+		ChatRoomEntity room = chatRoomDao.findByCode(notification.getRoomCode());
+		UserProfile profile = profileRepository.findByAccountId(message.getSenderId()).orElse(null);
+		String nickname = profile == null ? "" : blankToDefault(profile.getNickname(), "");
+		String avatarColor = profile == null ? "#7AA06A" : blankToDefault(profile.getAvatarColor(), "#7AA06A");
+		String avatarImageUrl = profile == null ? "" : blankToDefault(profile.getAvatarImageUrl(), "");
+		return new ChatMentionNotificationResponse(
+			notification.getId(),
+			notification.getRoomCode(),
+			room.getTitle(),
+			(int) Math.min(Integer.MAX_VALUE, chatRoomDao.countMembers(notification.getRoomCode())),
+			membersOf(notification.getRoomCode()),
+			message.getId(),
+			message.getSenderId(),
+			displayNameFor(message.getSenderId(), message.getSenderName()),
+			nickname,
+			avatarColor,
+			avatarImageUrl,
+			notification.getMentionDisplayName(),
+			message.getContent(),
+			message.getSentAt(),
+			notification.getCheckedAt(),
+			notification.isChecked()
+		);
+	}
+
+	private String normalizeMentionStatus(String status) {
+		if (status == null || status.isBlank()) {
+			return "all";
+		}
+		String normalized = status.trim().toLowerCase(java.util.Locale.ROOT);
+		if (normalized.equals("checked") || normalized.equals("requested")) {
+			return normalized;
+		}
+		return "all";
+	}
+
+	private int normalizeNotificationLimit(int limit) {
+		return Math.max(1, Math.min(limit <= 0 ? 80 : limit, 200));
+	}
+
+	private int normalizeMessageLimit(int limit) {
+		return Math.max(1, Math.min(limit <= 0 ? 80 : limit, 200));
+	}
+
+	private List<ChatMentionResponse> resolveMentions(
+		String roomCode,
+		String content,
+		List<ChatMentionRequest> requestedMentions
+	) {
+		Map<UUID, String> memberNames = memberRepository.findByRoomCode(roomCode).stream()
+			.map(ChatRoomMemberEntity::getAccount)
+			.collect(java.util.stream.Collectors.toMap(
+				UserAccount::getId,
+				account -> displayNameFor(account.getId(), account.getDisplayName()),
+				(first, second) -> first
+			));
+		if (memberNames.isEmpty()) {
+			return List.of();
+		}
+
+		Map<UUID, String> mentioned = new java.util.LinkedHashMap<>();
+		for (ChatMentionRequest mention : requestedMentions) {
+			if (mention != null && mention.userId() != null && memberNames.containsKey(mention.userId())) {
+				String requestedName = blankToDefault(mention.displayName(), memberNames.get(mention.userId()));
+				String displayName = content.contains("@" + requestedName)
+					? requestedName
+					: memberNames.get(mention.userId());
+				mentioned.put(mention.userId(), displayName);
+			}
+		}
+
+		for (String token : mentionTokens(content)) {
+			for (Map.Entry<UUID, String> entry : memberNames.entrySet()) {
+				if (entry.getValue().equals(token)) {
+					mentioned.putIfAbsent(entry.getKey(), token);
+					break;
+				}
+			}
+		}
+
+		return mentioned.entrySet().stream()
+			.map(entry -> new ChatMentionResponse(entry.getKey(), blankToDefault(entry.getValue(), "")))
+			.toList();
+	}
+
+	private List<String> mentionTokens(String content) {
+		if (content == null || content.isBlank()) {
+			return List.of();
+		}
+		List<String> tokens = new ArrayList<>();
+		java.util.regex.Matcher matcher = java.util.regex.Pattern.compile("(?<!\\S)@([^\\s@]{1,80})")
+			.matcher(content);
+		while (matcher.find()) {
+			String token = matcher.group(1).trim();
+			if (!token.isBlank()) {
+				tokens.add(token);
+			}
+		}
+		return tokens;
 	}
 
 	private List<UserProfileResponse> membersOf(String roomCode) {
@@ -1253,7 +1796,8 @@ public class ChatService {
 		String senderName,
 		String content,
 		boolean silent,
-		boolean spoiler
+		boolean spoiler,
+		List<ChatMentionResponse> mentions
 	) {
 		try {
 			messageRepository.save(new ChatMessageDocument(
@@ -1262,7 +1806,9 @@ public class ChatService {
 				senderName,
 				content,
 				silent,
-				spoiler
+				spoiler,
+				mentions.stream().map(ChatMentionResponse::userId).toList(),
+				mentions.stream().map(ChatMentionResponse::displayName).toList()
 			));
 		} catch (RuntimeException ignored) {
 			// PostgreSQL/H2 remains the canonical local store, so messages are never local-only.
@@ -1288,6 +1834,7 @@ public class ChatService {
 		}
 		ChatRoomEntity room = chatRoomDao.findByCode(roomCode);
 		if (principal.role() == com.ava.backend.user.entity.UserRole.SUPERUSER
+			&& room.getType() == ChatRoomType.GROUP
 			&& companyScopeService.effectiveCompany(principal).equalsIgnoreCase(roomCompanyName(room))) {
 			return null;
 		}

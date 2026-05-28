@@ -23,5 +23,7 @@ public interface ChatTalkDrawerItemRepository extends JpaRepository<ChatTalkDraw
 
 	List<ChatTalkDrawerItemEntity> findByRoomCodeOrderByUploadedAtAsc(String roomCode);
 
+	List<ChatTalkDrawerItemEntity> findByRoomCodeAndMessageId(String roomCode, UUID messageId);
+
 	long deleteByRoomCode(String roomCode);
 }

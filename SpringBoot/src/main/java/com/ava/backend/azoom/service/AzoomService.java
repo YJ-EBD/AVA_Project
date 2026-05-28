@@ -2,40 +2,41 @@ package com.ava.backend.azoom.service;
 
 import java.text.Normalizer;
 import java.time.Instant;
-import java.util.Comparator;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Set;
 import java.util.UUID;
+import java.util.stream.Collectors;
 
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import com.ava.backend.auth.security.AuthPrincipal;
+import com.ava.backend.azoom.dto.AzoomChannelAccessRequest;
 import com.ava.backend.azoom.dto.AzoomChannelMutationRequest;
 import com.ava.backend.azoom.dto.AzoomChannelsResponse;
+import com.ava.backend.azoom.dto.AzoomInviteCandidateResponse;
+import com.ava.backend.azoom.dto.AzoomInviteMembersRequest;
 import com.ava.backend.azoom.dto.AzoomLiveKitTokenResponse;
 import com.ava.backend.azoom.dto.AzoomMemberMutationRequest;
 import com.ava.backend.azoom.dto.AzoomMemberResponse;
-import com.ava.backend.azoom.dto.AzoomTextChannelResponse;
 import com.ava.backend.azoom.dto.AzoomVoiceChannelResponse;
+import com.ava.backend.azoom.dto.AzoomVoiceEffectResponse;
 import com.ava.backend.azoom.dto.AzoomVoiceJoinResponse;
 import com.ava.backend.azoom.dto.AzoomVoiceStatusRequest;
 import com.ava.backend.azoom.dto.AzoomWorkspaceResponse;
+import com.ava.backend.azoom.entity.AzoomChannelAccessMode;
 import com.ava.backend.azoom.entity.AzoomChannelEntity;
 import com.ava.backend.azoom.entity.AzoomChannelType;
-import com.ava.backend.azoom.entity.AzoomChatMessageEntity;
 import com.ava.backend.azoom.entity.AzoomMemberEntity;
 import com.ava.backend.azoom.entity.AzoomMemberRole;
 import com.ava.backend.azoom.entity.AzoomWorkspaceEntity;
 import com.ava.backend.azoom.repository.AzoomChannelRepository;
-import com.ava.backend.azoom.repository.AzoomChatMessageRepository;
 import com.ava.backend.azoom.repository.AzoomMemberRepository;
 import com.ava.backend.azoom.repository.AzoomWorkspaceRepository;
-import com.ava.backend.chat.dto.ChatMessageRequest;
-import com.ava.backend.chat.dto.ChatMessageResponse;
 import com.ava.backend.company.CompanyScopeService;
+import com.ava.backend.push.service.MobilePushService;
 import com.ava.backend.user.dto.UserProfileResponse;
 import com.ava.backend.user.entity.UserAccount;
 import com.ava.backend.user.entity.UserProfile;
@@ -47,21 +48,12 @@ import com.ava.backend.user.repository.UserProfileRepository;
 @Service
 public class AzoomService {
 
-	public static final String TEXT_ROOM_PREFIX = "azoom-v2-chatlog-";
-
-	private static final List<DefaultChannel> DEFAULT_TEXT_CHANNELS = List.of(
-		new DefaultChannel("all-staff", "\uC804\uC9C1\uC6D0 \uD68C\uC758", 10),
-		new DefaultChannel("ra", "RA \uD68C\uC758", 20),
-		new DefaultChannel("research", "\uC5F0\uAD6C\uC18C \uD68C\uC758", 30)
-	);
-
 	private static final List<DefaultChannel> DEFAULT_VOICE_CHANNELS = List.of(
-		new DefaultChannel("all-staff", "\uC804 \uC9C1\uC6D0", 10),
+		new DefaultChannel("all-staff", "\uC804\uC9C1\uC6D0 \uD68C\uC758", 10),
 		new DefaultChannel("ra", "RA \uD300", 20),
 		new DefaultChannel("research", "\uC5F0\uAD6C\uC18C", 30)
 	);
 
-	private final AzoomChatMessageRepository azoomChatMessageRepository;
 	private final AzoomWorkspaceRepository workspaceRepository;
 	private final AzoomChannelRepository channelRepository;
 	private final AzoomMemberRepository memberRepository;
@@ -71,9 +63,9 @@ public class AzoomService {
 	private final AzoomVoiceStateService voiceStateService;
 	private final AzoomLiveKitTokenService liveKitTokenService;
 	private final CompanyScopeService companyScopeService;
+	private final MobilePushService mobilePushService;
 
 	public AzoomService(
-		AzoomChatMessageRepository azoomChatMessageRepository,
 		AzoomWorkspaceRepository workspaceRepository,
 		AzoomChannelRepository channelRepository,
 		AzoomMemberRepository memberRepository,
@@ -82,9 +74,9 @@ public class AzoomService {
 		UserMapper userMapper,
 		AzoomVoiceStateService voiceStateService,
 		AzoomLiveKitTokenService liveKitTokenService,
-		CompanyScopeService companyScopeService
+		CompanyScopeService companyScopeService,
+		MobilePushService mobilePushService
 	) {
-		this.azoomChatMessageRepository = azoomChatMessageRepository;
 		this.workspaceRepository = workspaceRepository;
 		this.channelRepository = channelRepository;
 		this.memberRepository = memberRepository;
@@ -94,20 +86,19 @@ public class AzoomService {
 		this.voiceStateService = voiceStateService;
 		this.liveKitTokenService = liveKitTokenService;
 		this.companyScopeService = companyScopeService;
+		this.mobilePushService = mobilePushService;
 	}
 
 	@Transactional
 	public AzoomChannelsResponse channels(AuthPrincipal principal) {
 		AzoomWorkspaceEntity workspace = ensureWorkspace(principal);
+		assertAzoomAccess(workspace, principal);
 		return new AzoomChannelsResponse(
 			workspace.getCompanyName(),
 			liveKitTokenService.enabled(),
 			liveKitTokenService.liveKitUrl(),
-			textChannels(workspace).stream()
-				.map(channel -> textChannelResponse(channel, workspace.getCompanySlug()))
-				.toList(),
 			voiceChannels(workspace).stream()
-				.map(channel -> voiceChannelResponse(channel, workspace.getCompanySlug()))
+				.map(channel -> voiceChannelResponse(channel, workspace.getCompanySlug(), principal))
 				.toList()
 		);
 	}
@@ -115,16 +106,8 @@ public class AzoomService {
 	@Transactional
 	public AzoomWorkspaceResponse workspace(AuthPrincipal principal) {
 		AzoomWorkspaceEntity workspace = ensureWorkspace(principal);
+		assertAzoomAccess(workspace, principal);
 		return workspaceResponse(workspace);
-	}
-
-	@Transactional
-	public AzoomTextChannelResponse createTextChannel(
-		AzoomChannelMutationRequest request,
-		AuthPrincipal principal
-	) {
-		AzoomChannelEntity channel = createChannel(request, AzoomChannelType.TEXT, principal);
-		return textChannelResponse(channel, channel.getWorkspace().getCompanySlug());
 	}
 
 	@Transactional
@@ -133,23 +116,7 @@ public class AzoomService {
 		AuthPrincipal principal
 	) {
 		AzoomChannelEntity channel = createChannel(request, AzoomChannelType.VOICE, principal);
-		return voiceChannelResponse(channel, channel.getWorkspace().getCompanySlug());
-	}
-
-	@Transactional
-	public AzoomTextChannelResponse updateTextChannel(
-		String channelId,
-		AzoomChannelMutationRequest request,
-		AuthPrincipal principal
-	) {
-		AzoomWorkspaceEntity workspace = ensureWorkspace(principal);
-		assertAzoomManager(workspace, principal);
-		AzoomChannelEntity channel = channel(workspace, channelId, AzoomChannelType.TEXT);
-		channel.rename(trimToLimit(request.name(), 120));
-		if (request.sortOrder() != null) {
-			channel.setSortOrder(Math.max(0, request.sortOrder()));
-		}
-		return textChannelResponse(channel, workspace.getCompanySlug());
+		return voiceChannelResponse(channel, channel.getWorkspace().getCompanySlug(), principal);
 	}
 
 	@Transactional
@@ -165,16 +132,14 @@ public class AzoomService {
 		if (request.sortOrder() != null) {
 			channel.setSortOrder(Math.max(0, request.sortOrder()));
 		}
-		return voiceChannelResponse(channel, workspace.getCompanySlug());
+		return voiceChannelResponse(channel, workspace.getCompanySlug(), principal);
 	}
 
 	@Transactional
 	public AzoomChannelsResponse archiveChannel(String channelId, AuthPrincipal principal) {
 		AzoomWorkspaceEntity workspace = ensureWorkspace(principal);
 		assertAzoomManager(workspace, principal);
-		AzoomChannelEntity channel = channelRepository
-			.findByWorkspace_IdAndChannelIdAndArchivedFalse(workspace.getId(), channelId)
-			.orElseThrow(() -> new IllegalArgumentException("AZOOM channel not found."));
+		AzoomChannelEntity channel = channel(workspace, channelId, AzoomChannelType.VOICE);
 		channel.archive();
 		return channels(principal);
 	}
@@ -194,46 +159,79 @@ public class AzoomService {
 	}
 
 	@Transactional
-	public List<ChatMessageResponse> textMessages(String channelId, AuthPrincipal principal) {
+	public List<AzoomInviteCandidateResponse> inviteCandidates(AuthPrincipal principal) {
 		AzoomWorkspaceEntity workspace = ensureWorkspace(principal);
-		AzoomChannelEntity channel = channel(workspace, channelId, AzoomChannelType.TEXT);
-		return azoomChatMessageRepository
-			.findTop50ByCompanySlugAndChannelIdOrderBySentAtDesc(workspace.getCompanySlug(), channel.getChannelId())
-			.stream()
-			.sorted(Comparator.comparing(AzoomChatMessageEntity::getSentAt))
-			.map(this::toMessageResponse)
+		assertAzoomManager(workspace, principal);
+		return profileRepository.findByCompanyNameIgnoreCase(workspace.getCompanyName()).stream()
+			.filter(profile -> !memberRepository.existsByWorkspace_IdAndAccount_Id(
+				workspace.getId(),
+				profile.getAccount().getId()
+			))
+			.map(profile -> new AzoomInviteCandidateResponse(
+				profile.getAccount().getId(),
+				profile.getAccount().getEmail(),
+				profile.getAccount().getDisplayName(),
+				nullToEmpty(profile.getDepartment()),
+				nullToEmpty(profile.getPosition()),
+				profile.getAvatarColor(),
+				nullToEmpty(profile.getAvatarImageUrl())
+			))
 			.toList();
 	}
 
 	@Transactional
-	public ChatMessageResponse sendText(String channelId, ChatMessageRequest request, AuthPrincipal principal) {
+	public AzoomWorkspaceResponse inviteMembers(AzoomInviteMembersRequest request, AuthPrincipal principal) {
 		AzoomWorkspaceEntity workspace = ensureWorkspace(principal);
-		AzoomChannelEntity channel = channel(workspace, channelId, AzoomChannelType.TEXT);
-		UserProfileResponse profile = currentProfile(principal);
-		AzoomChatMessageEntity savedMessage = azoomChatMessageRepository.save(new AzoomChatMessageEntity(
-			workspace.getCompanyName(),
-			workspace.getCompanySlug(),
-			channel.getChannelId(),
-			channel.getName(),
-			textRoomCode(channel, workspace.getCompanySlug()),
-			principal.userId(),
-			displayName(profile, principal.displayName()),
-			request.content().trim(),
-			request.isSilent(),
-			request.isSpoiler()
-		));
-		return toMessageResponse(savedMessage);
+		assertAzoomManager(workspace, principal);
+		for (UUID accountId : request.accountIds() == null ? List.<UUID>of() : request.accountIds()) {
+			UserAccount target = accountRepository.findById(accountId)
+				.orElseThrow(() -> new IllegalArgumentException("AZOOM invite target account not found."));
+			if (!memberRepository.existsByWorkspace_IdAndAccount_Id(workspace.getId(), target.getId())) {
+				memberRepository.save(new AzoomMemberEntity(workspace, target, AzoomMemberRole.MEMBER));
+			}
+		}
+		return workspaceResponse(workspace);
+	}
+
+	@Transactional
+	public AzoomVoiceChannelResponse updateChannelAccess(
+		String channelId,
+		AzoomChannelAccessRequest request,
+		AuthPrincipal principal
+	) {
+		AzoomWorkspaceEntity workspace = ensureWorkspace(principal);
+		assertAzoomManager(workspace, principal);
+		AzoomChannelEntity channel = channel(workspace, channelId, AzoomChannelType.VOICE);
+		AzoomChannelAccessMode mode = parseChannelAccessMode(request.accessMode());
+		String departments = normalizeDepartments(request.allowedDepartments());
+		if (mode == AzoomChannelAccessMode.DEPARTMENTS && departments.isBlank()) {
+			mode = AzoomChannelAccessMode.ALL;
+		}
+		channel.setAccess(mode, departments);
+		return voiceChannelResponse(channel, workspace.getCompanySlug(), principal);
 	}
 
 	@Transactional
 	public AzoomVoiceJoinResponse joinVoice(String channelId, AuthPrincipal principal) {
 		AzoomWorkspaceEntity workspace = ensureWorkspace(principal);
+		assertAzoomAccess(workspace, principal);
 		AzoomChannelEntity channel = channel(workspace, channelId, AzoomChannelType.VOICE);
+		assertChannelJoinAllowed(channel, principal);
 		UserProfileResponse profile = currentProfile(principal);
 		String roomName = voiceRoomName(channel, workspace.getCompanySlug());
+		boolean wasEmpty = voiceStateService.participants(roomName).isEmpty();
 		voiceStateService.join(roomName, profile);
+		if (wasEmpty) {
+			mobilePushService.sendAzoomVoiceStarted(
+				azoomMobilePushRecipients(workspace),
+				principal.userId(),
+				channel.getChannelId(),
+				channel.getName(),
+				roomName
+			);
+		}
 		return new AzoomVoiceJoinResponse(
-			voiceChannelResponse(channel, workspace.getCompanySlug()),
+			voiceChannelResponse(channel, workspace.getCompanySlug(), principal),
 			liveKitTokenService.token(roomName, principal, profile)
 		);
 	}
@@ -241,14 +239,16 @@ public class AzoomService {
 	@Transactional
 	public AzoomVoiceChannelResponse voiceState(String channelId, AuthPrincipal principal) {
 		AzoomWorkspaceEntity workspace = ensureWorkspace(principal);
-		return voiceChannelResponse(channel(workspace, channelId, AzoomChannelType.VOICE), workspace.getCompanySlug());
+		assertAzoomAccess(workspace, principal);
+		return voiceChannelResponse(channel(workspace, channelId, AzoomChannelType.VOICE), workspace.getCompanySlug(), principal);
 	}
 
 	@Transactional
 	public List<AzoomVoiceChannelResponse> voiceStates(AuthPrincipal principal) {
 		AzoomWorkspaceEntity workspace = ensureWorkspace(principal);
+		assertAzoomAccess(workspace, principal);
 		return voiceChannels(workspace).stream()
-			.map(channel -> voiceChannelResponse(channel, workspace.getCompanySlug()))
+			.map(channel -> voiceChannelResponse(channel, workspace.getCompanySlug(), principal))
 			.toList();
 	}
 
@@ -259,15 +259,19 @@ public class AzoomService {
 		AuthPrincipal principal
 	) {
 		AzoomWorkspaceEntity workspace = ensureWorkspace(principal);
+		assertAzoomAccess(workspace, principal);
 		AzoomChannelEntity channel = channel(workspace, channelId, AzoomChannelType.VOICE);
+		assertChannelJoinAllowed(channel, principal);
 		voiceStateService.update(voiceRoomName(channel, workspace.getCompanySlug()), currentProfile(principal), request);
-		return voiceChannelResponse(channel, workspace.getCompanySlug());
+		return voiceChannelResponse(channel, workspace.getCompanySlug(), principal);
 	}
 
 	@Transactional
 	public AzoomLiveKitTokenResponse liveKitToken(String channelId, AuthPrincipal principal) {
 		AzoomWorkspaceEntity workspace = ensureWorkspace(principal);
+		assertAzoomAccess(workspace, principal);
 		AzoomChannelEntity channel = channel(workspace, channelId, AzoomChannelType.VOICE);
+		assertChannelJoinAllowed(channel, principal);
 		String roomName = voiceRoomName(channel, workspace.getCompanySlug());
 		return liveKitTokenService.token(roomName, principal, currentProfile(principal));
 	}
@@ -277,13 +281,35 @@ public class AzoomService {
 		AzoomWorkspaceEntity workspace = ensureWorkspace(principal);
 		AzoomChannelEntity channel = channel(workspace, channelId, AzoomChannelType.VOICE);
 		voiceStateService.leave(voiceRoomName(channel, workspace.getCompanySlug()), principal.userId());
-		return voiceChannelResponse(channel, workspace.getCompanySlug());
+		return voiceChannelResponse(channel, workspace.getCompanySlug(), principal);
 	}
 
 	@Transactional
-	public String roomCodeForTextChannel(String channelId, AuthPrincipal principal) {
+	public List<AzoomVoiceChannelResponse> leaveDisconnectedVoice(AuthPrincipal principal) {
 		AzoomWorkspaceEntity workspace = ensureWorkspace(principal);
-		return textRoomCode(channel(workspace, channelId, AzoomChannelType.TEXT), workspace.getCompanySlug());
+		Set<String> changedRoomNames = voiceStateService.leaveAll(principal.userId());
+		if (changedRoomNames.isEmpty()) {
+			return List.of();
+		}
+		return voiceChannels(workspace).stream()
+			.filter(channel -> changedRoomNames.contains(voiceRoomName(channel, workspace.getCompanySlug())))
+			.map(channel -> voiceChannelResponse(channel, workspace.getCompanySlug(), principal))
+			.toList();
+	}
+
+	@Transactional
+	public AzoomVoiceEffectResponse voiceEffect(String channelId, String type, AuthPrincipal principal) {
+		AzoomWorkspaceEntity workspace = ensureWorkspace(principal);
+		assertAzoomAccess(workspace, principal);
+		AzoomChannelEntity channel = channel(workspace, channelId, AzoomChannelType.VOICE);
+		assertChannelJoinAllowed(channel, principal);
+		return new AzoomVoiceEffectResponse(
+			type,
+			channel.getChannelId(),
+			voiceRoomName(channel, workspace.getCompanySlug()),
+			principal.userId(),
+			Instant.now()
+		);
 	}
 
 	public AzoomWorkspaceEntity workspaceForNotiva(AuthPrincipal principal) {
@@ -343,20 +369,17 @@ public class AzoomService {
 	}
 
 	private void ensureDefaultChannels(AzoomWorkspaceEntity workspace, AuthPrincipal principal) {
-		for (DefaultChannel channel : DEFAULT_TEXT_CHANNELS) {
-			if (!channelRepository.existsByWorkspace_IdAndChannelId(workspace.getId(), channel.id())) {
-				channelRepository.save(new AzoomChannelEntity(
-					workspace,
-					channel.id(),
-					channel.name(),
-					AzoomChannelType.TEXT,
-					channel.sortOrder(),
-					principal.userId()
-				));
-			}
-		}
+		archiveObsoleteAllStaffChannels(workspace);
 		for (DefaultChannel channel : DEFAULT_VOICE_CHANNELS) {
-			if (!channelRepository.existsByWorkspace_IdAndChannelId(workspace.getId(), channel.id())) {
+			channelRepository.findByWorkspace_IdAndChannelIdAndArchivedFalse(workspace.getId(), channel.id())
+				.ifPresentOrElse(existing -> {
+					if (!existing.getName().equals(channel.name())) {
+						existing.rename(channel.name());
+					}
+					if (existing.getSortOrder() != channel.sortOrder()) {
+						existing.setSortOrder(channel.sortOrder());
+					}
+				}, () -> {
 				channelRepository.save(new AzoomChannelEntity(
 					workspace,
 					channel.id(),
@@ -365,28 +388,32 @@ public class AzoomService {
 					channel.sortOrder(),
 					principal.userId()
 				));
+				});
+		}
+	}
+
+	private void archiveObsoleteAllStaffChannels(AzoomWorkspaceEntity workspace) {
+		for (AzoomChannelEntity channel : voiceChannels(workspace)) {
+			String normalizedName = compactChannelName(channel.getName());
+			if (!"all-staff".equals(channel.getChannelId()) &&
+				("\uC804\uC9C1\uC6D0".equals(normalizedName) || "\uC804\uC9C1\uC6D0\uD68C\uC758".equals(normalizedName))) {
+				channel.archive();
 			}
 		}
 	}
 
+	private String compactChannelName(String name) {
+		return name == null ? "" : name.replaceAll("\\s+", "").trim();
+	}
+
 	private void ensureDefaultMembers(AzoomWorkspaceEntity workspace, AuthPrincipal principal) {
-		String companyName = workspace.getCompanyName();
-		for (UserProfile profile : profileRepository.findByCompanyNameIgnoreCase(companyName)) {
-			UserAccount account = profile.getAccount();
-			if (!memberRepository.existsByWorkspace_IdAndAccount_Id(workspace.getId(), account.getId())) {
-				memberRepository.save(new AzoomMemberEntity(
-					workspace,
-					account,
-					account.getRole() == UserRole.ADMIN || account.getRole() == UserRole.SUPERUSER ? AzoomMemberRole.OWNER : AzoomMemberRole.MEMBER
-				));
-			}
-		}
 		accountRepository.findById(principal.userId()).ifPresent(account -> {
-			if (!memberRepository.existsByWorkspace_IdAndAccount_Id(workspace.getId(), account.getId())) {
+			if ((account.getRole() == UserRole.ADMIN || account.getRole() == UserRole.SUPERUSER) &&
+				!memberRepository.existsByWorkspace_IdAndAccount_Id(workspace.getId(), account.getId())) {
 				memberRepository.save(new AzoomMemberEntity(
 					workspace,
 					account,
-					account.getRole() == UserRole.ADMIN || account.getRole() == UserRole.SUPERUSER ? AzoomMemberRole.OWNER : AzoomMemberRole.MEMBER
+					AzoomMemberRole.OWNER
 				));
 			}
 		});
@@ -421,6 +448,42 @@ public class AzoomService {
 		}
 	}
 
+	private void assertAzoomAccess(AzoomWorkspaceEntity workspace, AuthPrincipal principal) {
+		if (principal.role() == UserRole.ADMIN || principal.role() == UserRole.SUPERUSER) {
+			return;
+		}
+		if (!memberRepository.existsByWorkspace_IdAndAccount_Id(workspace.getId(), principal.userId())) {
+			throw new IllegalArgumentException("AZOOM permission is required.");
+		}
+	}
+
+	private void assertChannelJoinAllowed(AzoomChannelEntity channel, AuthPrincipal principal) {
+		if (principal.role() == UserRole.ADMIN || principal.role() == UserRole.SUPERUSER) {
+			return;
+		}
+		if (canJoinChannel(channel, principal)) {
+			return;
+		}
+		throw new IllegalArgumentException("AZOOM voice channel permission is required.");
+	}
+
+	private boolean canJoinChannel(AzoomChannelEntity channel, AuthPrincipal principal) {
+		if (principal.role() == UserRole.ADMIN || principal.role() == UserRole.SUPERUSER) {
+			return true;
+		}
+		if (channel.getAccessMode() == AzoomChannelAccessMode.ALL) {
+			return true;
+		}
+		String department = profileRepository.findByAccountId(principal.userId())
+			.map(UserProfile::getDepartment)
+			.orElse("");
+		if (department == null || department.isBlank()) {
+			return false;
+		}
+		return allowedDepartments(channel).stream()
+			.anyMatch(value -> value.equalsIgnoreCase(department.trim()));
+	}
+
 	private void ensureCompanyExists(String companyName, AuthPrincipal principal) {
 		Set<UserAccount> accounts = new LinkedHashSet<>();
 		for (UserProfile profile : profileRepository.findByCompanyNameIgnoreCase(companyName)) {
@@ -432,11 +495,10 @@ public class AzoomService {
 		}
 	}
 
-	private List<AzoomChannelEntity> textChannels(AzoomWorkspaceEntity workspace) {
-		return channelRepository.findByWorkspace_IdAndTypeAndArchivedFalseOrderBySortOrderAscNameAsc(
-			workspace.getId(),
-			AzoomChannelType.TEXT
-		);
+	private List<UserAccount> azoomMobilePushRecipients(AzoomWorkspaceEntity workspace) {
+		return memberRepository.findByWorkspace_IdOrderByJoinedAtAsc(workspace.getId()).stream()
+			.map(AzoomMemberEntity::getAccount)
+			.toList();
 	}
 
 	private List<AzoomChannelEntity> voiceChannels(AzoomWorkspaceEntity workspace) {
@@ -460,15 +522,11 @@ public class AzoomService {
 		return channel;
 	}
 
-	private AzoomTextChannelResponse textChannelResponse(AzoomChannelEntity channel, String companySlug) {
-		return new AzoomTextChannelResponse(
-			channel.getChannelId(),
-			channel.getName(),
-			textRoomCode(channel, companySlug)
-		);
-	}
-
-	private AzoomVoiceChannelResponse voiceChannelResponse(AzoomChannelEntity channel, String companySlug) {
+	private AzoomVoiceChannelResponse voiceChannelResponse(
+		AzoomChannelEntity channel,
+		String companySlug,
+		AuthPrincipal principal
+	) {
 		String roomName = voiceRoomName(channel, companySlug);
 		return new AzoomVoiceChannelResponse(
 			channel.getChannelId(),
@@ -476,8 +534,49 @@ public class AzoomService {
 			roomName,
 			voiceStateService.startedAt(roomName),
 			java.time.Instant.now(),
+			channel.getAccessMode().name(),
+			allowedDepartments(channel),
+			canJoinChannel(channel, principal),
 			voiceStateService.participants(roomName)
 		);
+	}
+
+	private AzoomChannelAccessMode parseChannelAccessMode(String accessMode) {
+		if (accessMode == null || accessMode.isBlank()) {
+			return AzoomChannelAccessMode.ALL;
+		}
+		String normalized = accessMode.trim().toUpperCase(Locale.ROOT);
+		if ("SELECTED_DEPARTMENTS".equals(normalized) || "DEPARTMENT".equals(normalized)) {
+			return AzoomChannelAccessMode.DEPARTMENTS;
+		}
+		return AzoomChannelAccessMode.valueOf(normalized);
+	}
+
+	private List<String> allowedDepartments(AzoomChannelEntity channel) {
+		String value = channel.getAllowedDepartments();
+		if (value == null || value.isBlank()) {
+			return List.of();
+		}
+		return List.of(value.split("\\R|,|;")).stream()
+			.map(String::trim)
+			.filter(item -> !item.isBlank())
+			.distinct()
+			.toList();
+	}
+
+	private String normalizeDepartments(List<String> departments) {
+		if (departments == null || departments.isEmpty()) {
+			return "";
+		}
+		return departments.stream()
+			.map(item -> item == null ? "" : item.trim())
+			.filter(item -> !item.isBlank())
+			.distinct()
+			.collect(Collectors.joining("\n"));
+	}
+
+	private String nullToEmpty(String value) {
+		return value == null ? "" : value;
 	}
 
 	private UserProfileResponse currentProfile(AuthPrincipal principal) {
@@ -486,31 +585,6 @@ public class AzoomService {
 		UserProfile profile = profileRepository.findByAccountId(account.getId())
 			.orElseGet(() -> new UserProfile(account, "AVA", "\uC628\uB77C\uC778", "#7AA06A"));
 		return userMapper.toResponse(account, profile);
-	}
-
-	private ChatMessageResponse toMessageResponse(AzoomChatMessageEntity message) {
-		UserProfile profile = profileRepository.findByAccountId(message.getSenderId()).orElse(null);
-		String senderName = accountRepository.findById(message.getSenderId())
-			.map(UserAccount::getDisplayName)
-			.map(String::trim)
-			.filter(value -> !value.isBlank())
-			.orElse(message.getSenderName());
-		return new ChatMessageResponse(
-			message.getId().toString(),
-			message.getRoomCode(),
-			message.getSenderId(),
-			senderName,
-			profile == null ? "" : blankToDefault(profile.getNickname(), ""),
-			profile == null ? "#7AA06A" : blankToDefault(profile.getAvatarColor(), "#7AA06A"),
-			profile == null ? "" : blankToDefault(profile.getAvatarImageUrl(), ""),
-			message.getContent(),
-			message.getSentAt(),
-			0,
-			false,
-			message.isSilentMessage(),
-			message.isSpoilerMessage(),
-			null
-		);
 	}
 
 	private UserAccount targetAccount(UUID accountId, String email) {
@@ -565,14 +639,6 @@ public class AzoomService {
 		return sanitized.length() > 40 ? sanitized.substring(0, 40).replaceAll("-+$", "") : sanitized;
 	}
 
-	private String displayName(UserProfileResponse profile, String fallback) {
-		return blankToDefault(profile.name(), blankToDefault(fallback, "AVA"));
-	}
-
-	private String blankToDefault(String value, String fallback) {
-		return value == null || value.isBlank() ? fallback : value.trim();
-	}
-
 	private String trimToLimit(String value, int maxLength) {
 		String trimmed = value == null ? "" : value.trim();
 		if (trimmed.isBlank()) {
@@ -583,10 +649,6 @@ public class AzoomService {
 
 	private String companyNameFor(AuthPrincipal principal) {
 		return companyScopeService.effectiveCompany(principal);
-	}
-
-	private String textRoomCode(AzoomChannelEntity channel, String companySlug) {
-		return TEXT_ROOM_PREFIX + companySlug + "-" + channel.getChannelId();
 	}
 
 	private String voiceRoomName(AzoomChannelEntity channel, String companySlug) {

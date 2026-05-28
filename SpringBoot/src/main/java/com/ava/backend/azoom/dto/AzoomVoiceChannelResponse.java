@@ -9,6 +9,9 @@ public record AzoomVoiceChannelResponse(
 	String roomName,
 	Instant startedAt,
 	Instant serverNow,
+	String accessMode,
+	List<String> allowedDepartments,
+	boolean canJoin,
 	List<AzoomVoiceParticipantResponse> participants
 ) {
 }

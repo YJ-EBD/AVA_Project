@@ -1,6 +1,7 @@
 package com.ava.backend.chat.controller;
 
 import java.util.List;
+import java.util.UUID;
 
 import org.springframework.core.io.Resource;
 import org.springframework.http.ContentDisposition;
@@ -22,6 +23,8 @@ import org.springframework.web.multipart.MultipartFile;
 import com.ava.backend.auth.security.AuthPrincipal;
 import com.ava.backend.chat.dto.ChatMessageRequest;
 import com.ava.backend.chat.dto.ChatMessageResponse;
+import com.ava.backend.chat.dto.ChatMentionNotificationResponse;
+import com.ava.backend.chat.dto.ChatLinkPreviewResponse;
 import com.ava.backend.chat.dto.ChatNoticeRequest;
 import com.ava.backend.chat.dto.ChatPinRequest;
 import com.ava.backend.chat.dto.ChatReadStateResponse;
@@ -32,6 +35,8 @@ import com.ava.backend.chat.dto.ChatTalkDrawerItemResponse;
 import com.ava.backend.chat.dto.DirectChatRoomRequest;
 import com.ava.backend.chat.dto.GroupChatRoomRequest;
 import com.ava.backend.chat.service.ChatService;
+import com.ava.backend.chat.service.ChatLinkPreviewService;
+import com.ava.backend.push.service.MobilePushService;
 
 import jakarta.validation.Valid;
 
@@ -40,16 +45,33 @@ import jakarta.validation.Valid;
 public class ChatController {
 
 	private final ChatService chatService;
+	private final ChatLinkPreviewService linkPreviewService;
 	private final SimpMessagingTemplate messagingTemplate;
+	private final MobilePushService mobilePushService;
 
-	public ChatController(ChatService chatService, SimpMessagingTemplate messagingTemplate) {
+	public ChatController(
+		ChatService chatService,
+		ChatLinkPreviewService linkPreviewService,
+		SimpMessagingTemplate messagingTemplate,
+		MobilePushService mobilePushService
+	) {
 		this.chatService = chatService;
+		this.linkPreviewService = linkPreviewService;
 		this.messagingTemplate = messagingTemplate;
+		this.mobilePushService = mobilePushService;
 	}
 
 	@GetMapping("/rooms")
 	public List<ChatRoomResponse> rooms(@AuthenticationPrincipal AuthPrincipal principal) {
 		return chatService.rooms(principal);
+	}
+
+	@GetMapping("/link-preview")
+	public ChatLinkPreviewResponse linkPreview(
+		@RequestParam("url") String url,
+		@AuthenticationPrincipal AuthPrincipal principal
+	) {
+		return linkPreviewService.preview(url);
 	}
 
 	@PostMapping("/direct-rooms")
@@ -65,7 +87,9 @@ public class ChatController {
 		@Valid @RequestBody GroupChatRoomRequest request,
 		@AuthenticationPrincipal AuthPrincipal principal
 	) {
-		return chatService.startGroupRoom(request, principal);
+		ChatRoomResponse response = chatService.startGroupRoom(request, principal);
+		publishRoomState(response);
+		return response;
 	}
 
 	@PostMapping("/self-room")
@@ -73,13 +97,49 @@ public class ChatController {
 		return chatService.startSelfRoom(principal);
 	}
 
-	@GetMapping("/rooms/{roomCode}/messages")
-	public List<ChatMessageResponse> messages(
+	@PostMapping("/rooms/{roomCode}/members")
+	public ChatRoomResponse inviteMembers(
 		@PathVariable String roomCode,
+		@Valid @RequestBody GroupChatRoomRequest request,
 		@AuthenticationPrincipal AuthPrincipal principal
 	) {
 		assertRegularChatRoomCode(roomCode);
-		return chatService.recentMessages(roomCode, principal);
+		ChatRoomResponse response = chatService.inviteMembers(roomCode, request, principal);
+		publishRoomState(response);
+		return response;
+	}
+
+	@GetMapping("/rooms/{roomCode}/messages")
+	public List<ChatMessageResponse> messages(
+		@PathVariable String roomCode,
+		@RequestParam(value = "limit", required = false, defaultValue = "80") int limit,
+		@AuthenticationPrincipal AuthPrincipal principal
+	) {
+		assertRegularChatRoomCode(roomCode);
+		return chatService.recentMessages(roomCode, principal, limit);
+	}
+
+	@GetMapping("/rooms/{roomCode}/messages/around/{messageId}")
+	public List<ChatMessageResponse> messagesAround(
+		@PathVariable String roomCode,
+		@PathVariable UUID messageId,
+		@RequestParam(value = "before", required = false, defaultValue = "40") int before,
+		@RequestParam(value = "after", required = false, defaultValue = "40") int after,
+		@AuthenticationPrincipal AuthPrincipal principal
+	) {
+		assertRegularChatRoomCode(roomCode);
+		return chatService.messagesAround(roomCode, messageId, principal, before, after);
+	}
+
+	@GetMapping("/rooms/{roomCode}/messages/before/{messageId}")
+	public List<ChatMessageResponse> messagesBefore(
+		@PathVariable String roomCode,
+		@PathVariable UUID messageId,
+		@RequestParam(value = "limit", required = false, defaultValue = "80") int limit,
+		@AuthenticationPrincipal AuthPrincipal principal
+	) {
+		assertRegularChatRoomCode(roomCode);
+		return chatService.messagesBefore(roomCode, messageId, principal, limit);
 	}
 
 	@PostMapping("/rooms/{roomCode}/messages")
@@ -92,6 +152,7 @@ public class ChatController {
 		ChatMessageResponse response = chatService.send(roomCode, request, principal);
 		messagingTemplate.convertAndSend("/topic/rooms/" + roomCode, response);
 		publishRoomEvent(roomCode, response);
+		mobilePushService.sendChatMessage(roomCode, response);
 		return response;
 	}
 
@@ -109,6 +170,7 @@ public class ChatController {
 		ChatMessageResponse response = chatService.sendAttachment(roomCode, file, groupId, principal);
 		messagingTemplate.convertAndSend("/topic/rooms/" + roomCode, response);
 		publishRoomEvent(roomCode, response);
+		mobilePushService.sendChatMessage(roomCode, response);
 		return response;
 	}
 
@@ -133,6 +195,19 @@ public class ChatController {
 			.body(download.resource());
 	}
 
+	@PostMapping("/rooms/{roomCode}/messages/{messageId}/delete-for-everyone")
+	public ChatMessageResponse deleteMessageForEveryone(
+		@PathVariable String roomCode,
+		@PathVariable UUID messageId,
+		@AuthenticationPrincipal AuthPrincipal principal
+	) {
+		assertRegularChatRoomCode(roomCode);
+		ChatMessageResponse response = chatService.deleteMessageForEveryone(roomCode, messageId, principal);
+		messagingTemplate.convertAndSend("/topic/rooms/" + roomCode, response);
+		publishRoomEvent(roomCode, response);
+		return response;
+	}
+
 	@GetMapping("/rooms/{roomCode}/talk-drawer")
 	public List<ChatTalkDrawerItemResponse> talkDrawer(
 		@PathVariable String roomCode,
@@ -152,6 +227,23 @@ public class ChatController {
 		ChatReadStateResponse response = chatService.markRead(roomCode, principal);
 		publishReadState(roomCode, response);
 		return response;
+	}
+
+	@GetMapping("/mention-notifications")
+	public List<ChatMentionNotificationResponse> mentionNotifications(
+		@RequestParam(value = "status", required = false, defaultValue = "all") String status,
+		@RequestParam(value = "limit", required = false, defaultValue = "80") int limit,
+		@AuthenticationPrincipal AuthPrincipal principal
+	) {
+		return chatService.mentionNotifications(status, principal, limit);
+	}
+
+	@PostMapping("/mention-notifications/{notificationId}/checked")
+	public ChatMentionNotificationResponse markMentionNotificationChecked(
+		@PathVariable UUID notificationId,
+		@AuthenticationPrincipal AuthPrincipal principal
+	) {
+		return chatService.markMentionNotificationChecked(notificationId, principal);
 	}
 
 	@PostMapping("/rooms/{roomCode}/leave")
@@ -177,8 +269,21 @@ public class ChatController {
 	}
 
 	private void publishRoomEvent(ChatRoomResponse room, ChatMessageResponse message) {
-		ChatRealtimeEvent event = new ChatRealtimeEvent("message", room, message);
 		for (var member : room.members()) {
+			ChatRoomResponse recipientRoom = member.id() == null
+				? room
+				: chatService.roomForMember(room.code(), member.id());
+			ChatRealtimeEvent event = new ChatRealtimeEvent("message", recipientRoom, message);
+			messagingTemplate.convertAndSendToUser(member.email(), "/queue/chat-events", event);
+		}
+	}
+
+	private void publishRoomState(ChatRoomResponse room) {
+		for (var member : room.members()) {
+			ChatRoomResponse recipientRoom = member.id() == null
+				? room
+				: chatService.roomForMember(room.code(), member.id());
+			ChatRealtimeEvent event = new ChatRealtimeEvent("room", recipientRoom, null);
 			messagingTemplate.convertAndSendToUser(member.email(), "/queue/chat-events", event);
 		}
 	}
@@ -218,7 +323,7 @@ public class ChatController {
 
 	private void assertRegularChatRoomCode(String roomCode) {
 		if (chatService.isAzoomRoomCode(roomCode)) {
-			throw new IllegalArgumentException("AZOOM chat rooms must use the AZOOM API.");
+			throw new IllegalArgumentException("AZOOM text chat rooms are no longer supported.");
 		}
 	}
 }

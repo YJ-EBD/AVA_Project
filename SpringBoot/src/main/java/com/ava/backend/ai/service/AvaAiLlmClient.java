@@ -6,6 +6,8 @@ import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.time.Duration;
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -55,7 +57,6 @@ public class AvaAiLlmClient {
 	}
 
 	public String complete(List<PromptMessage> messages) {
-		long retryUntil = System.nanoTime() + unavailableRetryWindow.toNanos();
 		try {
 			Map<String, Object> payload = Map.of(
 				"model", model,
@@ -66,40 +67,134 @@ public class AvaAiLlmClient {
 				"max_tokens", maxTokens,
 				"stream", false
 			);
-			HttpRequest request = HttpRequest.newBuilder(chatCompletionsUri)
-				.timeout(timeout)
-				.header("Content-Type", "application/json; charset=utf-8")
-				.POST(HttpRequest.BodyPublishers.ofString(objectMapper.writeValueAsString(payload)))
-				.build();
+			JsonNode message = sendChatPayload(payload).path("choices").path(0).path("message");
+			String content = message.path("content").asText("");
+			if (content.isBlank()) {
+				throw new IllegalStateException("LLM server returned an empty answer.");
+			}
+			return stripThinkingBlock(content.strip());
+		} catch (IOException exception) {
+			throw new IllegalStateException("LLM server request failed.", exception);
+		}
+	}
 
-			while (true) {
-				try {
-					HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
-					if (response.statusCode() < 200 || response.statusCode() >= 300) {
-						if (isTemporarilyUnavailable(response.statusCode(), response.body()) && pauseBeforeRetry(retryUntil)) {
-							continue;
-						}
-						throw new IllegalStateException("LLM server returned " + response.statusCode() + ": " + response.body());
-					}
-					JsonNode root = objectMapper.readTree(response.body());
-					String content = root.path("choices").path(0).path("message").path("content").asText("");
+	public String completeWithTools(
+		List<PromptMessage> messages,
+		List<ToolDefinition> tools,
+		ToolExecutor executor,
+		int maxToolRounds
+	) {
+		if (tools == null || tools.isEmpty() || executor == null) {
+			return complete(messages);
+		}
+		try {
+			List<Map<String, Object>> wireMessages = new ArrayList<>(messages.stream()
+				.map(message -> {
+					Map<String, Object> wire = new LinkedHashMap<>();
+					wire.put("role", message.role());
+					wire.put("content", message.content());
+					return wire;
+				})
+				.toList());
+			int rounds = Math.max(1, maxToolRounds);
+			for (int round = 0; round <= rounds; round++) {
+				Map<String, Object> payload = new LinkedHashMap<>();
+				payload.put("model", model);
+				payload.put("messages", wireMessages);
+				payload.put("temperature", temperature);
+				payload.put("max_tokens", maxTokens);
+				payload.put("stream", false);
+				payload.put("tools", tools.stream().map(this::wireTool).toList());
+				payload.put("tool_choice", "auto");
+
+				JsonNode message = sendChatPayload(payload).path("choices").path(0).path("message");
+				JsonNode toolCalls = message.path("tool_calls");
+				if (!toolCalls.isArray() || toolCalls.isEmpty()) {
+					String content = message.path("content").asText("");
 					if (content.isBlank()) {
 						throw new IllegalStateException("LLM server returned an empty answer.");
 					}
 					return stripThinkingBlock(content.strip());
-				} catch (IOException exception) {
+				}
+				if (round == rounds) {
+					throw new IllegalStateException("LLM tool-calling exceeded max rounds.");
+				}
+				Map<String, Object> assistant = new LinkedHashMap<>();
+				assistant.put("role", "assistant");
+				String content = message.path("content").asText("");
+				assistant.put("content", content.isBlank() ? null : content);
+				assistant.put("tool_calls", objectMapper.convertValue(toolCalls, Object.class));
+				wireMessages.add(assistant);
+				for (JsonNode callNode : toolCalls) {
+					ToolCall call = toolCall(callNode);
+					ToolResult result = executor.execute(call);
+					Map<String, Object> toolMessage = new LinkedHashMap<>();
+					toolMessage.put("role", "tool");
+					toolMessage.put("tool_call_id", call.id());
+					toolMessage.put("name", call.name());
+					toolMessage.put("content", result == null ? "" : result.content());
+					wireMessages.add(toolMessage);
+				}
+			}
+			throw new IllegalStateException("LLM tool-calling did not produce a final answer.");
+		} catch (IOException exception) {
+			throw new IllegalStateException("LLM server request failed.", exception);
+		}
+	}
+
+	private JsonNode sendChatPayload(Map<String, Object> payload) throws IOException {
+		long retryUntil = System.nanoTime() + unavailableRetryWindow.toNanos();
+		String body = objectMapper.writeValueAsString(payload);
+		HttpRequest request = HttpRequest.newBuilder(chatCompletionsUri)
+			.timeout(timeout)
+			.header("Content-Type", "application/json; charset=utf-8")
+			.POST(HttpRequest.BodyPublishers.ofString(body))
+			.build();
+		while (true) {
+			try {
+				HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
+				if (response.statusCode() < 200 || response.statusCode() >= 300) {
+					if (isTemporarilyUnavailable(response.statusCode(), response.body()) && pauseBeforeRetry(retryUntil)) {
+						continue;
+					}
+					if (isToolCallingUnsupported(response.statusCode(), response.body())) {
+						throw new ToolCallingUnsupportedException("LLM server does not support native tool calling: " + response.body());
+					}
+					throw new IllegalStateException("LLM server returned " + response.statusCode() + ": " + response.body());
+				}
+				return objectMapper.readTree(response.body());
+			} catch (IOException exception) {
+				try {
 					if (pauseBeforeRetry(retryUntil)) {
 						continue;
 					}
-					throw new IllegalStateException("LLM server request failed.", exception);
+				} catch (InterruptedException interrupted) {
+					Thread.currentThread().interrupt();
+					throw new IllegalStateException("LLM server request was interrupted.", interrupted);
 				}
+				throw exception;
+			} catch (InterruptedException exception) {
+				Thread.currentThread().interrupt();
+				throw new IllegalStateException("LLM server request was interrupted.", exception);
 			}
-		} catch (IOException exception) {
-			throw new IllegalStateException("LLM server request failed.", exception);
-		} catch (InterruptedException exception) {
-			Thread.currentThread().interrupt();
-			throw new IllegalStateException("LLM server request was interrupted.", exception);
 		}
+	}
+
+	private Map<String, Object> wireTool(ToolDefinition tool) {
+		Map<String, Object> function = new LinkedHashMap<>();
+		function.put("name", tool.name());
+		function.put("description", tool.description());
+		function.put("parameters", tool.parameters() == null ? Map.of("type", "object") : tool.parameters());
+		return Map.of("type", "function", "function", function);
+	}
+
+	private ToolCall toolCall(JsonNode callNode) {
+		JsonNode function = callNode.path("function");
+		return new ToolCall(
+			callNode.path("id").asText("tool-call-" + System.nanoTime()),
+			function.path("name").asText(""),
+			function.path("arguments").asText("{}")
+		);
 	}
 
 	private boolean isTemporarilyUnavailable(int statusCode, String body) {
@@ -108,6 +203,17 @@ public class AvaAiLlmClient {
 		}
 		String normalized = body == null ? "" : body.toLowerCase(Locale.ROOT);
 		return normalized.contains("loading model") || normalized.contains("unavailable");
+	}
+
+	private boolean isToolCallingUnsupported(int statusCode, String body) {
+		if (statusCode != 400 && statusCode != 404 && statusCode != 422) {
+			return false;
+		}
+		String normalized = body == null ? "" : body.toLowerCase(Locale.ROOT);
+		return normalized.contains("tool")
+			|| normalized.contains("function")
+			|| normalized.contains("tool_choice")
+			|| normalized.contains("tool_calls");
 	}
 
 	private boolean pauseBeforeRetry(long retryUntilNanos) throws InterruptedException {
@@ -143,5 +249,25 @@ public class AvaAiLlmClient {
 	}
 
 	public record PromptMessage(String role, String content) {
+	}
+
+	public record ToolDefinition(String name, String description, Map<String, Object> parameters) {
+	}
+
+	public record ToolCall(String id, String name, String argumentsJson) {
+	}
+
+	public record ToolResult(boolean success, String content) {
+	}
+
+	@FunctionalInterface
+	public interface ToolExecutor {
+		ToolResult execute(ToolCall call);
+	}
+
+	public static class ToolCallingUnsupportedException extends RuntimeException {
+		public ToolCallingUnsupportedException(String message) {
+			super(message);
+		}
 	}
 }

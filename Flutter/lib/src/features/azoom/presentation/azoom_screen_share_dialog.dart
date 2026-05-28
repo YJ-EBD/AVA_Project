@@ -6,6 +6,15 @@ import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
 import 'package:flutter_webrtc/flutter_webrtc.dart' as rtc;
 
+const _avaShareAccent = Color(0xFF2387F2);
+const _avaShareBackground = Color(0xFFF7FBFF);
+const _avaSharePanel = Color(0xFFFFFFFF);
+const _avaShareControl = Color(0xFFE7F3FF);
+const _avaShareSelected = Color(0xFFD9EBFF);
+const _avaShareBorder = Color(0xFFCFE0EF);
+const _avaShareText = Color(0xFF123047);
+const _avaShareMutedText = Color(0xFF637F95);
+
 class AzoomDiscordScreenShareSourceDialog extends StatefulWidget {
   const AzoomDiscordScreenShareSourceDialog({super.key});
 
@@ -202,9 +211,9 @@ class _AzoomDiscordScreenShareSourceDialogState
         height: dialogHeight,
         clipBehavior: Clip.antiAlias,
         decoration: BoxDecoration(
-          color: const Color(0xFF36373F),
+          color: _avaShareBackground,
           borderRadius: BorderRadius.circular(10),
-          border: Border.all(color: const Color(0xFF1F2026)),
+          border: Border.all(color: _avaShareBorder),
           boxShadow: [
             BoxShadow(
               color: Colors.black.withValues(alpha: 0.34),
@@ -226,7 +235,7 @@ class _AzoomDiscordScreenShareSourceDialogState
               child: _loading
                   ? const Center(
                       child: CircularProgressIndicator(
-                        color: Color(0xFFE6E8EF),
+                        color: _avaShareAccent,
                         strokeWidth: 2.6,
                       ),
                     )
@@ -292,7 +301,7 @@ class _ScreenShareTabBar extends StatelessWidget {
       key: const ValueKey('azoom-screen-share-tabs'),
       height: 40,
       decoration: BoxDecoration(
-        color: const Color(0xFF2B2D31),
+        color: _avaShareControl,
         borderRadius: BorderRadius.circular(9),
       ),
       child: Row(
@@ -345,7 +354,7 @@ class _ScreenShareTabButton extends StatelessWidget {
       child: Padding(
         padding: const EdgeInsets.all(4),
         child: Material(
-          color: selected ? const Color(0xFF3E4049) : Colors.transparent,
+          color: selected ? _avaShareSelected : Colors.transparent,
           borderRadius: BorderRadius.circular(7),
           child: InkWell(
             borderRadius: BorderRadius.circular(7),
@@ -353,14 +362,12 @@ class _ScreenShareTabButton extends StatelessWidget {
             child: Row(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                Icon(icon, size: 16, color: const Color(0xFFDCDDDE)),
+                Icon(icon, size: 16, color: _avaShareMutedText),
                 const SizedBox(width: 9),
                 Text(
                   label,
                   style: TextStyle(
-                    color: selected
-                        ? const Color(0xFFFFFFFF)
-                        : const Color(0xFFDCDDDE),
+                    color: selected ? _avaShareText : _avaShareMutedText,
                     fontSize: 15,
                     fontWeight: FontWeight.w800,
                     height: 1,
@@ -528,7 +535,7 @@ class _ScreenShareSourceTileState extends State<_ScreenShareSourceTile> {
   Widget build(BuildContext context) {
     final isScreen = widget.source.type == rtc.SourceType.Screen;
     final borderColor = _hovered || widget.selected
-        ? const Color(0xFF5E626D)
+        ? _avaShareAccent
         : Colors.transparent;
     return MouseRegion(
       onEnter: (_) => setState(() => _hovered = true),
@@ -546,7 +553,7 @@ class _ScreenShareSourceTileState extends State<_ScreenShareSourceTile> {
                 curve: Curves.easeOutCubic,
                 clipBehavior: Clip.antiAlias,
                 decoration: BoxDecoration(
-                  color: const Color(0xFF111214),
+                  color: _avaSharePanel,
                   borderRadius: BorderRadius.circular(6),
                   border: Border.all(color: borderColor, width: 2),
                 ),
@@ -579,8 +586,8 @@ class _ScreenShareSourceTileState extends State<_ScreenShareSourceTile> {
                                   ),
                                   onPressed: widget.onShare,
                                   style: FilledButton.styleFrom(
-                                    backgroundColor: Colors.white,
-                                    foregroundColor: const Color(0xFF111214),
+                                    backgroundColor: _avaShareAccent,
+                                    foregroundColor: Colors.white,
                                     padding: const EdgeInsets.symmetric(
                                       horizontal: 25,
                                       vertical: 15,
@@ -612,7 +619,7 @@ class _ScreenShareSourceTileState extends State<_ScreenShareSourceTile> {
               children: [
                 Icon(
                   isScreen ? Icons.desktop_windows : Icons.web_asset,
-                  color: const Color(0xFFC7C9D1),
+                  color: _avaShareMutedText,
                   size: 17,
                 ),
                 const SizedBox(width: 7),
@@ -622,7 +629,7 @@ class _ScreenShareSourceTileState extends State<_ScreenShareSourceTile> {
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: const TextStyle(
-                      color: Color(0xFFF2F3F5),
+                      color: _avaShareText,
                       fontSize: 14,
                       fontWeight: FontWeight.w800,
                       height: 1,
@@ -656,12 +663,12 @@ class _ScreenShareThumbnail extends StatelessWidget {
     }
     return Container(
       key: const ValueKey('azoom-screen-share-thumbnail-fallback'),
-      color: const Color(0xFF18191C),
+      color: _avaShareControl,
       alignment: Alignment.center,
       child: const SizedBox.square(
         dimension: 26,
         child: CircularProgressIndicator(
-          color: Color(0xFFAEB1BA),
+          color: _avaShareAccent,
           strokeWidth: 2.5,
         ),
       ),
@@ -736,18 +743,16 @@ class _ScreenShareDeviceTileState extends State<_ScreenShareDeviceTile> {
               decoration: BoxDecoration(
                 borderRadius: BorderRadius.circular(6),
                 border: Border.all(
-                  color: _hovered
-                      ? const Color(0xFF5E626D)
-                      : Colors.transparent,
+                  color: _hovered ? _avaShareAccent : Colors.transparent,
                   width: 2,
                 ),
                 gradient: const LinearGradient(
                   begin: Alignment.topLeft,
                   end: Alignment.bottomRight,
                   colors: [
-                    Color(0xFF6F93AA),
-                    Color(0xFF6B5D70),
-                    Color(0xFF6F4F24),
+                    Color(0xFFDDF0FF),
+                    Color(0xFFEAF7FF),
+                    Color(0xFFF8FCFF),
                   ],
                 ),
               ),
@@ -771,10 +776,10 @@ class _ScreenShareDeviceTileState extends State<_ScreenShareDeviceTile> {
                       child: FilledButton(
                         onPressed: null,
                         style: FilledButton.styleFrom(
-                          disabledBackgroundColor: Colors.white.withValues(
+                          disabledBackgroundColor: _avaSharePanel.withValues(
                             alpha: 0.92,
                           ),
-                          disabledForegroundColor: const Color(0xFF111214),
+                          disabledForegroundColor: _avaShareText,
                           padding: const EdgeInsets.symmetric(
                             horizontal: 25,
                             vertical: 15,
@@ -800,7 +805,7 @@ class _ScreenShareDeviceTileState extends State<_ScreenShareDeviceTile> {
           const SizedBox(height: 9),
           Row(
             children: [
-              const Icon(Icons.videocam, color: Color(0xFFC7C9D1), size: 17),
+              const Icon(Icons.videocam, color: _avaShareMutedText, size: 17),
               const SizedBox(width: 7),
               Expanded(
                 child: Text(
@@ -872,7 +877,7 @@ class _ScreenShareFooter extends StatelessWidget {
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: const TextStyle(
-                      color: Color(0xFFB7BAC4),
+                      color: _avaShareMutedText,
                       fontSize: 12,
                       fontWeight: FontWeight.w700,
                       height: 1,
@@ -892,10 +897,10 @@ class _ScreenShareFooter extends StatelessWidget {
               key: const ValueKey('azoom-screen-share-action'),
               onPressed: deviceMode ? null : onShare,
               style: FilledButton.styleFrom(
-                backgroundColor: const Color(0xFF5865F2),
-                disabledBackgroundColor: const Color(
-                  0xFF5865F2,
-                ).withValues(alpha: 0.44),
+                backgroundColor: _avaShareAccent,
+                disabledBackgroundColor: _avaShareAccent.withValues(
+                  alpha: 0.44,
+                ),
                 foregroundColor: Colors.white,
                 disabledForegroundColor: Colors.white.withValues(alpha: 0.54),
                 padding: const EdgeInsets.symmetric(horizontal: 29),
@@ -928,7 +933,7 @@ class _ScreenShareQualityToggle extends StatelessWidget {
       height: 40,
       padding: const EdgeInsets.all(4),
       decoration: BoxDecoration(
-        color: const Color(0xFF2B2D31),
+        color: _avaShareControl,
         borderRadius: BorderRadius.circular(11),
       ),
       child: const Row(
@@ -954,13 +959,13 @@ class _ScreenShareQualityPill extends StatelessWidget {
       width: 50,
       alignment: Alignment.center,
       decoration: BoxDecoration(
-        color: selected ? const Color(0xFF3E4049) : Colors.transparent,
+        color: selected ? _avaShareSelected : Colors.transparent,
         borderRadius: BorderRadius.circular(8),
       ),
       child: Text(
         label,
         style: TextStyle(
-          color: selected ? Colors.white : const Color(0xFFFF73DF),
+          color: selected ? _avaShareText : _avaShareAccent,
           fontSize: 14,
           fontWeight: FontWeight.w900,
           height: 1,
@@ -982,10 +987,10 @@ class _ScreenShareSettingsButton extends StatelessWidget {
       child: IconButton(
         onPressed: onTap,
         style: IconButton.styleFrom(
-          backgroundColor: const Color(0xFF42444D),
+          backgroundColor: _avaShareControl,
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
         ),
-        icon: const Icon(Icons.settings, color: Colors.white, size: 22),
+        icon: const Icon(Icons.settings, color: _avaShareText, size: 22),
       ),
     );
   }
@@ -1000,14 +1005,10 @@ class _AvaScreenShareNotice extends StatelessWidget {
       height: 40,
       margin: const EdgeInsets.fromLTRB(14, 0, 14, 14),
       padding: const EdgeInsets.symmetric(horizontal: 18),
-      decoration: const BoxDecoration(
-        gradient: LinearGradient(
-          colors: [Color(0xFF9347DC), Color(0xFFC158A9)],
-        ),
-      ),
+      decoration: const BoxDecoration(color: Color(0xFFD9EBFF)),
       child: Row(
         children: [
-          const Icon(Icons.lock, color: Colors.white, size: 15),
+          const Icon(Icons.lock, color: _avaShareText, size: 15),
           const SizedBox(width: 6),
           const Expanded(
             child: Text(
@@ -1015,7 +1016,7 @@ class _AvaScreenShareNotice extends StatelessWidget {
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
               style: TextStyle(
-                color: Colors.white,
+                color: _avaShareText,
                 fontSize: 13,
                 fontWeight: FontWeight.w900,
               ),
@@ -1026,13 +1027,13 @@ class _AvaScreenShareNotice extends StatelessWidget {
             padding: const EdgeInsets.symmetric(horizontal: 13),
             alignment: Alignment.center,
             decoration: BoxDecoration(
-              color: Colors.white,
+              color: _avaSharePanel,
               borderRadius: BorderRadius.circular(8),
             ),
             child: const Text(
               'AVA 공유',
               style: TextStyle(
-                color: Color(0xFF9347DC),
+                color: _avaShareAccent,
                 fontSize: 12,
                 fontWeight: FontWeight.w900,
               ),
@@ -1062,7 +1063,7 @@ class _ScreenShareSourceMessage extends StatelessWidget {
           Text(
             message,
             style: const TextStyle(
-              color: Color(0xFFC7C9D1),
+              color: _avaShareMutedText,
               fontSize: 14,
               fontWeight: FontWeight.w800,
             ),
@@ -1071,8 +1072,8 @@ class _ScreenShareSourceMessage extends StatelessWidget {
           OutlinedButton.icon(
             onPressed: onRetry,
             style: OutlinedButton.styleFrom(
-              foregroundColor: const Color(0xFFF2F3F5),
-              side: const BorderSide(color: Color(0xFF5E626D)),
+              foregroundColor: _avaShareText,
+              side: const BorderSide(color: _avaShareBorder),
             ),
             icon: const Icon(Icons.refresh, size: 18),
             label: const Text('다시 시도'),

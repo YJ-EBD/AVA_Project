@@ -19,6 +19,7 @@ public record ChatRoomResponse(
 	String avatarImageUrl,
 	ChatNoticeResponse notice,
 	List<UserProfileResponse> members,
-	int unreadCount
+	int unreadCount,
+	boolean mentioned
 ) {
 }

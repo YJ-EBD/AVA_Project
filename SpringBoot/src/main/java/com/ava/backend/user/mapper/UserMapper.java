@@ -16,6 +16,7 @@ public class UserMapper {
 	private static final String ONLINE = "\uC628\uB77C\uC778";
 	private static final String BACKGROUND = "\uBC31\uADF8\uB77C\uC6B4\uB4DC";
 	private static final String OFFLINE = "\uC624\uD504\uB77C\uC778";
+	private static final String AWAY = "\uC790\uB9AC\uBE44\uC6C0";
 	private static final Duration ACTIVE_STALE_AFTER = Duration.ofSeconds(45);
 	private static final Duration BACKGROUND_STALE_AFTER = Duration.ofMinutes(10);
 
@@ -49,12 +50,12 @@ public class UserMapper {
 	}
 
 	private String effectiveStatus(UserProfile profile) {
-		String status = profile.getStatus();
-		if (status == null || status.isBlank() || OFFLINE.equals(status)) {
+		String status = normalizeStatus(profile.getStatus());
+		if (OFFLINE.equals(status)) {
 			return OFFLINE;
 		}
 		if (!ONLINE.equals(status) && !BACKGROUND.equals(status)) {
-			return status;
+			return OFFLINE;
 		}
 
 		Instant updatedAt = profile.getPresenceUpdatedAt();
@@ -63,6 +64,25 @@ public class UserMapper {
 		}
 		Duration staleAfter = BACKGROUND.equals(status) ? BACKGROUND_STALE_AFTER : ACTIVE_STALE_AFTER;
 		return updatedAt.plus(staleAfter).isBefore(Instant.now()) ? OFFLINE : status;
+	}
+
+	private String normalizeStatus(String status) {
+		if (status == null || status.isBlank()) {
+			return OFFLINE;
+		}
+		String trimmed = status.trim();
+		if (ONLINE.equals(trimmed) || BACKGROUND.equals(trimmed) || OFFLINE.equals(trimmed)) {
+			return trimmed;
+		}
+		if (AWAY.equals(trimmed)) {
+			return BACKGROUND;
+		}
+		return switch (trimmed.toLowerCase()) {
+			case "online" -> ONLINE;
+			case "background", "away", "idle" -> BACKGROUND;
+			case "offline" -> OFFLINE;
+			default -> OFFLINE;
+		};
 	}
 
 	private String blankToDefault(String value, String defaultValue) {

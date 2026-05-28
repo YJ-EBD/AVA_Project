@@ -3,9 +3,14 @@ import 'package:flutter/material.dart';
 import '../../../../platform/window_control.dart';
 
 class AppWindowTitleBar extends StatelessWidget {
-  const AppWindowTitleBar({required this.title, super.key});
+  const AppWindowTitleBar({
+    required this.title,
+    this.logoAsset = 'assets/images/ava_app_icon.png',
+    super.key,
+  });
 
   final String title;
+  final String logoAsset;
 
   @override
   Widget build(BuildContext context) {
@@ -22,16 +27,37 @@ class AppWindowTitleBar extends StatelessWidget {
               behavior: HitTestBehavior.opaque,
               onPanStart: (_) => WindowControl.startDrag(),
               child: Padding(
-                padding: const EdgeInsets.only(left: 18),
+                padding: const EdgeInsets.only(left: 14),
                 child: Align(
                   alignment: Alignment.centerLeft,
-                  child: Text(
-                    title,
-                    style: const TextStyle(
-                      color: Colors.white,
-                      fontSize: 16,
-                      fontWeight: FontWeight.w800,
-                    ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      ClipOval(
+                        child: Image.asset(
+                          logoAsset,
+                          key: ValueKey('window-title-logo-$logoAsset'),
+                          width: 22,
+                          height: 22,
+                          fit: BoxFit.cover,
+                          errorBuilder: (context, error, stackTrace) =>
+                              const Icon(
+                                Icons.auto_awesome,
+                                color: Colors.white,
+                                size: 20,
+                              ),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Text(
+                        title,
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 16,
+                          fontWeight: FontWeight.w800,
+                        ),
+                      ),
+                    ],
                   ),
                 ),
               ),

@@ -1,6 +1,15 @@
 import 'package:flutter/material.dart';
 
-enum MessengerTab { friends, chats, azoom, avaAi, more }
+enum MessengerTab {
+  friends,
+  chats,
+  notifications,
+  calendar,
+  azoom,
+  avaStock,
+  avaAi,
+  more,
+}
 
 class PersonProfile {
   const PersonProfile({
@@ -95,6 +104,7 @@ class ChatRoom {
     this.lastActivityAt,
     this.participantCount,
     this.unreadCount = 0,
+    this.hasUnreadMention = false,
     this.isPinned = false,
     this.pinnedAt,
     this.isDraft = false,
@@ -112,6 +122,7 @@ class ChatRoom {
   final DateTime? lastActivityAt;
   final int? participantCount;
   final int unreadCount;
+  final bool hasUnreadMention;
   final bool isPinned;
   final DateTime? pinnedAt;
   final bool isDraft;
@@ -137,6 +148,7 @@ class ChatRoom {
     DateTime? lastActivityAt,
     int? participantCount,
     int? unreadCount,
+    bool? hasUnreadMention,
     bool? isPinned,
     DateTime? pinnedAt,
     bool clearPinnedAt = false,
@@ -155,6 +167,7 @@ class ChatRoom {
       lastActivityAt: lastActivityAt ?? this.lastActivityAt,
       participantCount: participantCount ?? this.participantCount,
       unreadCount: unreadCount ?? this.unreadCount,
+      hasUnreadMention: hasUnreadMention ?? this.hasUnreadMention,
       isPinned: isPinned ?? this.isPinned,
       pinnedAt: clearPinnedAt ? null : pinnedAt ?? this.pinnedAt,
       isDraft: isDraft ?? this.isDraft,
@@ -180,6 +193,13 @@ class ChatNotice {
   final DateTime? sentAt;
 }
 
+class ChatMention {
+  const ChatMention({required this.userId, required this.displayName});
+
+  final String userId;
+  final String displayName;
+}
+
 class ChatMessage {
   const ChatMessage({
     required this.sender,
@@ -194,7 +214,9 @@ class ChatMessage {
     this.isSilent = false,
     this.isSpoiler = false,
     this.spoilerRevealed = false,
+    this.deletedForEveryone = false,
     this.attachment,
+    this.mentions = const [],
   });
 
   final PersonProfile sender;
@@ -209,12 +231,20 @@ class ChatMessage {
   final bool isSilent;
   final bool isSpoiler;
   final bool spoilerRevealed;
+  final bool deletedForEveryone;
   final ChatAttachment? attachment;
+  final List<ChatMention> mentions;
+
+  bool mentionsUser(String? userId) =>
+      userId != null && mentions.any((mention) => mention.userId == userId);
 
   ChatMessage copyWith({
     int? unreadCount,
     bool? spoilerRevealed,
+    bool? deletedForEveryone,
     ChatAttachment? attachment,
+    List<ChatMention>? mentions,
+    bool clearAttachment = false,
   }) {
     return ChatMessage(
       sender: sender,
@@ -229,7 +259,9 @@ class ChatMessage {
       isSilent: isSilent,
       isSpoiler: isSpoiler,
       spoilerRevealed: spoilerRevealed ?? this.spoilerRevealed,
-      attachment: attachment ?? this.attachment,
+      deletedForEveryone: deletedForEveryone ?? this.deletedForEveryone,
+      attachment: clearAttachment ? null : attachment ?? this.attachment,
+      mentions: mentions ?? this.mentions,
     );
   }
 }
@@ -300,6 +332,21 @@ class ChatAttachment {
         lowerName.endsWith('.mpeg') ||
         lowerName.endsWith('.3gp') ||
         lowerName.endsWith('.3gpp');
+  }
+
+  bool get isAudio {
+    final content = contentType.toLowerCase();
+    if (content.startsWith('audio/')) {
+      return true;
+    }
+    final lowerName = fileName.toLowerCase();
+    return lowerName.endsWith('.m4a') ||
+        lowerName.endsWith('.aac') ||
+        lowerName.endsWith('.mp3') ||
+        lowerName.endsWith('.wav') ||
+        lowerName.endsWith('.ogg') ||
+        lowerName.endsWith('.opus') ||
+        lowerName.endsWith('.webm');
   }
 
   bool get hasFreshLocalFile {

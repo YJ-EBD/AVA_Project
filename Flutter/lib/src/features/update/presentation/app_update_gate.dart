@@ -28,7 +28,8 @@ class AppUpdateGate extends ConsumerStatefulWidget {
   ConsumerState<AppUpdateGate> createState() => _AppUpdateGateState();
 }
 
-class _AppUpdateGateState extends ConsumerState<AppUpdateGate> {
+class _AppUpdateGateState extends ConsumerState<AppUpdateGate>
+    with WidgetsBindingObserver {
   bool _checked = false;
   bool _checkScheduled = false;
   bool _checkInProgress = false;
@@ -42,10 +43,28 @@ class _AppUpdateGateState extends ConsumerState<AppUpdateGate> {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       unawaited(_checkPostUpdateNotice());
       _scheduleCheck(delay: const Duration(milliseconds: 1200));
     });
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state != AppLifecycleState.resumed || !_updatesSupported) {
+      return;
+    }
+    if (io.Platform.isAndroid) {
+      _checked = false;
+      _scheduleCheck(delay: const Duration(milliseconds: 500));
+    }
   }
 
   void _scheduleCheck({Duration delay = Duration.zero}) {
@@ -79,10 +98,10 @@ class _AppUpdateGateState extends ConsumerState<AppUpdateGate> {
       if (!mounted) {
         return;
       }
-      _checked = true;
       final manifest = await ref
           .read(appUpdateApiProvider)
           .latestForCurrentPlatform();
+      _checked = true;
       if (!mounted ||
           manifest == null ||
           !manifest.updateAvailable ||
@@ -103,6 +122,10 @@ class _AppUpdateGateState extends ConsumerState<AppUpdateGate> {
         builder: (context) => _AppUpdateDialog(manifest: manifest),
       );
     } on Object {
+      _checked = false;
+      if (io.Platform.isAndroid) {
+        _retryAfterCurrentCheck = true;
+      }
       // Update checks must never block normal app startup.
     } finally {
       _checkInProgress = false;

@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/services.dart';
 
 class WindowControl {
@@ -13,6 +15,8 @@ class WindowControl {
   _multiLeaveRoomsHandler;
   static Future<void> Function(String action, Map<String, Object?> arguments)?
   _newChatHandler;
+  static Future<void> Function(String action)? _trayActionHandler;
+  static Future<void> Function()? _quickAvaAiHandler;
   static Future<void> Function(String action, Map<String, Object?> arguments)?
   _profileHandler;
   static Future<void> Function(String action, Map<String, Object?> arguments)?
@@ -20,12 +24,16 @@ class WindowControl {
   static Future<void> Function(bool active)? _fileDragHandler;
   static Future<void> Function(List<String> paths)? _fileDropHandler;
   static bool _methodHandlerConfigured = false;
+  static bool _windowReadyScheduled = false;
 
   static void setNotificationReplyHandler(
     Future<void> Function(String roomId, String content)? handler,
   ) {
     _replyHandler = handler;
     _ensureMethodHandler();
+    if (handler != null) {
+      _scheduleWindowReady();
+    }
   }
 
   static void setFloatingHandler(
@@ -33,6 +41,9 @@ class WindowControl {
   ) {
     _floatingHandler = handler;
     _ensureMethodHandler();
+    if (handler != null) {
+      _scheduleWindowReady();
+    }
   }
 
   static void setProfilePopupHandler(
@@ -99,6 +110,18 @@ class WindowControl {
     _ensureMethodHandler();
   }
 
+  static void setTrayActionHandler(
+    Future<void> Function(String action)? handler,
+  ) {
+    _trayActionHandler = handler;
+    _ensureMethodHandler();
+  }
+
+  static void setQuickAvaAiHandler(Future<void> Function()? handler) {
+    _quickAvaAiHandler = handler;
+    _ensureMethodHandler();
+  }
+
   static Future<void> startDrag() async {
     await _invoke('startDrag');
   }
@@ -129,6 +152,14 @@ class WindowControl {
 
   static Future<void> showMessengerWindow() async {
     await _invoke('showMessengerWindow');
+  }
+
+  static Future<void> showQuickAvaAiWindow() async {
+    await _invoke('showQuickAvaAiWindow');
+  }
+
+  static Future<void> setQuickAvaAiEnabled(bool enabled) async {
+    await _invoke('setQuickAvaAiEnabled', {'enabled': enabled});
   }
 
   static Future<void> openAzoomMessenger() async {
@@ -444,6 +475,24 @@ class WindowControl {
     });
   }
 
+  static Future<String?> saveAttachmentToMediaStore({
+    required String sourcePath,
+    required String fileName,
+    required String mimeType,
+    bool notify = false,
+  }) async {
+    try {
+      return await _channel.invokeMethod<String>('saveAttachmentToMediaStore', {
+        'sourcePath': sourcePath,
+        'fileName': fileName,
+        'mimeType': mimeType,
+        'notify': notify,
+      });
+    } on MissingPluginException {
+      return null;
+    }
+  }
+
   static Future<void> showNewChatPopup({
     required List<Map<String, Object?>> users,
   }) async {
@@ -552,6 +601,23 @@ class WindowControl {
         return null;
       }
 
+      if (call.method == 'trayMenuAction') {
+        final action = args?['action'] as String? ?? '';
+        final currentHandler = _trayActionHandler;
+        if (currentHandler != null && action.isNotEmpty) {
+          await currentHandler(action);
+        }
+        return null;
+      }
+
+      if (call.method == 'quickAvaAiRequested') {
+        final currentHandler = _quickAvaAiHandler;
+        if (currentHandler != null) {
+          await currentHandler();
+        }
+        return null;
+      }
+
       if (call.method == 'fileDragState') {
         final currentHandler = _fileDragHandler;
         if (currentHandler != null) {
@@ -574,6 +640,23 @@ class WindowControl {
 
       return null;
     });
+  }
+
+  static void _scheduleWindowReady() {
+    if (_windowReadyScheduled) {
+      return;
+    }
+    _windowReadyScheduled = true;
+    unawaited(
+      Future<void>.microtask(() async {
+        _windowReadyScheduled = false;
+        try {
+          await _channel.invokeMethod<void>('windowReady');
+        } on MissingPluginException {
+          // Android is the only non-desktop target that currently implements it.
+        }
+      }),
+    );
   }
 
   static Future<void> _invoke(
