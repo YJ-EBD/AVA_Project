@@ -200,6 +200,9 @@ class _AvaAiPageState extends ConsumerState<AvaAiPage> {
   bool _draggingFile = false;
   bool _workspacePopupOpen = false;
   String _workspaceStatus = '';
+  final List<String> _workspaceToastQueue = [];
+  Timer? _workspaceToastTimer;
+  String _lastWorkspaceToastStatus = '';
   String _thinkingStatus = '';
   AvaAiCalendarWorkspaceDto _calendarWorkspace =
       AvaAiCalendarWorkspaceDto.empty();
@@ -243,6 +246,7 @@ class _AvaAiPageState extends ConsumerState<AvaAiPage> {
   void dispose() {
     _avaAiPageMemory.saveFrom(this);
     _workspaceStatePersistTimer?.cancel();
+    _workspaceToastTimer?.cancel();
     _persistWorkspaceStateSync();
     WindowControl.setFileDropHandler();
     _inputController.dispose();
@@ -451,6 +455,10 @@ class _AvaAiPageState extends ConsumerState<AvaAiPage> {
         return;
       }
       final calendarWorkspace = exchange.calendarWorkspace;
+      final nextWorkspaceStatus = _statusWithAgent(
+        exchange.workspaceStatus,
+        exchange.agentTask,
+      );
       setState(() {
         _messages.removeWhere((message) => message.id == tempUser.id);
         _messages
@@ -472,10 +480,7 @@ class _AvaAiPageState extends ConsumerState<AvaAiPage> {
                   .map((item) => item.path),
             );
         }
-        _workspaceStatus = _statusWithAgent(
-          exchange.workspaceStatus,
-          exchange.agentTask,
-        );
+        _workspaceStatus = nextWorkspaceStatus;
         if (calendarWorkspace.hasSignal) {
           _calendarWorkspace = calendarWorkspace;
           _workspaceMode = _AvaAiWorkspaceMode.schedule;
@@ -484,6 +489,7 @@ class _AvaAiPageState extends ConsumerState<AvaAiPage> {
         _workspaceBusy = false;
         _thinkingStatus = '';
       });
+      _showWorkspaceStatusToasts(nextWorkspaceStatus);
       if (calendarWorkspace.mutation) {
         unawaited(_refreshCalendarFromAiWorkspace(calendarWorkspace));
       }
@@ -589,6 +595,58 @@ class _AvaAiPageState extends ConsumerState<AvaAiPage> {
       return agentStatus;
     }
     return '$workspaceStatus\n$agentStatus';
+  }
+
+  void _showWorkspaceStatusToasts(String status) {
+    final normalizedStatus = status.trim();
+    if (normalizedStatus.isEmpty ||
+        normalizedStatus == _lastWorkspaceToastStatus ||
+        !mounted) {
+      return;
+    }
+    _lastWorkspaceToastStatus = normalizedStatus;
+    final messages = normalizedStatus
+        .split(RegExp(r'[\r\n]+'))
+        .map((line) => line.trim())
+        .where((line) => line.isNotEmpty)
+        .expand(_splitWorkspaceToastLine)
+        .toList();
+    if (messages.isEmpty) {
+      return;
+    }
+    _workspaceToastQueue
+      ..clear()
+      ..addAll(messages);
+    _workspaceToastTimer?.cancel();
+    _showNextWorkspaceToast();
+  }
+
+  Iterable<String> _splitWorkspaceToastLine(String line) {
+    if (line.length <= 44) {
+      return [line];
+    }
+    final parts = line
+        .split(RegExp(r'\s*[·•]\s*'))
+        .map((part) => part.trim())
+        .where((part) => part.isNotEmpty)
+        .toList();
+    return parts.length > 1 ? parts : [line];
+  }
+
+  void _showNextWorkspaceToast() {
+    if (!mounted || _workspaceToastQueue.isEmpty) {
+      return;
+    }
+    final message = _workspaceToastQueue.removeAt(0);
+    showAvaToast(
+      context,
+      message,
+      duration: const Duration(milliseconds: 1700),
+      bottom: 150,
+    );
+    _workspaceToastTimer = Timer(const Duration(milliseconds: 1900), () {
+      _showNextWorkspaceToast();
+    });
   }
 
   bool _isCalendarWorkspaceCommand(String text) {
@@ -2300,34 +2358,11 @@ class _AvaAiWorkspacePanel extends StatelessWidget {
                   ],
                 ),
               ),
-              if (status.isNotEmpty || busy)
-                Container(
-                  width: double.infinity,
-                  padding: const EdgeInsets.fromLTRB(16, 10, 16, 10),
-                  color: const Color(0xFFEFF4F8),
-                  child: Row(
-                    children: [
-                      if (busy)
-                        const SizedBox.square(
-                          dimension: 14,
-                          child: CircularProgressIndicator(
-                            strokeWidth: 2,
-                            color: Color(0xFF8E8E8E),
-                          ),
-                        ),
-                      if (busy) const SizedBox(width: 9),
-                      Expanded(
-                        child: Text(
-                          status.isEmpty ? '작업공간을 불러오고 있습니다.' : status,
-                          style: const TextStyle(
-                            color: Color(0xFF425461),
-                            fontSize: 12,
-                            fontWeight: FontWeight.w700,
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
+              if (busy)
+                const LinearProgressIndicator(
+                  minHeight: 2,
+                  backgroundColor: Color(0xFFEFF4F8),
+                  color: Color(0xFF5667C9),
                 ),
               if (currentPath.isNotEmpty)
                 Container(

@@ -1,9 +1,10 @@
 import 'dart:async';
+import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 
-const _avaToastWidth = 250.0;
-const _avaToastHeight = 42.0;
+const _avaToastMaxWidth = 360.0;
+const _avaToastHeight = 54.0;
 
 void showAvaToast(
   BuildContext context,
@@ -57,8 +58,10 @@ class _AvaToastBubble extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final availableWidth = MediaQuery.sizeOf(context).width - 32;
+    final toastWidth = math.min(_avaToastMaxWidth, availableWidth);
     return SizedBox(
-      width: _avaToastWidth,
+      width: toastWidth,
       height: _avaToastHeight,
       child: DecoratedBox(
         decoration: BoxDecoration(
@@ -70,7 +73,7 @@ class _AvaToastBubble extends StatelessWidget {
             padding: const EdgeInsets.symmetric(horizontal: 18),
             child: Text(
               message,
-              maxLines: 1,
+              maxLines: 2,
               overflow: TextOverflow.ellipsis,
               textAlign: TextAlign.center,
               style: const TextStyle(
