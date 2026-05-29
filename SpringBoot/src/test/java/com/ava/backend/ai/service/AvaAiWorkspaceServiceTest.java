@@ -23,8 +23,10 @@ import org.springframework.data.domain.Pageable;
 
 import com.ava.backend.auth.security.AuthPrincipal;
 import com.ava.backend.chat.dto.ChatRoomResponse;
+import com.ava.backend.chat.dto.ChatTalkDrawerItemResponse;
 import com.ava.backend.chat.entity.ChatMessageEntity;
 import com.ava.backend.chat.entity.ChatRoomType;
+import com.ava.backend.chat.entity.ChatTalkDrawerMediaType;
 import com.ava.backend.chat.repository.ChatMessageJpaRepository;
 import com.ava.backend.chat.service.ChatService;
 import com.ava.backend.user.dto.UserProfileResponse;
@@ -178,6 +180,177 @@ class AvaAiWorkspaceServiceTest {
 			result.items().stream().anyMatch(item -> item.type().equals("file") || item.title().contains("FORIVER_NAS")),
 			"Sent-file history should not fall through into unrelated NAS file search results."
 		);
+	}
+
+	@Test
+	void sentFileHistoryPromptExpandsRecentWhenYesterdayIsOnlyApproximate() throws Exception {
+		UUID senderId = UUID.randomUUID();
+		UUID recipientId = UUID.randomUUID();
+		AuthPrincipal principal = new AuthPrincipal(
+			senderId,
+			"sender@ava.local",
+			"박주한",
+			UserRole.USER,
+			"test-session"
+		);
+		Instant sentAt = LocalDate.now(ZoneId.of("Asia/Seoul"))
+			.atTime(0, 6)
+			.atZone(ZoneId.of("Asia/Seoul"))
+			.toInstant();
+		ChatService chatService = mock(ChatService.class);
+		ChatMessageJpaRepository messageRepository = mock(ChatMessageJpaRepository.class);
+		ChatMessageEntity attachment = sentAttachment(
+			"direct-test",
+			senderId,
+			"박주한",
+			"Bereborn [Tron].zip",
+			"application/zip",
+			1_250_000,
+			sentAt
+		);
+		ChatRoomResponse room = new ChatRoomResponse(
+			"direct-test",
+			"박주한",
+			ChatRoomType.DIRECT,
+			2,
+			false,
+			null,
+			"Bereborn [Tron].zip",
+			sentAt,
+			false,
+			"",
+			null,
+			List.of(
+				profile(senderId, "sender@ava.local", "나"),
+				profile(recipientId, "receiver@ava.local", "박주한")
+			),
+			0,
+			false
+		);
+		when(chatService.rooms(principal)).thenReturn(List.of(room));
+		when(messageRepository.findByRoomCodeAndSentAtGreaterThanEqualAndSentAtLessThanOrderBySentAtDesc(
+			eq("direct-test"),
+			any(Instant.class),
+			any(Instant.class),
+			any(Pageable.class)
+		)).thenReturn(List.of()).thenReturn(List.of(attachment));
+
+		AvaAiWorkspaceService service = new AvaAiWorkspaceService(
+			chatService,
+			messageRepository,
+			null,
+			null,
+			null,
+			null,
+			null,
+			null,
+			workspaceRoot.toString(),
+			"AVA_AI_Workspace",
+			workspaceRoot.resolve("ChatUploads").toString()
+		);
+
+		AvaAiWorkspaceService.WorkspaceActionResult result = service.inspectPrompt(
+			"어제 누구한테 파일을 보냈던거 같은데 뭐였지?",
+			principal,
+			List.of(),
+			List.of()
+		);
+
+		assertTrue(result.handled());
+		assertTrue(result.status().contains("최근 7"), result.status());
+		assertTrue(result.status().contains("Bereborn [Tron].zip"), result.status());
+		assertTrue(result.items().stream().anyMatch(item -> item.title().equals("Bereborn [Tron].zip")));
+		assertTrue(result.items().stream().anyMatch(item -> item.type().equals("user_profile") && item.title().contains("박주한")));
+	}
+
+	@Test
+	void sentFileHistoryPromptFallsBackToTalkDrawerAttachments() throws Exception {
+		UUID senderId = UUID.randomUUID();
+		UUID recipientId = UUID.randomUUID();
+		AuthPrincipal principal = new AuthPrincipal(
+			senderId,
+			"sender@ava.local",
+			"박주한",
+			UserRole.USER,
+			"test-session"
+		);
+		Instant sentAt = LocalDate.now(ZoneId.of("Asia/Seoul"))
+			.minusDays(1)
+			.atTime(12, 6)
+			.atZone(ZoneId.of("Asia/Seoul"))
+			.toInstant();
+		ChatService chatService = mock(ChatService.class);
+		ChatMessageJpaRepository messageRepository = mock(ChatMessageJpaRepository.class);
+		ChatRoomResponse room = new ChatRoomResponse(
+			"direct-test",
+			"박주한",
+			ChatRoomType.DIRECT,
+			2,
+			false,
+			null,
+			"Bereborn [Tron] 원본.zip",
+			sentAt,
+			false,
+			"",
+			null,
+			List.of(
+				profile(senderId, "sender@ava.local", "나"),
+				profile(recipientId, "receiver@ava.local", "박주한")
+			),
+			0,
+			false
+		);
+		ChatTalkDrawerItemResponse drawerItem = new ChatTalkDrawerItemResponse(
+			UUID.randomUUID(),
+			"ABBA-S",
+			"direct-test",
+			UUID.randomUUID().toString(),
+			"attachment-1",
+			"group-1",
+			"Bereborn [Tron] 원본.zip",
+			"application/zip",
+			4_120_000,
+			ChatTalkDrawerMediaType.FILE,
+			"/api/chat/rooms/direct-test/attachments/attachment-1",
+			"",
+			senderId,
+			"박주한",
+			sentAt
+		);
+		when(chatService.rooms(principal)).thenReturn(List.of(room));
+		when(messageRepository.findByRoomCodeAndSentAtGreaterThanEqualAndSentAtLessThanOrderBySentAtDesc(
+			eq("direct-test"),
+			any(Instant.class),
+			any(Instant.class),
+			any(Pageable.class)
+		)).thenReturn(List.of());
+		when(chatService.talkDrawerItems("direct-test", null, principal)).thenReturn(List.of(drawerItem));
+
+		AvaAiWorkspaceService service = new AvaAiWorkspaceService(
+			chatService,
+			messageRepository,
+			null,
+			null,
+			null,
+			null,
+			null,
+			null,
+			workspaceRoot.toString(),
+			"AVA_AI_Workspace",
+			workspaceRoot.resolve("ChatUploads").toString()
+		);
+
+		AvaAiWorkspaceService.WorkspaceActionResult result = service.inspectPrompt(
+			"어제 누구한테 파일을 보냈던거 같은데 뭐였지?",
+			principal,
+			List.of(),
+			List.of()
+		);
+
+		assertTrue(result.handled());
+		assertTrue(result.status().contains("Bereborn [Tron] 원본.zip"), result.status());
+		assertTrue(result.items().stream().anyMatch(item -> item.title().equals("Bereborn [Tron] 원본.zip")));
+		assertTrue(result.items().stream().anyMatch(item -> item.type().equals("chat_room") && item.roomCode().equals("direct-test")));
 	}
 
 	@Test

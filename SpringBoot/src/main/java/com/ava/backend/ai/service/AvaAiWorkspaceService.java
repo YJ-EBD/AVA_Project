@@ -1596,14 +1596,17 @@ public class AvaAiWorkspaceService {
 			return new WorkspaceActionResult(List.of(), status, status, true);
 		}
 
-		List<AvaAiWorkspaceItemResponse> items = searchSentChatFiles(prompt, principal);
-		String label = sentFileHistoryWindow(normalized).label();
+		SentFileHistorySearchResult search = searchSentChatFilesDetailed(prompt, principal);
+		List<AvaAiWorkspaceItemResponse> items = search.items();
+		String label = search.window().label();
 		long fileCount = items.stream()
 			.filter(item -> "chat_file".equals(item.type()) || "chat_image".equals(item.type()))
 			.count();
 		String status;
 		if (fileCount == 0) {
-			status = label + " 채팅으로 보낸 파일 이력이 없습니다. 채팅 첨부 기록 기준으로 확인했습니다.";
+			status = search.expanded()
+				? search.requestedLabel() + " 채팅으로 보낸 파일은 없어서 최근 7일까지 넓혀 확인했지만 보낸 파일 이력이 없습니다."
+				: label + " 채팅으로 보낸 파일 이력이 없습니다. 채팅 첨부 기록 기준으로 확인했습니다.";
 		} else {
 			String preview = items.stream()
 				.filter(item -> "chat_file".equals(item.type()) || "chat_image".equals(item.type()))
@@ -1611,7 +1614,10 @@ public class AvaAiWorkspaceService {
 				.map(item -> "- " + item.title() + " / " + item.subtitle())
 				.reduce((first, second) -> first + "\n" + second)
 				.orElse("");
-			status = label + " 채팅으로 보낸 파일 " + fileCount + "개를 찾았습니다.\n"
+			String prefix = search.expanded()
+				? search.requestedLabel() + " 기준으로는 정확한 파일이 없어 최근 7일까지 넓혀 "
+				: label + " 채팅으로 ";
+			status = prefix + "보낸 파일 " + fileCount + "개를 찾았습니다.\n"
 				+ preview
 				+ "\n작업공간에 파일, 채팅방, 수신자 프로필을 함께 표시했습니다.";
 		}
@@ -1619,15 +1625,34 @@ public class AvaAiWorkspaceService {
 	}
 
 	public List<AvaAiWorkspaceItemResponse> searchSentChatFiles(String query, AuthPrincipal principal) {
+		return searchSentChatFilesDetailed(query, principal).items();
+	}
+
+	private SentFileHistorySearchResult searchSentChatFilesDetailed(String query, AuthPrincipal principal) {
 		if (principal == null || chatService == null || chatMessageRepository == null) {
-			return List.of();
+			return new SentFileHistorySearchResult(List.of(), sentFileHistoryWindow(""), false, "");
 		}
 		String normalized = normalize(query).toLowerCase(Locale.ROOT);
-		SentFileHistoryWindow window = sentFileHistoryWindow(normalized);
+		SentFileHistoryWindow requestedWindow = sentFileHistoryWindow(normalized);
 		List<String> tokens = sentFileHistoryTokens(normalized);
+		List<AvaAiWorkspaceItemResponse> items = searchSentChatFilesForWindow(principal, requestedWindow, tokens);
+		if (items.isEmpty() && requestedWindow.canExpandToRecent()) {
+			SentFileHistoryWindow expandedWindow = recentSentFileHistoryWindow();
+			items = searchSentChatFilesForWindow(principal, expandedWindow, tokens);
+			return new SentFileHistorySearchResult(items, expandedWindow, true, requestedWindow.label());
+		}
+		return new SentFileHistorySearchResult(items, requestedWindow, false, requestedWindow.label());
+	}
+
+	private List<AvaAiWorkspaceItemResponse> searchSentChatFilesForWindow(
+		AuthPrincipal principal,
+		SentFileHistoryWindow window,
+		List<String> tokens
+	) {
 		List<AvaAiWorkspaceItemResponse> fileItems = new ArrayList<>();
 		List<AvaAiWorkspaceItemResponse> roomItems = new ArrayList<>();
 		List<AvaAiWorkspaceItemResponse> profileItems = new ArrayList<>();
+		Set<String> seenAttachments = new LinkedHashSet<>();
 		Set<String> seenRooms = new LinkedHashSet<>();
 		Set<String> seenProfiles = new LinkedHashSet<>();
 
@@ -1648,6 +1673,9 @@ public class AvaAiWorkspaceService {
 				if (!sentFileHistoryMatchesTokens(tokens, room, message, recipients)) {
 					continue;
 				}
+				if (!seenAttachments.add(sentFileAttachmentKey(message))) {
+					continue;
+				}
 				matchedInRoom++;
 				fileItems.add(sentChatFileItem(room, message, recipients));
 				if (seenRooms.add(room.code())) {
@@ -1659,6 +1687,37 @@ public class AvaAiWorkspaceService {
 						: recipient.id().toString();
 					if (seenProfiles.add(key)) {
 						profileItems.add(sentFileRecipientItem(room, recipient, message));
+					}
+				}
+			}
+			for (ChatTalkDrawerItemResponse drawerItem : sentFileCandidateDrawerItems(room, window, principal)) {
+				if (fileItems.size() >= MAX_CHAT_RESULTS) {
+					break;
+				}
+				if (drawerItem.uploadedByAccountId() == null || !principal.userId().equals(drawerItem.uploadedByAccountId())) {
+					continue;
+				}
+				if (!window.matches(drawerItem.uploadedAt())) {
+					continue;
+				}
+				List<UserProfileResponse> recipients = recipientProfiles(room, principal);
+				if (!sentFileHistoryMatchesTokens(tokens, room, drawerItem, recipients)) {
+					continue;
+				}
+				if (!seenAttachments.add(sentFileAttachmentKey(drawerItem))) {
+					continue;
+				}
+				matchedInRoom++;
+				fileItems.add(sentChatDrawerItem(room, drawerItem, recipients));
+				if (seenRooms.add(room.code())) {
+					roomItems.add(sentFileRoomItem(room, recipients));
+				}
+				for (UserProfileResponse recipient : recipients) {
+					String key = recipient.id() == null
+						? profileDisplayName(recipient)
+						: recipient.id().toString();
+					if (seenProfiles.add(key)) {
+						profileItems.add(sentFileRecipientItem(room, recipient, drawerItem));
 					}
 				}
 			}
@@ -2714,6 +2773,25 @@ public class AvaAiWorkspaceService {
 		return chatMessageRepository.findByRoomCodeOrderBySentAtDesc(room.code(), PageRequest.of(0, 240));
 	}
 
+	private List<ChatTalkDrawerItemResponse> sentFileCandidateDrawerItems(
+		ChatRoomResponse room,
+		SentFileHistoryWindow window,
+		AuthPrincipal principal
+	) {
+		try {
+			List<ChatTalkDrawerItemResponse> items = chatService.talkDrawerItems(room.code(), null, principal);
+			if (items == null || items.isEmpty()) {
+				return List.of();
+			}
+			return items.stream()
+				.filter(item -> window.matches(item.uploadedAt()))
+				.limit(240)
+				.toList();
+		} catch (RuntimeException ignored) {
+			return List.of();
+		}
+	}
+
 	private AvaAiWorkspaceItemResponse sentChatFileItem(
 		ChatRoomResponse room,
 		ChatMessageEntity message,
@@ -2745,6 +2823,36 @@ public class AvaAiWorkspaceService {
 		);
 	}
 
+	private AvaAiWorkspaceItemResponse sentChatDrawerItem(
+		ChatRoomResponse room,
+		ChatTalkDrawerItemResponse drawerItem,
+		List<UserProfileResponse> recipients
+	) {
+		String fileName = drawerItem.fileName() == null || drawerItem.fileName().isBlank()
+			? "attachment"
+			: drawerItem.fileName();
+		boolean image = drawerItem.mediaType() == ChatTalkDrawerMediaType.IMAGE;
+		String recipientNames = recipientLabel(room, recipients);
+		String content = String.join("\n",
+			"받는 사람: " + recipientNames,
+			"채팅방: " + room.title(),
+			"보낸 시각: " + localTimeLabel(drawerItem.uploadedAt()),
+			"파일명: " + fileName
+		);
+		return new AvaAiWorkspaceItemResponse(
+			image ? "chat_image" : "chat_file",
+			fileName,
+			recipientNames + " · " + localTimeLabel(drawerItem.uploadedAt()),
+			"",
+			drawerItem.downloadUrl(),
+			image ? drawerItem.downloadUrl() : "",
+			content,
+			drawerItem.size(),
+			drawerItem.uploadedAt(),
+			room.code()
+		);
+	}
+
 	private AvaAiWorkspaceItemResponse sentFileRoomItem(
 		ChatRoomResponse room,
 		List<UserProfileResponse> recipients
@@ -2759,6 +2867,33 @@ public class AvaAiWorkspaceService {
 			"해당 채팅방으로 파일을 보낸 이력이 있습니다.",
 			null,
 			room.lastMessageAt(),
+			room.code()
+		);
+	}
+
+	private AvaAiWorkspaceItemResponse sentFileRecipientItem(
+		ChatRoomResponse room,
+		UserProfileResponse recipient,
+		ChatTalkDrawerItemResponse drawerItem
+	) {
+		String name = profileDisplayName(recipient);
+		String subtitle = profileSubtitle(recipient);
+		String content = String.join("\n",
+			"수신자: " + name,
+			"채팅방: " + room.title(),
+			"마지막 확인 파일: " + (drawerItem.fileName() == null ? "attachment" : drawerItem.fileName()),
+			"보낸 시각: " + localTimeLabel(drawerItem.uploadedAt())
+		);
+		return new AvaAiWorkspaceItemResponse(
+			"user_profile",
+			name,
+			subtitle,
+			"",
+			"",
+			recipient.avatarImageUrl() == null ? "" : recipient.avatarImageUrl(),
+			content,
+			null,
+			drawerItem.uploadedAt(),
 			room.code()
 		);
 	}
@@ -2889,6 +3024,52 @@ public class AvaAiWorkspaceService {
 		return normalizeSearchText(builder.toString());
 	}
 
+	private boolean sentFileHistoryMatchesTokens(
+		List<String> tokens,
+		ChatRoomResponse room,
+		ChatTalkDrawerItemResponse drawerItem,
+		List<UserProfileResponse> recipients
+	) {
+		if (tokens.isEmpty()) {
+			return true;
+		}
+		String haystack = sentFileHistoryHaystack(room, drawerItem, recipients);
+		return tokens.stream().anyMatch(haystack::contains);
+	}
+
+	private String sentFileHistoryHaystack(
+		ChatRoomResponse room,
+		ChatTalkDrawerItemResponse drawerItem,
+		List<UserProfileResponse> recipients
+	) {
+		StringBuilder builder = new StringBuilder();
+		builder.append(room.title()).append(' ');
+		builder.append(drawerItem.fileName()).append(' ');
+		builder.append(drawerItem.contentType()).append(' ');
+		builder.append(drawerItem.uploadedByName()).append(' ');
+		for (UserProfileResponse recipient : recipients) {
+			builder.append(profileDisplayName(recipient)).append(' ');
+			builder.append(recipient.email()).append(' ');
+			builder.append(recipient.department()).append(' ');
+			builder.append(recipient.position()).append(' ');
+		}
+		return normalizeSearchText(builder.toString());
+	}
+
+	private String sentFileAttachmentKey(ChatMessageEntity message) {
+		if (message.getAttachmentId() != null && !message.getAttachmentId().isBlank()) {
+			return message.getAttachmentId();
+		}
+		return "message:" + message.getId();
+	}
+
+	private String sentFileAttachmentKey(ChatTalkDrawerItemResponse drawerItem) {
+		if (drawerItem.attachmentId() != null && !drawerItem.attachmentId().isBlank()) {
+			return drawerItem.attachmentId();
+		}
+		return "drawer:" + drawerItem.id();
+	}
+
 	private List<String> sentFileHistoryTokens(String normalized) {
 		List<String> candidates = tokens(normalized, SENT_FILE_HISTORY_STOPWORDS);
 		return candidates.stream()
@@ -2928,6 +3109,13 @@ public class AvaAiWorkspaceService {
 			label = "최근 30일";
 		}
 		return new SentFileHistoryWindow(start, end, label);
+	}
+
+	private SentFileHistoryWindow recentSentFileHistoryWindow() {
+		LocalDate today = LocalDate.now(WORKSPACE_TIME_ZONE);
+		Instant start = today.minusDays(7).atStartOfDay(WORKSPACE_TIME_ZONE).toInstant();
+		Instant end = today.plusDays(1).atStartOfDay(WORKSPACE_TIME_ZONE).toInstant();
+		return new SentFileHistoryWindow(start, end, "최근 7일");
 	}
 
 	private boolean hasChatIntent(String value) {
@@ -3521,6 +3709,14 @@ public class AvaAiWorkspaceService {
 		}
 	}
 
+	private record SentFileHistorySearchResult(
+		List<AvaAiWorkspaceItemResponse> items,
+		SentFileHistoryWindow window,
+		boolean expanded,
+		String requestedLabel
+	) {
+	}
+
 	private record SentFileHistoryWindow(Instant start, Instant end, String label) {
 		boolean matches(Instant instant) {
 			if (instant == null) {
@@ -3530,6 +3726,10 @@ public class AvaAiWorkspaceService {
 				return false;
 			}
 			return end == null || instant.isBefore(end);
+		}
+
+		boolean canExpandToRecent() {
+			return "오늘".equals(label) || "어제".equals(label) || "그제".equals(label);
 		}
 	}
 }
