@@ -47,6 +47,44 @@ extension _AvaAiWorkspaceModeLabel on _AvaAiWorkspaceMode {
   }
 }
 
+bool avaAiWorkspaceResponseHasSignal(AvaAiChatExchangeDto exchange) {
+  return exchange.workspaceItems.isNotEmpty ||
+      exchange.workspaceStatus.trim().isNotEmpty;
+}
+
+List<AvaAiWorkspaceItemDto> sanitizeAvaAiWorkspaceItemsForStatus(
+  String workspaceStatus,
+  List<AvaAiWorkspaceItemDto> items,
+) {
+  if (!_avaAiWorkspaceStatusIndicatesEmptyResult(workspaceStatus)) {
+    return List.unmodifiable(items);
+  }
+  return const [];
+}
+
+bool _avaAiWorkspaceStatusIndicatesEmptyResult(String workspaceStatus) {
+  final normalized = workspaceStatus
+      .replaceAll(RegExp(r'\s+'), ' ')
+      .toLowerCase()
+      .trim();
+  if (normalized.isEmpty) {
+    return false;
+  }
+  const emptySignals = [
+    '이력이 없습니다',
+    '검색 결과가 없습니다',
+    '결과가 없습니다',
+    '찾지 못했습니다',
+    '찾을 수 없습니다',
+    '보낸 파일은 없어서',
+    '넓혀 확인했지만',
+    '해당하는 파일을 찾지 못했습니다',
+    'no results',
+    'not found',
+  ];
+  return emptySignals.any(normalized.contains);
+}
+
 class _AvaAiPageMemory {
   final List<_AvaAiUiMessage> messages = [];
   final List<_AvaAiChatSnapshot> chatSnapshots = [];
@@ -68,6 +106,10 @@ class _AvaAiPageMemory {
     if (!hasState) {
       return;
     }
+    final restoredWorkspaceItems = sanitizeAvaAiWorkspaceItemsForStatus(
+      workspaceStatus,
+      workspaceItems,
+    );
     state._messages
       ..clear()
       ..addAll(messages);
@@ -76,10 +118,14 @@ class _AvaAiPageMemory {
       ..addAll(chatSnapshots);
     state._workspaceItems
       ..clear()
-      ..addAll(workspaceItems);
+      ..addAll(restoredWorkspaceItems);
     state._selectedWorkspacePaths
       ..clear()
-      ..addAll(selectedWorkspacePaths);
+      ..addAll(
+        restoredWorkspaceItems.isEmpty
+            ? const <String>{}
+            : selectedWorkspacePaths,
+      );
     state._workspacePath = workspacePath;
     state._workspaceStatus = workspaceStatus;
     state._workspaceMode = workspaceMode;
@@ -282,15 +328,24 @@ class _AvaAiPageState extends ConsumerState<AvaAiPage> {
       if (!mounted || _activeUserKey != userKey) {
         return;
       }
+      final restoredWorkspaceStatus = snapshot?.workspaceStatus ?? '';
+      final restoredWorkspaceItems = sanitizeAvaAiWorkspaceItemsForStatus(
+        restoredWorkspaceStatus,
+        snapshot?.items ?? const [],
+      );
       setState(() {
         _workspaceItems
           ..clear()
-          ..addAll(snapshot?.items ?? const []);
+          ..addAll(restoredWorkspaceItems);
         _selectedWorkspacePaths
           ..clear()
-          ..addAll(snapshot?.selectedPaths ?? const {});
+          ..addAll(
+            restoredWorkspaceItems.isEmpty
+                ? const <String>{}
+                : snapshot?.selectedPaths ?? const {},
+          );
         _workspacePath = snapshot?.workspacePath ?? '';
-        _workspaceStatus = snapshot?.workspaceStatus ?? '';
+        _workspaceStatus = restoredWorkspaceStatus;
         _calendarWorkspace =
             snapshot?.calendarWorkspace ?? AvaAiCalendarWorkspaceDto.empty();
         _loadedWorkspaceStateUserKey = userKey;
@@ -401,14 +456,18 @@ class _AvaAiPageState extends ConsumerState<AvaAiPage> {
         _messages
           ..add(_AvaAiUiMessage.fromDto(exchange.userMessage))
           ..add(_AvaAiUiMessage.fromDto(exchange.assistantMessage));
-        if (exchange.workspaceItems.isNotEmpty) {
+        if (avaAiWorkspaceResponseHasSignal(exchange)) {
+          final nextWorkspaceItems = sanitizeAvaAiWorkspaceItemsForStatus(
+            exchange.workspaceStatus,
+            exchange.workspaceItems,
+          );
           _workspaceItems
             ..clear()
-            ..addAll(exchange.workspaceItems);
+            ..addAll(nextWorkspaceItems);
           _selectedWorkspacePaths
             ..clear()
             ..addAll(
-              exchange.workspaceItems
+              nextWorkspaceItems
                   .where((item) => item.isSendableFile)
                   .map((item) => item.path),
             );
