@@ -4430,6 +4430,8 @@ IconData _workspaceIcon(String type) {
     'chat_message' => Icons.chat_bubble,
     'chat_image' => Icons.image,
     'chat_file' => Icons.attach_file,
+    'chat_room' => Icons.forum,
+    'user_profile' => Icons.person,
     'meeting_batch' => Icons.description,
     _ => Icons.insert_drive_file,
   };

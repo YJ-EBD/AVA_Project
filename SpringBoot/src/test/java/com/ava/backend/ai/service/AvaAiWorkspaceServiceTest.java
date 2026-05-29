@@ -2,14 +2,33 @@ package com.ava.backend.ai.service;
 
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
 
+import java.lang.reflect.Field;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.Instant;
+import java.time.LocalDate;
+import java.time.ZoneId;
 import java.util.List;
+import java.util.UUID;
 
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.io.TempDir;
+import org.springframework.data.domain.Pageable;
+
+import com.ava.backend.auth.security.AuthPrincipal;
+import com.ava.backend.chat.dto.ChatRoomResponse;
+import com.ava.backend.chat.entity.ChatMessageEntity;
+import com.ava.backend.chat.entity.ChatRoomType;
+import com.ava.backend.chat.repository.ChatMessageJpaRepository;
+import com.ava.backend.chat.service.ChatService;
+import com.ava.backend.user.dto.UserProfileResponse;
+import com.ava.backend.user.entity.UserRole;
 
 class AvaAiWorkspaceServiceTest {
 
@@ -63,6 +82,102 @@ class AvaAiWorkspaceServiceTest {
 		);
 
 		assertTrue(escapedSlashResult.handled(), "Expected doubled Windows slashes to resolve as the same alias path.");
+	}
+
+	@Test
+	void sentFileHistoryPromptSurfacesChatAttachmentsRoomsAndRecipients() throws Exception {
+		UUID senderId = UUID.randomUUID();
+		UUID recipientId = UUID.randomUUID();
+		AuthPrincipal principal = new AuthPrincipal(
+			senderId,
+			"sender@ava.local",
+			"박주한",
+			UserRole.USER,
+			"test-session"
+		);
+		Instant sentAt = LocalDate.now(ZoneId.of("Asia/Seoul"))
+			.minusDays(1)
+			.atTime(15, 20)
+			.atZone(ZoneId.of("Asia/Seoul"))
+			.toInstant();
+		ChatService chatService = mock(ChatService.class);
+		ChatMessageJpaRepository messageRepository = mock(ChatMessageJpaRepository.class);
+		ChatMessageEntity attachment = sentAttachment(
+			"direct-test",
+			senderId,
+			"박주한",
+			"견적서.pdf",
+			"application/pdf",
+			24_000,
+			sentAt
+		);
+		ChatRoomResponse room = new ChatRoomResponse(
+			"direct-test",
+			"박보검",
+			ChatRoomType.DIRECT,
+			2,
+			false,
+			null,
+			"견적서.pdf",
+			sentAt,
+			false,
+			"",
+			null,
+			List.of(
+				profile(senderId, "sender@ava.local", "박주한"),
+				profile(recipientId, "receiver@ava.local", "박보검")
+			),
+			0,
+			false
+		);
+		when(chatService.rooms(principal)).thenReturn(List.of(room));
+		when(messageRepository.findByRoomCodeAndSentAtGreaterThanEqualAndSentAtLessThanOrderBySentAtDesc(
+			eq("direct-test"),
+			any(Instant.class),
+			any(Instant.class),
+			any(Pageable.class)
+		)).thenReturn(List.of(attachment));
+
+		AvaAiWorkspaceService service = new AvaAiWorkspaceService(
+			chatService,
+			messageRepository,
+			null,
+			null,
+			null,
+			null,
+			null,
+			null,
+			workspaceRoot.toString(),
+			"AVA_AI_Workspace",
+			workspaceRoot.resolve("ChatUploads").toString()
+		);
+
+		AvaAiWorkspaceService.WorkspaceActionResult result = service.inspectPrompt(
+			"어제 누구한테 파일을 보냈던거 같은데 뭐였지?",
+			principal,
+			List.of(),
+			List.of()
+		);
+
+		assertTrue(result.handled(), "Expected sent-file history prompts to be handled before NAS search.");
+		assertTrue(result.status().contains("견적서.pdf"), result.status());
+		assertTrue(result.status().contains("박보검"), result.status());
+		assertTrue(
+			result.items().stream().anyMatch(item -> item.type().equals("chat_file")),
+			"Expected the sent file to appear as a chat file card."
+		);
+		assertTrue(
+			result.items().stream().anyMatch(item -> item.type().equals("chat_room") && item.roomCode().equals("direct-test")),
+			"Expected the related chat room to appear in the workspace."
+		);
+		assertTrue(
+			result.items().stream().anyMatch(item -> item.type().equals("user_profile") && item.title().contains("박보검")),
+			"Expected the recipient profile to appear in the workspace."
+		);
+		assertFalse(
+			result.items().stream().anyMatch(item -> item.type().equals("file") || item.title().contains("FORIVER_NAS")),
+			"Sent-file history should not fall through into unrelated NAS file search results."
+		);
 	}
 
 	@Test
@@ -543,6 +658,56 @@ class AvaAiWorkspaceServiceTest {
 			nasRoot.toString(),
 			"AVA_AI_Workspace",
 			nasRoot.resolve("ChatUploads").toString()
+		);
+	}
+
+	private ChatMessageEntity sentAttachment(
+		String roomCode,
+		UUID senderId,
+		String senderName,
+		String fileName,
+		String contentType,
+		long size,
+		Instant sentAt
+	) throws Exception {
+		ChatMessageEntity message = ChatMessageEntity.attachment(
+			roomCode,
+			senderId,
+			senderName,
+			fileName,
+			contentType,
+			size,
+			workspaceRoot.resolve("ChatUploads").resolve(roomCode).resolve(fileName).toString(),
+			"test-group"
+		);
+		Field sentAtField = ChatMessageEntity.class.getDeclaredField("sentAt");
+		sentAtField.setAccessible(true);
+		sentAtField.set(message, sentAt);
+		return message;
+	}
+
+	private UserProfileResponse profile(UUID id, String email, String name) {
+		return new UserProfileResponse(
+			id,
+			email,
+			name,
+			name,
+			name,
+			null,
+			email,
+			null,
+			UserRole.USER,
+			"ABBA-S",
+			"사원",
+			"연구소",
+			null,
+			"online",
+			"#6B7CFF",
+			"",
+			"",
+			"",
+			"",
+			false
 		);
 	}
 

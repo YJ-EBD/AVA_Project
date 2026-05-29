@@ -14,6 +14,7 @@ import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.Instant;
 import java.time.ZoneId;
+import java.time.format.DateTimeFormatter;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Comparator;
@@ -484,10 +485,69 @@ public class AvaAiWorkspaceService {
 		"뭐였지", "무엇", "내용", "내역", "오늘", "어제", "오전", "오후", "시간", "쯤",
 		"했던", "했", "한", "찾아줘", "찾아", "알려줘", "보여줘"
 	);
+	private static final Set<String> SENT_FILE_HISTORY_STOPWORDS = Set.of(
+		"채팅",
+		"메신저",
+		"파일",
+		"자료",
+		"첨부",
+		"보낸",
+		"보냈",
+		"보냈던",
+		"보냈던거",
+		"전송",
+		"전송한",
+		"전송했",
+		"전달",
+		"전달한",
+		"공유",
+		"공유한",
+		"올린",
+		"내가",
+		"나",
+		"누구",
+		"누구한테",
+		"누구에게",
+		"뭐였지",
+		"무엇",
+		"뭐",
+		"같은데",
+		"같아",
+		"기억",
+		"내역",
+		"기록",
+		"오늘",
+		"어제",
+		"그제",
+		"최근",
+		"지난",
+		"오전",
+		"오후",
+		"시간",
+		"쯤",
+		"찾아줘",
+		"찾아",
+		"알려줘",
+		"보여줘",
+		"확인",
+		"sent",
+		"send",
+		"file",
+		"files",
+		"attachment",
+		"attachments",
+		"yesterday",
+		"today",
+		"recent",
+		"history",
+		"log"
+	);
 	private static final Set<String> MEETING_STOPWORDS = Set.of(
 		"회의", "회의록", "회의내용", "통파일", "내용", "요약", "뭐지", "무엇", "오늘",
 		"어제", "오전", "오후", "시간", "쯤", "했던", "했", "한", "찾아줘", "찾아", "알려줘", "보여줘"
 	);
+	private static final DateTimeFormatter SENT_FILE_TIME_FORMATTER =
+		DateTimeFormatter.ofPattern("M월 d일 a h:mm", Locale.KOREAN);
 
 	private final Path rootPath;
 	private final Path uploadPath;
@@ -549,6 +609,10 @@ public class AvaAiWorkspaceService {
 				promptContext(result.items(), result.status()),
 				true
 			);
+		}
+		WorkspaceActionResult sentFileHistoryResult = inspectSentFileHistoryPrompt(prompt, normalized, principal);
+		if (sentFileHistoryResult != null) {
+			return sentFileHistoryResult;
 		}
 		if (!webResults.isEmpty()) {
 			items.addAll(webResults.stream()
@@ -1517,6 +1581,108 @@ public class AvaAiWorkspaceService {
 			status += " 메시지도 함께 보냈습니다.";
 		}
 		return new SendResult(status, List.copyOf(sentItems));
+	}
+
+	private WorkspaceActionResult inspectSentFileHistoryPrompt(
+		String prompt,
+		String normalized,
+		AuthPrincipal principal
+	) {
+		if (!hasSentFileHistoryIntent(normalized)) {
+			return null;
+		}
+		if (principal == null || chatService == null || chatMessageRepository == null) {
+			String status = "채팅 첨부 이력을 조회하려면 로그인된 사용자와 채팅 DB 연결이 필요합니다.";
+			return new WorkspaceActionResult(List.of(), status, status, true);
+		}
+
+		List<AvaAiWorkspaceItemResponse> items = searchSentChatFiles(prompt, principal);
+		String label = sentFileHistoryWindow(normalized).label();
+		long fileCount = items.stream()
+			.filter(item -> "chat_file".equals(item.type()) || "chat_image".equals(item.type()))
+			.count();
+		String status;
+		if (fileCount == 0) {
+			status = label + " 채팅으로 보낸 파일 이력이 없습니다. 채팅 첨부 기록 기준으로 확인했습니다.";
+		} else {
+			String preview = items.stream()
+				.filter(item -> "chat_file".equals(item.type()) || "chat_image".equals(item.type()))
+				.limit(6)
+				.map(item -> "- " + item.title() + " / " + item.subtitle())
+				.reduce((first, second) -> first + "\n" + second)
+				.orElse("");
+			status = label + " 채팅으로 보낸 파일 " + fileCount + "개를 찾았습니다.\n"
+				+ preview
+				+ "\n작업공간에 파일, 채팅방, 수신자 프로필을 함께 표시했습니다.";
+		}
+		return new WorkspaceActionResult(items, status, promptContext(items, status), true);
+	}
+
+	public List<AvaAiWorkspaceItemResponse> searchSentChatFiles(String query, AuthPrincipal principal) {
+		if (principal == null || chatService == null || chatMessageRepository == null) {
+			return List.of();
+		}
+		String normalized = normalize(query).toLowerCase(Locale.ROOT);
+		SentFileHistoryWindow window = sentFileHistoryWindow(normalized);
+		List<String> tokens = sentFileHistoryTokens(normalized);
+		List<AvaAiWorkspaceItemResponse> fileItems = new ArrayList<>();
+		List<AvaAiWorkspaceItemResponse> roomItems = new ArrayList<>();
+		List<AvaAiWorkspaceItemResponse> profileItems = new ArrayList<>();
+		Set<String> seenRooms = new LinkedHashSet<>();
+		Set<String> seenProfiles = new LinkedHashSet<>();
+
+		for (ChatRoomResponse room : chatService.rooms(principal)) {
+			List<ChatMessageEntity> messages = sentFileCandidateMessages(room, window);
+			int matchedInRoom = 0;
+			for (ChatMessageEntity message : messages) {
+				if (fileItems.size() >= MAX_CHAT_RESULTS) {
+					break;
+				}
+				if (!message.hasAttachment() || !principal.userId().equals(message.getSenderId())) {
+					continue;
+				}
+				if (!window.matches(message.getSentAt())) {
+					continue;
+				}
+				List<UserProfileResponse> recipients = recipientProfiles(room, principal);
+				if (!sentFileHistoryMatchesTokens(tokens, room, message, recipients)) {
+					continue;
+				}
+				matchedInRoom++;
+				fileItems.add(sentChatFileItem(room, message, recipients));
+				if (seenRooms.add(room.code())) {
+					roomItems.add(sentFileRoomItem(room, recipients));
+				}
+				for (UserProfileResponse recipient : recipients) {
+					String key = recipient.id() == null
+						? profileDisplayName(recipient)
+						: recipient.id().toString();
+					if (seenProfiles.add(key)) {
+						profileItems.add(sentFileRecipientItem(room, recipient, message));
+					}
+				}
+			}
+			if (matchedInRoom > 0 && recipientProfiles(room, principal).isEmpty() && seenProfiles.add("room:" + room.code())) {
+				profileItems.add(new AvaAiWorkspaceItemResponse(
+					"user_profile",
+					room.title(),
+					"채팅방 수신자",
+					"",
+					"",
+					room.avatarImageUrl() == null ? "" : room.avatarImageUrl(),
+					"이 채팅방으로 파일을 보냈습니다.",
+					null,
+					room.lastMessageAt(),
+					room.code()
+				));
+			}
+		}
+
+		List<AvaAiWorkspaceItemResponse> result = new ArrayList<>();
+		result.addAll(fileItems);
+		result.addAll(roomItems);
+		result.addAll(profileItems);
+		return List.copyOf(limitItems(result, 120));
 	}
 
 	public List<AvaAiWorkspaceItemResponse> searchChat(String query, AuthPrincipal principal) {
@@ -2526,8 +2692,293 @@ public class AvaAiWorkspaceService {
 		return ": " + String.join(", ", titles) + suffix;
 	}
 
+	private List<ChatMessageEntity> sentFileCandidateMessages(
+		ChatRoomResponse room,
+		SentFileHistoryWindow window
+	) {
+		if (window.start() != null && window.end() != null) {
+			return chatMessageRepository.findByRoomCodeAndSentAtGreaterThanEqualAndSentAtLessThanOrderBySentAtDesc(
+				room.code(),
+				window.start(),
+				window.end(),
+				PageRequest.of(0, 240)
+			);
+		}
+		if (window.start() != null) {
+			return chatMessageRepository.findByRoomCodeAndSentAtGreaterThanEqualOrderBySentAtDesc(
+				room.code(),
+				window.start(),
+				PageRequest.of(0, 240)
+			);
+		}
+		return chatMessageRepository.findByRoomCodeOrderBySentAtDesc(room.code(), PageRequest.of(0, 240));
+	}
+
+	private AvaAiWorkspaceItemResponse sentChatFileItem(
+		ChatRoomResponse room,
+		ChatMessageEntity message,
+		List<UserProfileResponse> recipients
+	) {
+		String fileName = message.getAttachmentFileName() == null || message.getAttachmentFileName().isBlank()
+			? message.getContent()
+			: message.getAttachmentFileName();
+		String downloadUrl = "/api/chat/rooms/" + room.code() + "/attachments/" + message.getAttachmentId();
+		boolean image = isImage(message.getAttachmentContentType(), fileName);
+		String recipientNames = recipientLabel(room, recipients);
+		String content = String.join("\n",
+			"받는 사람: " + recipientNames,
+			"채팅방: " + room.title(),
+			"보낸 시각: " + localTimeLabel(message.getSentAt()),
+			"파일명: " + fileName
+		);
+		return new AvaAiWorkspaceItemResponse(
+			image ? "chat_image" : "chat_file",
+			fileName,
+			recipientNames + " · " + localTimeLabel(message.getSentAt()),
+			message.getAttachmentStoredPath(),
+			downloadUrl,
+			image ? downloadUrl : "",
+			content,
+			message.getAttachmentSize(),
+			message.getSentAt(),
+			room.code()
+		);
+	}
+
+	private AvaAiWorkspaceItemResponse sentFileRoomItem(
+		ChatRoomResponse room,
+		List<UserProfileResponse> recipients
+	) {
+		return new AvaAiWorkspaceItemResponse(
+			"chat_room",
+			room.title(),
+			"채팅방 · " + recipientLabel(room, recipients),
+			"",
+			"",
+			room.avatarImageUrl() == null ? "" : room.avatarImageUrl(),
+			"해당 채팅방으로 파일을 보낸 이력이 있습니다.",
+			null,
+			room.lastMessageAt(),
+			room.code()
+		);
+	}
+
+	private AvaAiWorkspaceItemResponse sentFileRecipientItem(
+		ChatRoomResponse room,
+		UserProfileResponse recipient,
+		ChatMessageEntity message
+	) {
+		String name = profileDisplayName(recipient);
+		String subtitle = profileSubtitle(recipient);
+		String content = String.join("\n",
+			"수신자: " + name,
+			"채팅방: " + room.title(),
+			"마지막 확인 파일: " + (message.getAttachmentFileName() == null ? message.getContent() : message.getAttachmentFileName()),
+			"보낸 시각: " + localTimeLabel(message.getSentAt())
+		);
+		return new AvaAiWorkspaceItemResponse(
+			"user_profile",
+			name,
+			subtitle,
+			"",
+			"",
+			recipient.avatarImageUrl() == null ? "" : recipient.avatarImageUrl(),
+			content,
+			null,
+			message.getSentAt(),
+			room.code()
+		);
+	}
+
+	private List<UserProfileResponse> recipientProfiles(ChatRoomResponse room, AuthPrincipal principal) {
+		if (room.members() == null || room.members().isEmpty()) {
+			return List.of();
+		}
+		List<UserProfileResponse> recipients = room.members().stream()
+			.filter(member -> member.id() == null || !member.id().equals(principal.userId()))
+			.toList();
+		if (recipients.isEmpty()) {
+			return List.of();
+		}
+		return recipients;
+	}
+
+	private String recipientLabel(ChatRoomResponse room, List<UserProfileResponse> recipients) {
+		if (recipients == null || recipients.isEmpty()) {
+			return room.title() == null || room.title().isBlank() ? "나와의 채팅" : room.title();
+		}
+		List<String> names = recipients.stream()
+			.map(this::profileDisplayName)
+			.filter(name -> !name.isBlank())
+			.limit(4)
+			.toList();
+		if (names.isEmpty()) {
+			return room.title();
+		}
+		String suffix = recipients.size() > names.size() ? " 외 " + (recipients.size() - names.size()) + "명" : "";
+		return String.join(", ", names) + suffix;
+	}
+
+	private String profileDisplayName(UserProfileResponse profile) {
+		if (profile == null) {
+			return "";
+		}
+		for (String value : new String[] {
+			profile.displayName(),
+			profile.name(),
+			profile.nickname(),
+			profile.email()
+		}) {
+			if (value != null && !value.isBlank()) {
+				return value;
+			}
+		}
+		return "";
+	}
+
+	private String profileSubtitle(UserProfileResponse profile) {
+		List<String> parts = new ArrayList<>();
+		if (profile.department() != null && !profile.department().isBlank()) {
+			parts.add(profile.department());
+		}
+		if (profile.position() != null && !profile.position().isBlank()) {
+			parts.add(profile.position());
+		}
+		if (profile.email() != null && !profile.email().isBlank()) {
+			parts.add(profile.email());
+		}
+		return parts.isEmpty() ? "수신자 프로필" : String.join(" · ", parts);
+	}
+
+	private String localTimeLabel(Instant instant) {
+		if (instant == null) {
+			return "";
+		}
+		return SENT_FILE_TIME_FORMATTER.format(LocalDateTime.ofInstant(instant, WORKSPACE_TIME_ZONE));
+	}
+
+	private boolean sentFileHistoryMatchesTokens(
+		List<String> tokens,
+		ChatRoomResponse room,
+		ChatMessageEntity message,
+		List<UserProfileResponse> recipients
+	) {
+		if (tokens.isEmpty()) {
+			return true;
+		}
+		String haystack = sentFileHistoryHaystack(room, message, recipients);
+		return tokens.stream().anyMatch(haystack::contains);
+	}
+
+	private String sentFileHistoryHaystack(
+		ChatRoomResponse room,
+		ChatMessageEntity message,
+		List<UserProfileResponse> recipients
+	) {
+		StringBuilder builder = new StringBuilder();
+		builder.append(room.title()).append(' ');
+		builder.append(message.getContent()).append(' ');
+		builder.append(message.getAttachmentFileName()).append(' ');
+		builder.append(message.getAttachmentContentType()).append(' ');
+		for (UserProfileResponse recipient : recipients) {
+			builder.append(profileDisplayName(recipient)).append(' ');
+			builder.append(recipient.email()).append(' ');
+			builder.append(recipient.department()).append(' ');
+			builder.append(recipient.position()).append(' ');
+		}
+		return normalizeSearchText(builder.toString());
+	}
+
+	private List<String> sentFileHistoryTokens(String normalized) {
+		List<String> candidates = tokens(normalized, SENT_FILE_HISTORY_STOPWORDS);
+		return candidates.stream()
+			.map(this::stripKoreanParticle)
+			.filter(token -> token.length() >= 2)
+			.filter(token -> !SENT_FILE_HISTORY_STOPWORDS.contains(token))
+			.distinct()
+			.toList();
+	}
+
+	private SentFileHistoryWindow sentFileHistoryWindow(String normalized) {
+		LocalDate today = LocalDate.now(WORKSPACE_TIME_ZONE);
+		Instant start;
+		Instant end;
+		String label;
+		if (normalized.contains("오늘") || normalized.contains("today")) {
+			start = today.atStartOfDay(WORKSPACE_TIME_ZONE).toInstant();
+			end = today.plusDays(1).atStartOfDay(WORKSPACE_TIME_ZONE).toInstant();
+			label = "오늘";
+		} else if (normalized.contains("그제")) {
+			LocalDate day = today.minusDays(2);
+			start = day.atStartOfDay(WORKSPACE_TIME_ZONE).toInstant();
+			end = day.plusDays(1).atStartOfDay(WORKSPACE_TIME_ZONE).toInstant();
+			label = "그제";
+		} else if (normalized.contains("어제") || normalized.contains("yesterday")) {
+			LocalDate day = today.minusDays(1);
+			start = day.atStartOfDay(WORKSPACE_TIME_ZONE).toInstant();
+			end = day.plusDays(1).atStartOfDay(WORKSPACE_TIME_ZONE).toInstant();
+			label = "어제";
+		} else if (normalized.contains("최근") || normalized.contains("recent")) {
+			start = today.minusDays(7).atStartOfDay(WORKSPACE_TIME_ZONE).toInstant();
+			end = today.plusDays(1).atStartOfDay(WORKSPACE_TIME_ZONE).toInstant();
+			label = "최근 7일";
+		} else {
+			start = today.minusDays(30).atStartOfDay(WORKSPACE_TIME_ZONE).toInstant();
+			end = today.plusDays(1).atStartOfDay(WORKSPACE_TIME_ZONE).toInstant();
+			label = "최근 30일";
+		}
+		return new SentFileHistoryWindow(start, end, label);
+	}
+
 	private boolean hasChatIntent(String value) {
 		return containsAny(value, "채팅", "말했", "올린", "보낸", "메시지", "사진", "이미지", "첨부");
+	}
+
+	private boolean hasSentFileHistoryIntent(String value) {
+		boolean fileIntent = containsAny(
+			value,
+			"파일",
+			"첨부",
+			"자료",
+			"사진",
+			"이미지",
+			"attachment",
+			"file"
+		);
+		boolean sentIntent = containsAny(
+			value,
+			"보낸",
+			"보냈",
+			"전송한",
+			"전송했",
+			"전달한",
+			"공유한",
+			"올린",
+			"sent",
+			"shared",
+			"uploaded"
+		);
+		boolean historyIntent = containsAny(
+			value,
+			"어제",
+			"오늘",
+			"그제",
+			"최근",
+			"내역",
+			"기록",
+			"누구",
+			"뭐였",
+			"무엇",
+			"찾아",
+			"알려",
+			"확인",
+			"history",
+			"log",
+			"yesterday",
+			"today",
+			"recent"
+		);
+		return fileIntent && sentIntent && historyIntent;
 	}
 
 	private boolean hasMentionIntent(String value) {
@@ -3067,6 +3518,18 @@ public class AvaAiWorkspaceService {
 
 		boolean hasHour() {
 			return hour != null;
+		}
+	}
+
+	private record SentFileHistoryWindow(Instant start, Instant end, String label) {
+		boolean matches(Instant instant) {
+			if (instant == null) {
+				return false;
+			}
+			if (start != null && instant.isBefore(start)) {
+				return false;
+			}
+			return end == null || instant.isBefore(end);
 		}
 	}
 }
