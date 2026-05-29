@@ -32,7 +32,7 @@ class _LoginPageState extends ConsumerState<LoginPage> {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       WindowControl.setWindowTitle('AVA');
-      WindowControl.compactMessenger();
+      WindowControl.showAuthWindow();
       unawaited(_restoreRememberedLoginId());
     });
   }

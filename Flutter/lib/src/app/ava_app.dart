@@ -152,7 +152,7 @@ class _AvaTrayLifecycleGateState extends ConsumerState<_AvaTrayLifecycleGate> {
         _lock();
         break;
       case 'logout':
-        await WindowControl.showMessengerWindow();
+        await WindowControl.showAuthWindow();
         await _logout();
         break;
     }
@@ -166,7 +166,7 @@ class _AvaTrayLifecycleGateState extends ConsumerState<_AvaTrayLifecycleGate> {
       if (context != null && context.mounted) {
         context.go('/');
       }
-      await WindowControl.showMessengerWindow();
+      await WindowControl.showAuthWindow();
       return;
     }
     final context = appNavigatorKey.currentContext;
@@ -187,6 +187,7 @@ class _AvaTrayLifecycleGateState extends ConsumerState<_AvaTrayLifecycleGate> {
       if (context != null && context.mounted) {
         context.go('/');
       }
+      unawaited(WindowControl.showAuthWindow());
       return;
     }
     setState(() {
@@ -241,6 +242,7 @@ class _AvaTrayLifecycleGateState extends ConsumerState<_AvaTrayLifecycleGate> {
 
   Future<void> _logout() async {
     _quickAvaAiOpen = false;
+    await WindowControl.showAuthWindow();
     setState(() {
       _locked = false;
       _lockError = '';

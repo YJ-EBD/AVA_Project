@@ -56,7 +56,7 @@ class _SignupPageState extends ConsumerState<SignupPage> {
     _contactEmailController.addListener(_handleContactEmailChanged);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       WindowControl.setWindowTitle('AVA');
-      WindowControl.compactMessenger();
+      WindowControl.showAuthWindow();
     });
   }
 

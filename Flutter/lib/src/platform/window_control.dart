@@ -146,6 +146,10 @@ class WindowControl {
     await _invoke('compactMessenger');
   }
 
+  static Future<void> showAuthWindow() async {
+    await _invoke('showAuthWindow');
+  }
+
   static Future<void> expandMessenger() async {
     await _invoke('expandMessenger');
   }

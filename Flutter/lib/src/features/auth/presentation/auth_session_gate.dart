@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../config/app_config.dart';
+import '../../../platform/window_control.dart';
 import '../../../shared/ava_dialog.dart';
 import '../../push/application/mobile_push_controller.dart';
 import '../application/auth_controller.dart';
@@ -103,6 +104,7 @@ class _AuthSessionGateState extends ConsumerState<AuthSessionGate> {
     }
     _handlingForcedLogout = true;
     _disposeRealtime();
+    await WindowControl.showAuthWindow();
     await ref.read(authControllerProvider.notifier).forceLogoutLocally();
 
     if (!mounted) {

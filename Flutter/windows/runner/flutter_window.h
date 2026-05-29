@@ -36,6 +36,7 @@ class FlutterWindow : public Win32Window {
   void UnregisterQuickAvaAiHotkey();
   void StoreNormalWindowPlacement();
   void RestoreNormalWindowPlacement();
+  void ShowAuthWindow();
   void ShowQuickAvaAiWindow();
   void HideQuickAvaAiWindow();
   void InvokeQuickAvaAi();

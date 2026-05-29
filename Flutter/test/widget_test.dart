@@ -5,6 +5,7 @@ import 'package:ava_flutter/src/features/ai/presentation/ava_ai_page.dart';
 import 'package:ava_flutter/src/config/app_config.dart';
 import 'package:ava_flutter/src/features/auth/application/auth_controller.dart';
 import 'package:ava_flutter/src/features/auth/data/auth_models.dart';
+import 'package:ava_flutter/src/features/auth/presentation/login_page.dart';
 import 'package:ava_flutter/src/features/ava_stock/presentation/ava_stock_page.dart';
 import 'package:ava_flutter/src/features/azoom/presentation/azoom_page.dart';
 import 'package:ava_flutter/src/features/home/presentation/home_page.dart';
@@ -176,6 +177,40 @@ void main() {
 
     expect(nativeCalls, contains('compactMessenger'));
     expect(container.read(activeMessengerTabProvider), MessengerTab.chats);
+  });
+
+  testWidgets('resets native window mode for login page', (
+    WidgetTester tester,
+  ) async {
+    final nativeCalls = <String>[];
+    const windowChannel = MethodChannel('ava/window');
+    tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+      windowChannel,
+      (call) async {
+        nativeCalls.add(call.method);
+        return _nativeMenuResult(call);
+      },
+    );
+    addTearDown(() {
+      tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+        windowChannel,
+        null,
+      );
+    });
+
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          authControllerProvider.overrideWith(_LoggedOutAuthController.new),
+        ],
+        child: const MaterialApp(home: LoginPage()),
+      ),
+    );
+    await tester.pump();
+
+    expect(nativeCalls, contains('setWindowTitle'));
+    expect(nativeCalls, contains('showAuthWindow'));
+    expect(nativeCalls, isNot(contains('compactMessenger')));
   });
 
   testWidgets('opens AVA_stock from the mobile common bottom nav', (
@@ -1363,6 +1398,13 @@ class _DirectChatAuthController extends AuthController {
         ),
       ),
     );
+  }
+}
+
+class _LoggedOutAuthController extends AuthController {
+  @override
+  Future<AuthState> build() async {
+    return const AuthState();
   }
 }
 

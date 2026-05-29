@@ -8614,6 +8614,26 @@ void FlutterWindow::RestoreNormalWindowPlacement() {
                             kCompactMessengerHeight);
 }
 
+void FlutterWindow::ShowAuthWindow() {
+  HWND window = GetHandle();
+  if (!window) {
+    return;
+  }
+  if (quick_ai_window_mode_) {
+    RestoreNormalWindowPlacement();
+    quick_ai_window_mode_ = false;
+  }
+  if (IsZoomed(window)) {
+    ShowWindow(window, SW_RESTORE);
+  }
+  SetWindowPos(window, HWND_NOTOPMOST, 0, 0, 0, 0,
+               SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
+  ResizeWindowToLogicalSize(window, kCompactMessengerWidth,
+                            kCompactMessengerHeight);
+  ShowWindow(window, IsIconic(window) ? SW_RESTORE : SW_SHOWNORMAL);
+  SetForegroundWindow(window);
+}
+
 void FlutterWindow::ShowQuickAvaAiWindow() {
   HWND window = GetHandle();
   if (!window) {
@@ -8718,6 +8738,9 @@ bool FlutterWindow::OnCreate() {
           result->Success();
         } else if (method == "compactMessenger") {
           ResizeWindowToLogicalWidth(window, kCompactMessengerWidth);
+          result->Success();
+        } else if (method == "showAuthWindow") {
+          ShowAuthWindow();
           result->Success();
         } else if (method == "expandMessenger") {
           ResizeWindowToLogicalWidth(window, kExpandedMessengerWidth);
