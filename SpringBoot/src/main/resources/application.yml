@@ -76,15 +76,15 @@ ava:
   app-update:
     directory: ${AVA_APP_UPDATE_DIR:AppUpdates}
     windows:
-      latest-version: ${AVA_APP_WINDOWS_LATEST_VERSION:0.1.282}
-      file-name: ${AVA_APP_WINDOWS_FILE_NAME:ava-windows-${AVA_APP_WINDOWS_LATEST_VERSION:0.1.282}.zip}
+      latest-version: ${AVA_APP_WINDOWS_LATEST_VERSION:0.1.283}
+      file-name: ${AVA_APP_WINDOWS_FILE_NAME:ava-windows-${AVA_APP_WINDOWS_LATEST_VERSION:0.1.283}.zip}
       required: ${AVA_APP_WINDOWS_REQUIRED:false}
-      release-notes: "${AVA_APP_WINDOWS_RELEASE_NOTES:AVA AI now retrieves sent chat attachment history with related rooms and recipient profiles}"
+      release-notes: "${AVA_APP_WINDOWS_RELEASE_NOTES:Version bump for AVA AI sent-file history workspace update visibility}"
     android:
-      latest-version: ${AVA_APP_ANDROID_LATEST_VERSION:0.1.282}
-      file-name: ${AVA_APP_ANDROID_FILE_NAME:ava-android-${AVA_APP_ANDROID_LATEST_VERSION:0.1.282}.apk}
+      latest-version: ${AVA_APP_ANDROID_LATEST_VERSION:0.1.283}
+      file-name: ${AVA_APP_ANDROID_FILE_NAME:ava-android-${AVA_APP_ANDROID_LATEST_VERSION:0.1.283}.apk}
       required: ${AVA_APP_ANDROID_REQUIRED:true}
-      release-notes: "${AVA_APP_ANDROID_RELEASE_NOTES:AVA AI now retrieves sent chat attachment history with related rooms and recipient profiles}"
+      release-notes: "${AVA_APP_ANDROID_RELEASE_NOTES:Version bump for AVA AI sent-file history workspace update visibility}"
   calendar:
     reminders:
       enabled: ${AVA_CALENDAR_REMINDERS_ENABLED:true}
