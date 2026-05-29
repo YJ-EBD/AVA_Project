@@ -200,9 +200,6 @@ class _AvaAiPageState extends ConsumerState<AvaAiPage> {
   bool _draggingFile = false;
   bool _workspacePopupOpen = false;
   String _workspaceStatus = '';
-  final List<String> _workspaceToastQueue = [];
-  Timer? _workspaceToastTimer;
-  String _lastWorkspaceToastStatus = '';
   String _thinkingStatus = '';
   AvaAiCalendarWorkspaceDto _calendarWorkspace =
       AvaAiCalendarWorkspaceDto.empty();
@@ -246,7 +243,6 @@ class _AvaAiPageState extends ConsumerState<AvaAiPage> {
   void dispose() {
     _avaAiPageMemory.saveFrom(this);
     _workspaceStatePersistTimer?.cancel();
-    _workspaceToastTimer?.cancel();
     _persistWorkspaceStateSync();
     WindowControl.setFileDropHandler();
     _inputController.dispose();
@@ -489,7 +485,6 @@ class _AvaAiPageState extends ConsumerState<AvaAiPage> {
         _workspaceBusy = false;
         _thinkingStatus = '';
       });
-      _showWorkspaceStatusToasts(nextWorkspaceStatus);
       if (calendarWorkspace.mutation) {
         unawaited(_refreshCalendarFromAiWorkspace(calendarWorkspace));
       }
@@ -595,58 +590,6 @@ class _AvaAiPageState extends ConsumerState<AvaAiPage> {
       return agentStatus;
     }
     return '$workspaceStatus\n$agentStatus';
-  }
-
-  void _showWorkspaceStatusToasts(String status) {
-    final normalizedStatus = status.trim();
-    if (normalizedStatus.isEmpty ||
-        normalizedStatus == _lastWorkspaceToastStatus ||
-        !mounted) {
-      return;
-    }
-    _lastWorkspaceToastStatus = normalizedStatus;
-    final messages = normalizedStatus
-        .split(RegExp(r'[\r\n]+'))
-        .map((line) => line.trim())
-        .where((line) => line.isNotEmpty)
-        .expand(_splitWorkspaceToastLine)
-        .toList();
-    if (messages.isEmpty) {
-      return;
-    }
-    _workspaceToastQueue
-      ..clear()
-      ..addAll(messages);
-    _workspaceToastTimer?.cancel();
-    _showNextWorkspaceToast();
-  }
-
-  Iterable<String> _splitWorkspaceToastLine(String line) {
-    if (line.length <= 44) {
-      return [line];
-    }
-    final parts = line
-        .split(RegExp(r'\s*[·•]\s*'))
-        .map((part) => part.trim())
-        .where((part) => part.isNotEmpty)
-        .toList();
-    return parts.length > 1 ? parts : [line];
-  }
-
-  void _showNextWorkspaceToast() {
-    if (!mounted || _workspaceToastQueue.isEmpty) {
-      return;
-    }
-    final message = _workspaceToastQueue.removeAt(0);
-    showAvaToast(
-      context,
-      message,
-      duration: const Duration(milliseconds: 1700),
-      bottom: 150,
-    );
-    _workspaceToastTimer = Timer(const Duration(milliseconds: 1900), () {
-      _showNextWorkspaceToast();
-    });
   }
 
   bool _isCalendarWorkspaceCommand(String text) {

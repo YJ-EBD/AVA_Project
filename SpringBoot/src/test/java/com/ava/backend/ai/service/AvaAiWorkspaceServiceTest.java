@@ -168,9 +168,9 @@ class AvaAiWorkspaceServiceTest {
 			result.items().stream().anyMatch(item -> item.type().equals("chat_file")),
 			"Expected the sent file to appear as a chat file card."
 		);
-		assertTrue(
+		assertFalse(
 			result.items().stream().anyMatch(item -> item.type().equals("chat_room") && item.roomCode().equals("direct-test")),
-			"Expected the related chat room to appear in the workspace."
+			"Direct chat history should be represented by the counterparty profile, not an extra room card."
 		);
 		assertTrue(
 			result.items().stream().anyMatch(item -> item.type().equals("user_profile") && item.title().contains("박보검")),
@@ -350,7 +350,249 @@ class AvaAiWorkspaceServiceTest {
 		assertTrue(result.handled());
 		assertTrue(result.status().contains("Bereborn [Tron] 원본.zip"), result.status());
 		assertTrue(result.items().stream().anyMatch(item -> item.title().equals("Bereborn [Tron] 원본.zip")));
-		assertTrue(result.items().stream().anyMatch(item -> item.type().equals("chat_room") && item.roomCode().equals("direct-test")));
+		assertTrue(result.items().stream().anyMatch(item -> item.type().equals("user_profile") && item.title().contains("박주한")));
+	}
+
+	@Test
+	void sentFileHistoryPromptShowsGroupRoomInsteadOfEveryMember() throws Exception {
+		UUID senderId = UUID.randomUUID();
+		UUID memberA = UUID.randomUUID();
+		UUID memberB = UUID.randomUUID();
+		AuthPrincipal principal = new AuthPrincipal(
+			senderId,
+			"sender@ava.local",
+			"박주한",
+			UserRole.USER,
+			"test-session"
+		);
+		Instant sentAt = LocalDate.now(ZoneId.of("Asia/Seoul"))
+			.minusDays(1)
+			.atTime(10, 30)
+			.atZone(ZoneId.of("Asia/Seoul"))
+			.toInstant();
+		ChatService chatService = mock(ChatService.class);
+		ChatMessageJpaRepository messageRepository = mock(ChatMessageJpaRepository.class);
+		ChatMessageEntity attachment = sentAttachment(
+			"group-test",
+			senderId,
+			"박주한",
+			"회의자료.zip",
+			"application/zip",
+			2_000_000,
+			sentAt
+		);
+		ChatRoomResponse room = new ChatRoomResponse(
+			"group-test",
+			"연구소 채팅방",
+			ChatRoomType.GROUP,
+			3,
+			false,
+			null,
+			"회의자료.zip",
+			sentAt,
+			false,
+			"",
+			null,
+			List.of(
+				profile(senderId, "sender@ava.local", "박주한"),
+				profile(memberA, "a@ava.local", "김수현"),
+				profile(memberB, "b@ava.local", "박보검")
+			),
+			0,
+			false
+		);
+		when(chatService.rooms(principal)).thenReturn(List.of(room));
+		when(messageRepository.findByRoomCodeAndSentAtGreaterThanEqualAndSentAtLessThanOrderBySentAtDesc(
+			eq("group-test"),
+			any(Instant.class),
+			any(Instant.class),
+			any(Pageable.class)
+		)).thenReturn(List.of(attachment));
+
+		AvaAiWorkspaceService service = new AvaAiWorkspaceService(
+			chatService,
+			messageRepository,
+			null,
+			null,
+			null,
+			null,
+			null,
+			null,
+			workspaceRoot.toString(),
+			"AVA_AI_Workspace",
+			workspaceRoot.resolve("ChatUploads").toString()
+		);
+
+		AvaAiWorkspaceService.WorkspaceActionResult result = service.inspectPrompt(
+			"어제 누구한테 파일을 보냈던거 같은데 뭐였지?",
+			principal,
+			List.of(),
+			List.of()
+		);
+
+		assertTrue(result.handled());
+		assertTrue(result.items().stream().anyMatch(item -> item.type().equals("chat_room") && item.title().equals("연구소 채팅방")));
+		assertFalse(result.items().stream().anyMatch(item -> item.type().equals("user_profile") && item.title().contains("김수현")));
+		assertFalse(result.items().stream().anyMatch(item -> item.type().equals("user_profile") && item.title().contains("박보검")));
+	}
+
+	@Test
+	void receivedFileHistoryPromptFindsFilesSentToMe() throws Exception {
+		UUID currentUserId = UUID.randomUUID();
+		UUID senderId = UUID.randomUUID();
+		AuthPrincipal principal = new AuthPrincipal(
+			currentUserId,
+			"me@ava.local",
+			"나",
+			UserRole.USER,
+			"test-session"
+		);
+		Instant sentAt = LocalDate.now(ZoneId.of("Asia/Seoul"))
+			.minusDays(1)
+			.atTime(8, 15)
+			.atZone(ZoneId.of("Asia/Seoul"))
+			.toInstant();
+		ChatService chatService = mock(ChatService.class);
+		ChatMessageJpaRepository messageRepository = mock(ChatMessageJpaRepository.class);
+		ChatMessageEntity attachment = sentAttachment(
+			"direct-received",
+			senderId,
+			"박주한",
+			"받은자료.pdf",
+			"application/pdf",
+			500_000,
+			sentAt
+		);
+		ChatRoomResponse room = new ChatRoomResponse(
+			"direct-received",
+			"박주한",
+			ChatRoomType.DIRECT,
+			2,
+			false,
+			null,
+			"받은자료.pdf",
+			sentAt,
+			false,
+			"",
+			null,
+			List.of(
+				profile(currentUserId, "me@ava.local", "나"),
+				profile(senderId, "sender@ava.local", "박주한")
+			),
+			0,
+			false
+		);
+		when(chatService.rooms(principal)).thenReturn(List.of(room));
+		when(messageRepository.findByRoomCodeAndSentAtGreaterThanEqualAndSentAtLessThanOrderBySentAtDesc(
+			eq("direct-received"),
+			any(Instant.class),
+			any(Instant.class),
+			any(Pageable.class)
+		)).thenReturn(List.of(attachment));
+
+		AvaAiWorkspaceService service = new AvaAiWorkspaceService(
+			chatService,
+			messageRepository,
+			null,
+			null,
+			null,
+			null,
+			null,
+			null,
+			workspaceRoot.toString(),
+			"AVA_AI_Workspace",
+			workspaceRoot.resolve("ChatUploads").toString()
+		);
+
+		AvaAiWorkspaceService.WorkspaceActionResult result = service.inspectPrompt(
+			"어제 나한테 누가 파일 보냈던거 뭐였지?",
+			principal,
+			List.of(),
+			List.of()
+		);
+
+		assertTrue(result.handled());
+		assertTrue(result.status().contains("받은"), result.status());
+		assertTrue(result.items().stream().anyMatch(item -> item.type().equals("chat_file") && item.title().equals("받은자료.pdf")));
+		assertTrue(result.items().stream().anyMatch(item -> item.type().equals("user_profile") && item.title().contains("박주한")));
+	}
+
+	@Test
+	void receivedChatHistoryPromptFindsMessagesSentToMe() throws Exception {
+		UUID currentUserId = UUID.randomUUID();
+		UUID senderId = UUID.randomUUID();
+		AuthPrincipal principal = new AuthPrincipal(
+			currentUserId,
+			"me@ava.local",
+			"나",
+			UserRole.USER,
+			"test-session"
+		);
+		Instant sentAt = LocalDate.now(ZoneId.of("Asia/Seoul"))
+			.minusDays(1)
+			.atTime(8, 20)
+			.atZone(ZoneId.of("Asia/Seoul"))
+			.toInstant();
+		ChatService chatService = mock(ChatService.class);
+		ChatMessageJpaRepository messageRepository = mock(ChatMessageJpaRepository.class);
+		ChatMessageEntity message = chatMessage(
+			"direct-message",
+			senderId,
+			"박주한",
+			"확인 부탁드립니다",
+			sentAt
+		);
+		ChatRoomResponse room = new ChatRoomResponse(
+			"direct-message",
+			"박주한",
+			ChatRoomType.DIRECT,
+			2,
+			false,
+			null,
+			"확인 부탁드립니다",
+			sentAt,
+			false,
+			"",
+			null,
+			List.of(
+				profile(currentUserId, "me@ava.local", "나"),
+				profile(senderId, "sender@ava.local", "박주한")
+			),
+			0,
+			false
+		);
+		when(chatService.rooms(principal)).thenReturn(List.of(room));
+		when(messageRepository.findByRoomCodeAndSentAtGreaterThanEqualAndSentAtLessThanOrderBySentAtDesc(
+			eq("direct-message"),
+			any(Instant.class),
+			any(Instant.class),
+			any(Pageable.class)
+		)).thenReturn(List.of(message));
+
+		AvaAiWorkspaceService service = new AvaAiWorkspaceService(
+			chatService,
+			messageRepository,
+			null,
+			null,
+			null,
+			null,
+			null,
+			null,
+			workspaceRoot.toString(),
+			"AVA_AI_Workspace",
+			workspaceRoot.resolve("ChatUploads").toString()
+		);
+
+		AvaAiWorkspaceService.WorkspaceActionResult result = service.inspectPrompt(
+			"어제 나한테 누가 채팅 보냈던거 뭐였지?",
+			principal,
+			List.of(),
+			List.of()
+		);
+
+		assertTrue(result.handled());
+		assertTrue(result.items().stream().anyMatch(item -> item.type().equals("chat_message") && item.title().contains("확인 부탁드립니다")));
+		assertTrue(result.items().stream().anyMatch(item -> item.type().equals("user_profile") && item.title().contains("박주한")));
 	}
 
 	@Test
@@ -853,6 +1095,20 @@ class AvaAiWorkspaceServiceTest {
 			workspaceRoot.resolve("ChatUploads").resolve(roomCode).resolve(fileName).toString(),
 			"test-group"
 		);
+		Field sentAtField = ChatMessageEntity.class.getDeclaredField("sentAt");
+		sentAtField.setAccessible(true);
+		sentAtField.set(message, sentAt);
+		return message;
+	}
+
+	private ChatMessageEntity chatMessage(
+		String roomCode,
+		UUID senderId,
+		String senderName,
+		String content,
+		Instant sentAt
+	) throws Exception {
+		ChatMessageEntity message = new ChatMessageEntity(roomCode, senderId, senderName, content);
 		Field sentAtField = ChatMessageEntity.class.getDeclaredField("sentAt");
 		sentAtField.setAccessible(true);
 		sentAtField.set(message, sentAt);
