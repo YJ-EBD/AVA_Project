@@ -57,11 +57,20 @@ function Resolve-AvaWebsocketUrl {
 }
 
 if ([string]::IsNullOrWhiteSpace($Version)) {
-    $versionLine = Select-String -Path "pubspec.yaml" -Pattern "^version:\s*([0-9]+\.[0-9]+\.[0-9]+)" | Select-Object -First 1
+    $versionLine = Select-String -Path "pubspec.yaml" -Pattern "^version:\s*([0-9]+\.[0-9]+\.[0-9]+)(?:\+([0-9]+))?" | Select-Object -First 1
     if ($null -eq $versionLine) {
         throw "pubspec.yaml version was not found."
     }
     $Version = $versionLine.Matches[0].Groups[1].Value
+}
+
+$pubspecVersionLine = Select-String -Path "pubspec.yaml" -Pattern "^version:\s*([0-9]+\.[0-9]+\.[0-9]+)(?:\+([0-9]+))?" | Select-Object -First 1
+if ($null -eq $pubspecVersionLine) {
+    throw "pubspec.yaml version was not found."
+}
+$BuildNumber = $pubspecVersionLine.Matches[0].Groups[2].Value
+if ([string]::IsNullOrWhiteSpace($BuildNumber)) {
+    $BuildNumber = "1"
 }
 
 if (-not $SkipBuild) {
@@ -73,6 +82,8 @@ if (-not $SkipBuild) {
     $buildArgs = @("build", "windows", "--release")
     $buildArgs += "--dart-define=AVA_API_BASE_URL=$ApiBaseUrl"
     $buildArgs += "--dart-define=AVA_WS_URL=$WebsocketUrl"
+    $buildArgs += "--dart-define=AVA_APP_VERSION=$Version"
+    $buildArgs += "--dart-define=AVA_BUILD_NUMBER=$BuildNumber"
 
     & ".\flutter_local.cmd" @buildArgs
     if ($LASTEXITCODE -ne 0) {
