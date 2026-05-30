@@ -151,11 +151,20 @@ class _CalendarPageState extends ConsumerState<CalendarPage> {
       await showDialog<void>(
         context: context,
         builder: (context) => Dialog(
+          alignment: Alignment.center,
+          backgroundColor: Colors.transparent,
+          elevation: 0,
           insetPadding: const EdgeInsets.symmetric(
-            horizontal: 44,
+            horizontal: 28,
             vertical: 28,
           ),
-          child: SizedBox(width: 720, child: child),
+          child: ConstrainedBox(
+            constraints: BoxConstraints(
+              maxWidth: 660,
+              maxHeight: MediaQuery.sizeOf(context).height * 0.84,
+            ),
+            child: child,
+          ),
         ),
       );
     }
@@ -3196,332 +3205,374 @@ class _CalendarEventEditorState extends ConsumerState<CalendarEventEditor> {
   Widget build(BuildContext context) {
     final state = ref.watch(calendarControllerProvider);
     final editing = widget.event != null;
-    return SafeArea(
-      child: Column(
-        children: [
-          Padding(
-            padding: const EdgeInsets.fromLTRB(20, 18, 12, 12),
-            child: Row(
+    final theme = Theme.of(context).copyWith(
+      colorScheme: Theme.of(
+        context,
+      ).colorScheme.copyWith(primary: _calendarPrimary),
+      inputDecorationTheme: const InputDecorationTheme(
+        isDense: true,
+        contentPadding: EdgeInsets.symmetric(vertical: 12),
+        labelStyle: TextStyle(
+          color: _calendarMuted,
+          fontSize: 13,
+          fontWeight: FontWeight.w600,
+        ),
+        floatingLabelStyle: TextStyle(
+          color: _calendarPrimary,
+          fontSize: 13,
+          fontWeight: FontWeight.w700,
+        ),
+        hintStyle: TextStyle(color: _calendarMuted, fontSize: 13),
+        enabledBorder: UnderlineInputBorder(
+          borderSide: BorderSide(color: _calendarLine),
+        ),
+        focusedBorder: UnderlineInputBorder(
+          borderSide: BorderSide(color: _calendarPrimary, width: 1.5),
+        ),
+        errorBorder: UnderlineInputBorder(
+          borderSide: BorderSide(color: _calendarDanger),
+        ),
+        focusedErrorBorder: UnderlineInputBorder(
+          borderSide: BorderSide(color: _calendarDanger, width: 1.5),
+        ),
+      ),
+    );
+
+    return Theme(
+      data: theme,
+      child: SafeArea(
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(20),
+          child: Material(
+            color: _calendarSurface,
+            child: Column(
               children: [
+                _EditorHeader(
+                  title: editing ? '일정 수정' : '일정 추가',
+                  onClose: () => Navigator.pop(context),
+                ),
                 Expanded(
-                  child: Text(
-                    editing ? '일정 수정' : '일정 추가',
-                    style: const TextStyle(
-                      fontSize: 20,
-                      fontWeight: FontWeight.w900,
-                    ),
-                  ),
-                ),
-                IconButton(
-                  tooltip: '닫기',
-                  onPressed: () => Navigator.pop(context),
-                  icon: const Icon(Icons.close),
-                ),
-              ],
-            ),
-          ),
-          Expanded(
-            child: Form(
-              key: _formKey,
-              child: ListView(
-                padding: const EdgeInsets.fromLTRB(20, 0, 20, 20),
-                children: [
-                  TextFormField(
-                    controller: _titleController,
-                    decoration: const InputDecoration(labelText: '제목'),
-                    validator: (value) => value == null || value.trim().isEmpty
-                        ? '제목을 입력하세요.'
-                        : null,
-                  ),
-                  TextFormField(
-                    controller: _descriptionController,
-                    minLines: 2,
-                    maxLines: 4,
-                    decoration: const InputDecoration(labelText: '설명'),
-                  ),
-                  const SizedBox(height: 12),
-                  SwitchListTile(
-                    contentPadding: EdgeInsets.zero,
-                    value: _allDay,
-                    onChanged: (value) => setState(() => _allDay = value),
-                    title: const Text('종일 일정'),
-                  ),
-                  _DateTimePickerRow(
-                    label: '시작',
-                    value: _startAt,
-                    allDay: _allDay,
-                    onChanged: (value) {
-                      setState(() {
-                        final duration = _endAt.difference(_startAt);
-                        _startAt = value;
-                        _endAt = value.add(
-                          duration.isNegative || duration == Duration.zero
-                              ? const Duration(hours: 1)
-                              : duration,
-                        );
-                      });
-                    },
-                  ),
-                  _DateTimePickerRow(
-                    label: '종료',
-                    value: _endAt,
-                    allDay: _allDay,
-                    onChanged: (value) => setState(() => _endAt = value),
-                  ),
-                  TextFormField(
-                    controller: _locationController,
-                    decoration: const InputDecoration(labelText: '장소'),
-                  ),
-                  const SizedBox(height: 12),
-                  DropdownButtonFormField<String?>(
-                    initialValue: _teamId,
-                    decoration: const InputDecoration(labelText: '팀'),
-                    items: [
-                      const DropdownMenuItem<String?>(
-                        value: null,
-                        child: Text('전체 팀'),
-                      ),
-                      for (final team in calendarTeams)
-                        DropdownMenuItem<String?>(
-                          value: team.id,
-                          child: Text(team.name),
+                  child: Form(
+                    key: _formKey,
+                    child: ListView(
+                      padding: const EdgeInsets.fromLTRB(22, 2, 22, 20),
+                      children: [
+                        TextFormField(
+                          controller: _titleController,
+                          style: const TextStyle(
+                            color: _calendarText,
+                            fontSize: 14,
+                            fontWeight: FontWeight.w700,
+                          ),
+                          decoration: const InputDecoration(labelText: '제목'),
+                          validator: (value) =>
+                              value == null || value.trim().isEmpty
+                              ? '제목을 입력하세요.'
+                              : null,
                         ),
-                    ],
-                    onChanged: (value) => setState(() => _teamId = value),
-                  ),
-                  const SizedBox(height: 12),
-                  DropdownButtonFormField<String?>(
-                    initialValue: _categoryId,
-                    decoration: const InputDecoration(labelText: '카테고리'),
-                    items: [
-                      const DropdownMenuItem<String?>(
-                        value: null,
-                        child: Text('기타'),
-                      ),
-                      for (final category in state.categories)
-                        DropdownMenuItem<String?>(
-                          value: category.id,
-                          child: Text(category.name),
+                        TextFormField(
+                          controller: _descriptionController,
+                          minLines: 2,
+                          maxLines: 4,
+                          style: const TextStyle(
+                            color: _calendarText,
+                            fontSize: 14,
+                          ),
+                          decoration: const InputDecoration(labelText: '설명'),
                         ),
-                    ],
-                    onChanged: (value) {
-                      setState(() {
-                        _categoryId = value;
-                        final category = state.categories
-                            .where((item) => item.id == value)
-                            .firstOrNull;
-                        if (category != null) {
-                          _color = category.color;
-                        }
-                      });
-                    },
-                  ),
-                  const SizedBox(height: 12),
-                  _ColorPicker(
-                    selectedColor: _color,
-                    onChanged: (value) => setState(() => _color = value),
-                  ),
-                  const SizedBox(height: 12),
-                  DropdownButtonFormField<String>(
-                    initialValue: _status,
-                    decoration: const InputDecoration(labelText: '상태'),
-                    items: const [
-                      DropdownMenuItem(value: 'SCHEDULED', child: Text('예정')),
-                      DropdownMenuItem(
-                        value: 'IN_PROGRESS',
-                        child: Text('진행 중'),
-                      ),
-                      DropdownMenuItem(value: 'COMPLETED', child: Text('완료')),
-                      DropdownMenuItem(value: 'CANCELLED', child: Text('취소')),
-                      DropdownMenuItem(value: 'POSTPONED', child: Text('연기')),
-                      DropdownMenuItem(value: 'ON_HOLD', child: Text('보류')),
-                    ],
-                    onChanged: (value) =>
-                        setState(() => _status = value ?? 'SCHEDULED'),
-                  ),
-                  DropdownButtonFormField<String>(
-                    initialValue: _importance,
-                    decoration: const InputDecoration(labelText: '중요도'),
-                    items: const [
-                      DropdownMenuItem(value: 'LOW', child: Text('낮음')),
-                      DropdownMenuItem(value: 'NORMAL', child: Text('보통')),
-                      DropdownMenuItem(value: 'HIGH', child: Text('중요')),
-                      DropdownMenuItem(value: 'CRITICAL', child: Text('긴급')),
-                    ],
-                    onChanged: (value) =>
-                        setState(() => _importance = value ?? 'NORMAL'),
-                  ),
-                  DropdownButtonFormField<String>(
-                    initialValue: _visibility,
-                    decoration: const InputDecoration(labelText: '공개 범위'),
-                    items: const [
-                      DropdownMenuItem(value: 'PRIVATE', child: Text('나만 보기')),
-                      DropdownMenuItem(
-                        value: 'ATTENDEES',
-                        child: Text('참석자만 보기'),
-                      ),
-                      DropdownMenuItem(value: 'TEAM', child: Text('팀원 보기')),
-                      DropdownMenuItem(
-                        value: 'DEPARTMENT',
-                        child: Text('부서 보기'),
-                      ),
-                      DropdownMenuItem(
-                        value: 'COMPANY',
-                        child: Text('회사 전체 보기'),
-                      ),
-                      DropdownMenuItem(value: 'ADMIN', child: Text('관리자만 보기')),
-                    ],
-                    onChanged: (value) =>
-                        setState(() => _visibility = value ?? 'ATTENDEES'),
-                  ),
-                  DropdownButtonFormField<String>(
-                    initialValue: _recurrenceType,
-                    decoration: const InputDecoration(labelText: '반복'),
-                    items: const [
-                      DropdownMenuItem(value: 'NONE', child: Text('반복 없음')),
-                      DropdownMenuItem(value: 'DAILY', child: Text('매일')),
-                      DropdownMenuItem(value: 'WEEKLY', child: Text('매주')),
-                      DropdownMenuItem(value: 'MONTHLY', child: Text('매월')),
-                      DropdownMenuItem(value: 'YEARLY', child: Text('매년')),
-                      DropdownMenuItem(value: 'WEEKDAYS', child: Text('평일')),
-                      DropdownMenuItem(
-                        value: 'CUSTOM_DAYS',
-                        child: Text('특정 요일'),
-                      ),
-                      DropdownMenuItem(
-                        value: 'MONTHLY_DAY',
-                        child: Text('매월 특정 날짜'),
-                      ),
-                    ],
-                    onChanged: (value) =>
-                        setState(() => _recurrenceType = value ?? 'NONE'),
-                  ),
-                  DropdownButtonFormField<int>(
-                    initialValue: _reminderMinutes,
-                    decoration: const InputDecoration(labelText: '알림'),
-                    items: const [
-                      DropdownMenuItem(value: 0, child: Text('정시')),
-                      DropdownMenuItem(value: 5, child: Text('5분 전')),
-                      DropdownMenuItem(value: 10, child: Text('10분 전')),
-                      DropdownMenuItem(value: 30, child: Text('30분 전')),
-                      DropdownMenuItem(value: 60, child: Text('1시간 전')),
-                      DropdownMenuItem(value: 1440, child: Text('하루 전')),
-                    ],
-                    onChanged: (value) =>
-                        setState(() => _reminderMinutes = value ?? 10),
-                  ),
-                  TextFormField(
-                    controller: _attendeesController,
-                    decoration: const InputDecoration(
-                      labelText: '참석자',
-                      hintText: '이름을 쉼표로 구분',
-                    ),
-                  ),
-                  TextFormField(
-                    controller: _memoController,
-                    minLines: 2,
-                    maxLines: 4,
-                    decoration: const InputDecoration(labelText: '메모'),
-                  ),
-                  const SizedBox(height: 18),
-                  _EditorSection(
-                    title: '연결',
-                    children: [
-                      SwitchListTile(
-                        contentPadding: EdgeInsets.zero,
-                        value: _createAzoom,
-                        onChanged: (value) =>
-                            setState(() => _createAzoom = value),
-                        title: const Text('AZOOM 회의 연결'),
-                      ),
-                      if (_createAzoom) ...[
-                        TextField(
-                          controller: _azoomRoomController,
-                          decoration: const InputDecoration(
-                            labelText: 'AZOOM 회의방 ID',
+                        const SizedBox(height: 14),
+                        _AllDaySwitchRow(
+                          value: _allDay,
+                          onChanged: (value) => setState(() => _allDay = value),
+                        ),
+                        _DateTimePickerRow(
+                          label: '시작',
+                          value: _startAt,
+                          allDay: _allDay,
+                          onChanged: (value) {
+                            setState(() {
+                              final duration = _endAt.difference(_startAt);
+                              _startAt = value;
+                              _endAt = value.add(
+                                duration.isNegative || duration == Duration.zero
+                                    ? const Duration(hours: 1)
+                                    : duration,
+                              );
+                            });
+                          },
+                        ),
+                        _DateTimePickerRow(
+                          label: '종료',
+                          value: _endAt,
+                          allDay: _allDay,
+                          onChanged: (value) => setState(() => _endAt = value),
+                        ),
+                        TextFormField(
+                          controller: _locationController,
+                          decoration: const InputDecoration(labelText: '장소'),
+                        ),
+                        const SizedBox(height: 12),
+                        DropdownButtonFormField<String?>(
+                          initialValue: _teamId,
+                          decoration: const InputDecoration(labelText: '팀'),
+                          items: [
+                            const DropdownMenuItem<String?>(
+                              value: null,
+                              child: Text('전체 팀'),
+                            ),
+                            for (final team in calendarTeams)
+                              DropdownMenuItem<String?>(
+                                value: team.id,
+                                child: Text(team.name),
+                              ),
+                          ],
+                          onChanged: (value) => setState(() => _teamId = value),
+                        ),
+                        const SizedBox(height: 12),
+                        DropdownButtonFormField<String?>(
+                          initialValue: _categoryId,
+                          decoration: const InputDecoration(labelText: '카테고리'),
+                          items: [
+                            const DropdownMenuItem<String?>(
+                              value: null,
+                              child: Text('기타'),
+                            ),
+                            for (final category in state.categories)
+                              DropdownMenuItem<String?>(
+                                value: category.id,
+                                child: Text(category.name),
+                              ),
+                          ],
+                          onChanged: (value) {
+                            setState(() {
+                              _categoryId = value;
+                              final category = state.categories
+                                  .where((item) => item.id == value)
+                                  .firstOrNull;
+                              if (category != null) {
+                                _color = category.color;
+                              }
+                            });
+                          },
+                        ),
+                        const SizedBox(height: 14),
+                        _ColorPicker(
+                          selectedColor: _color,
+                          onChanged: (value) => setState(() => _color = value),
+                        ),
+                        const SizedBox(height: 12),
+                        DropdownButtonFormField<String>(
+                          initialValue: _status,
+                          decoration: const InputDecoration(labelText: '상태'),
+                          items: const [
+                            DropdownMenuItem(
+                              value: 'SCHEDULED',
+                              child: Text('예정'),
+                            ),
+                            DropdownMenuItem(
+                              value: 'IN_PROGRESS',
+                              child: Text('진행 중'),
+                            ),
+                            DropdownMenuItem(
+                              value: 'COMPLETED',
+                              child: Text('완료'),
+                            ),
+                            DropdownMenuItem(
+                              value: 'CANCELLED',
+                              child: Text('취소'),
+                            ),
+                            DropdownMenuItem(
+                              value: 'POSTPONED',
+                              child: Text('연기'),
+                            ),
+                            DropdownMenuItem(
+                              value: 'ON_HOLD',
+                              child: Text('보류'),
+                            ),
+                          ],
+                          onChanged: (value) =>
+                              setState(() => _status = value ?? 'SCHEDULED'),
+                        ),
+                        DropdownButtonFormField<String>(
+                          initialValue: _importance,
+                          decoration: const InputDecoration(labelText: '중요도'),
+                          items: const [
+                            DropdownMenuItem(value: 'LOW', child: Text('낮음')),
+                            DropdownMenuItem(
+                              value: 'NORMAL',
+                              child: Text('보통'),
+                            ),
+                            DropdownMenuItem(value: 'HIGH', child: Text('중요')),
+                            DropdownMenuItem(
+                              value: 'CRITICAL',
+                              child: Text('긴급'),
+                            ),
+                          ],
+                          onChanged: (value) =>
+                              setState(() => _importance = value ?? 'NORMAL'),
+                        ),
+                        DropdownButtonFormField<String>(
+                          initialValue: _visibility,
+                          decoration: const InputDecoration(labelText: '공개 범위'),
+                          items: const [
+                            DropdownMenuItem(
+                              value: 'PRIVATE',
+                              child: Text('나만 보기'),
+                            ),
+                            DropdownMenuItem(
+                              value: 'ATTENDEES',
+                              child: Text('참석자만 보기'),
+                            ),
+                            DropdownMenuItem(
+                              value: 'TEAM',
+                              child: Text('팀원 보기'),
+                            ),
+                            DropdownMenuItem(
+                              value: 'DEPARTMENT',
+                              child: Text('부서 보기'),
+                            ),
+                            DropdownMenuItem(
+                              value: 'COMPANY',
+                              child: Text('회사 전체 보기'),
+                            ),
+                            DropdownMenuItem(
+                              value: 'ADMIN',
+                              child: Text('관리자만 보기'),
+                            ),
+                          ],
+                          onChanged: (value) => setState(
+                            () => _visibility = value ?? 'ATTENDEES',
                           ),
                         ),
-                        TextField(
-                          controller: _azoomUrlController,
+                        DropdownButtonFormField<String>(
+                          initialValue: _recurrenceType,
+                          decoration: const InputDecoration(labelText: '반복'),
+                          items: const [
+                            DropdownMenuItem(
+                              value: 'NONE',
+                              child: Text('반복 없음'),
+                            ),
+                            DropdownMenuItem(value: 'DAILY', child: Text('매일')),
+                            DropdownMenuItem(
+                              value: 'WEEKLY',
+                              child: Text('매주'),
+                            ),
+                            DropdownMenuItem(
+                              value: 'MONTHLY',
+                              child: Text('매월'),
+                            ),
+                            DropdownMenuItem(
+                              value: 'YEARLY',
+                              child: Text('매년'),
+                            ),
+                            DropdownMenuItem(
+                              value: 'WEEKDAYS',
+                              child: Text('평일'),
+                            ),
+                            DropdownMenuItem(
+                              value: 'CUSTOM_DAYS',
+                              child: Text('특정 요일'),
+                            ),
+                            DropdownMenuItem(
+                              value: 'MONTHLY_DAY',
+                              child: Text('매월 특정 날짜'),
+                            ),
+                          ],
+                          onChanged: (value) =>
+                              setState(() => _recurrenceType = value ?? 'NONE'),
+                        ),
+                        DropdownButtonFormField<int>(
+                          initialValue: _reminderMinutes,
+                          decoration: const InputDecoration(labelText: '알림'),
+                          items: const [
+                            DropdownMenuItem(value: 0, child: Text('정시')),
+                            DropdownMenuItem(value: 5, child: Text('5분 전')),
+                            DropdownMenuItem(value: 10, child: Text('10분 전')),
+                            DropdownMenuItem(value: 30, child: Text('30분 전')),
+                            DropdownMenuItem(value: 60, child: Text('1시간 전')),
+                            DropdownMenuItem(value: 1440, child: Text('하루 전')),
+                          ],
+                          onChanged: (value) =>
+                              setState(() => _reminderMinutes = value ?? 10),
+                        ),
+                        TextFormField(
+                          controller: _attendeesController,
                           decoration: const InputDecoration(
-                            labelText: 'AZOOM 입장 URL',
+                            labelText: '참석자',
+                            hintText: '이름을 쉼표로 구분',
                           ),
+                        ),
+                        TextFormField(
+                          controller: _memoController,
+                          minLines: 2,
+                          maxLines: 4,
+                          decoration: const InputDecoration(labelText: '메모'),
+                        ),
+                        _EditorSection(
+                          title: '연결',
+                          children: [
+                            _AzoomSwitchRow(
+                              value: _createAzoom,
+                              onChanged: (value) =>
+                                  setState(() => _createAzoom = value),
+                            ),
+                            if (_createAzoom) ...[
+                              TextField(
+                                controller: _azoomRoomController,
+                                decoration: const InputDecoration(
+                                  labelText: 'AZOOM 회의방 ID',
+                                ),
+                              ),
+                              TextField(
+                                controller: _azoomUrlController,
+                                decoration: const InputDecoration(
+                                  labelText: 'AZOOM 입장 URL',
+                                ),
+                              ),
+                            ],
+                            TextField(
+                              controller: _chatRoomController,
+                              decoration: const InputDecoration(
+                                labelText: '관련 채팅방 ID',
+                              ),
+                            ),
+                            _FileDropFields(
+                              fileNameController: _fileNameController,
+                              filePathController: _filePathController,
+                              dragging: _draggingFile,
+                              onDragEntered: () =>
+                                  setState(() => _draggingFile = true),
+                              onDragExited: () =>
+                                  setState(() => _draggingFile = false),
+                              onDropped: _handleDroppedFile,
+                            ),
+                            TextField(
+                              controller: _notionTitleController,
+                              decoration: const InputDecoration(
+                                labelText: 'Notion 제목',
+                              ),
+                            ),
+                            TextField(
+                              controller: _notionUrlController,
+                              decoration: const InputDecoration(
+                                labelText: 'Notion URL',
+                              ),
+                            ),
+                          ],
                         ),
                       ],
-                      TextField(
-                        controller: _chatRoomController,
-                        decoration: const InputDecoration(
-                          labelText: '관련 채팅방 ID',
-                        ),
-                      ),
-                      _FileDropFields(
-                        fileNameController: _fileNameController,
-                        filePathController: _filePathController,
-                        dragging: _draggingFile,
-                        onDragEntered: () =>
-                            setState(() => _draggingFile = true),
-                        onDragExited: () =>
-                            setState(() => _draggingFile = false),
-                        onDropped: _handleDroppedFile,
-                      ),
-                      TextField(
-                        controller: _notionTitleController,
-                        decoration: const InputDecoration(
-                          labelText: 'Notion 제목',
-                        ),
-                      ),
-                      TextField(
-                        controller: _notionUrlController,
-                        decoration: const InputDecoration(
-                          labelText: 'Notion URL',
-                        ),
-                      ),
-                    ],
-                  ),
-                ],
-              ),
-            ),
-          ),
-          Container(
-            padding: EdgeInsets.fromLTRB(
-              20,
-              12,
-              20,
-              12 + MediaQuery.paddingOf(context).bottom,
-            ),
-            decoration: const BoxDecoration(
-              color: Colors.white,
-              border: Border(top: BorderSide(color: _calendarLine)),
-            ),
-            child: Row(
-              children: [
-                Expanded(
-                  child: OutlinedButton.icon(
-                    onPressed: _checkConflicts,
-                    icon: const Icon(Icons.rule, size: 18),
-                    label: const Text('충돌 확인'),
+                    ),
                   ),
                 ),
-                const SizedBox(width: 10),
-                Expanded(
-                  child: OutlinedButton.icon(
-                    onPressed: _suggestAvailability,
-                    icon: const Icon(Icons.event_available, size: 18),
-                    label: const Text('가능한 시간 찾기'),
-                  ),
-                ),
-                const SizedBox(width: 10),
-                Expanded(
-                  child: FilledButton.icon(
-                    onPressed: _save,
-                    icon: const Icon(Icons.save, size: 18),
-                    label: const Text('저장'),
-                  ),
+                _EditorActionBar(
+                  onCheckConflicts: _checkConflicts,
+                  onSuggestAvailability: _suggestAvailability,
+                  onSave: _save,
                 ),
               ],
             ),
           ),
-        ],
+        ),
       ),
     );
   }
@@ -3758,6 +3809,224 @@ class _CalendarEventEditorState extends ConsumerState<CalendarEventEditor> {
   }
 }
 
+class _EditorHeader extends StatelessWidget {
+  const _EditorHeader({required this.title, required this.onClose});
+
+  final String title;
+  final VoidCallback onClose;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.fromLTRB(22, 20, 14, 12),
+      decoration: const BoxDecoration(
+        color: _calendarSurface,
+        border: Border(bottom: BorderSide(color: _calendarLine)),
+      ),
+      child: Row(
+        children: [
+          Expanded(
+            child: Text(
+              title,
+              style: const TextStyle(
+                color: _calendarText,
+                fontSize: 22,
+                fontWeight: FontWeight.w900,
+              ),
+            ),
+          ),
+          IconButton(
+            tooltip: '닫기',
+            onPressed: onClose,
+            style: IconButton.styleFrom(
+              foregroundColor: _calendarText,
+              backgroundColor: _calendarSoftSurface,
+              hoverColor: _calendarLine,
+              fixedSize: const Size(38, 38),
+            ),
+            icon: const Icon(Icons.close, size: 22),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _AllDaySwitchRow extends StatelessWidget {
+  const _AllDaySwitchRow({required this.value, required this.onChanged});
+
+  final bool value;
+  final ValueChanged<bool> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    return _EditorSwitchRow(label: '종일 일정', value: value, onChanged: onChanged);
+  }
+}
+
+class _AzoomSwitchRow extends StatelessWidget {
+  const _AzoomSwitchRow({required this.value, required this.onChanged});
+
+  final bool value;
+  final ValueChanged<bool> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    return _EditorSwitchRow(
+      label: 'AZOOM 회의 연결',
+      value: value,
+      onChanged: onChanged,
+      icon: Icons.videocam_outlined,
+    );
+  }
+}
+
+class _EditorSwitchRow extends StatelessWidget {
+  const _EditorSwitchRow({
+    required this.label,
+    required this.value,
+    required this.onChanged,
+    this.icon,
+  });
+
+  final String label;
+  final bool value;
+  final ValueChanged<bool> onChanged;
+  final IconData? icon;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 6),
+      child: Row(
+        children: [
+          if (icon != null) ...[
+            Icon(icon, size: 18, color: _calendarMuted),
+            const SizedBox(width: 8),
+          ],
+          Expanded(
+            child: Text(
+              label,
+              style: const TextStyle(
+                color: _calendarText,
+                fontSize: 14,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+          ),
+          Switch(
+            value: value,
+            onChanged: onChanged,
+            activeThumbColor: _calendarSurface,
+            activeTrackColor: _calendarPrimary,
+            inactiveThumbColor: const Color(0xFF7B8190),
+            inactiveTrackColor: const Color(0xFFE7EAF1),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _EditorActionBar extends StatelessWidget {
+  const _EditorActionBar({
+    required this.onCheckConflicts,
+    required this.onSuggestAvailability,
+    required this.onSave,
+  });
+
+  final VoidCallback onCheckConflicts;
+  final VoidCallback onSuggestAvailability;
+  final VoidCallback onSave;
+
+  @override
+  Widget build(BuildContext context) {
+    final bottomPadding = MediaQuery.paddingOf(context).bottom;
+    return Container(
+      padding: EdgeInsets.fromLTRB(22, 12, 22, 12 + bottomPadding),
+      decoration: const BoxDecoration(
+        color: _calendarSurface,
+        border: Border(top: BorderSide(color: _calendarLine)),
+      ),
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          final narrow = constraints.maxWidth < 540;
+          final conflictButton = OutlinedButton.icon(
+            onPressed: onCheckConflicts,
+            style: _editorOutlineButtonStyle,
+            icon: const Icon(Icons.rule, size: 17),
+            label: const Text('충돌 확인'),
+          );
+          final suggestButton = OutlinedButton.icon(
+            onPressed: onSuggestAvailability,
+            style: _editorOutlineButtonStyle,
+            icon: const Icon(Icons.event_available, size: 17),
+            label: const Text('가능한 시간 찾기'),
+          );
+          final saveButton = FilledButton.icon(
+            onPressed: onSave,
+            style: _editorFilledButtonStyle,
+            icon: const Icon(Icons.save, size: 17),
+            label: const Text('저장'),
+          );
+
+          if (narrow) {
+            return Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Row(
+                  children: [
+                    Expanded(child: conflictButton),
+                    const SizedBox(width: 10),
+                    Expanded(child: suggestButton),
+                  ],
+                ),
+                const SizedBox(height: 10),
+                SizedBox(height: 38, child: saveButton),
+              ],
+            );
+          }
+
+          return Row(
+            children: [
+              Expanded(child: conflictButton),
+              const SizedBox(width: 10),
+              Expanded(child: suggestButton),
+              const SizedBox(width: 10),
+              Expanded(child: saveButton),
+            ],
+          );
+        },
+      ),
+    );
+  }
+}
+
+final ButtonStyle _editorOutlineButtonStyle = OutlinedButton.styleFrom(
+  minimumSize: const Size(0, 36),
+  foregroundColor: const Color(0xFF52618C),
+  side: const BorderSide(color: Color(0xFF9AA7C0)),
+  shape: const StadiumBorder(),
+  textStyle: const TextStyle(fontSize: 14, fontWeight: FontWeight.w800),
+);
+
+final ButtonStyle _editorFilledButtonStyle = FilledButton.styleFrom(
+  minimumSize: const Size(0, 36),
+  backgroundColor: const Color(0xFF5265A2),
+  foregroundColor: _calendarSurface,
+  shape: const StadiumBorder(),
+  textStyle: const TextStyle(fontSize: 14, fontWeight: FontWeight.w900),
+);
+
+final ButtonStyle _editorPickerButtonStyle = OutlinedButton.styleFrom(
+  minimumSize: const Size(0, 34),
+  padding: const EdgeInsets.symmetric(horizontal: 12),
+  foregroundColor: const Color(0xFF52618C),
+  side: const BorderSide(color: Color(0xFF9AA7C0)),
+  shape: const StadiumBorder(),
+  textStyle: const TextStyle(fontSize: 13, fontWeight: FontWeight.w800),
+);
+
 class _FileDropFields extends StatelessWidget {
   const _FileDropFields({
     required this.fileNameController,
@@ -3783,29 +4052,39 @@ class _FileDropFields extends StatelessWidget {
       onDragDone: onDropped,
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 140),
-        margin: const EdgeInsets.only(top: 8),
-        padding: const EdgeInsets.all(10),
+        margin: const EdgeInsets.only(top: 12),
+        padding: const EdgeInsets.all(14),
         decoration: BoxDecoration(
-          color: dragging ? const Color(0xFFEFF4FF) : Colors.transparent,
-          borderRadius: BorderRadius.circular(8),
+          color: dragging ? const Color(0xFFEFF4FF) : _calendarSoftSurface,
+          borderRadius: BorderRadius.circular(14),
           border: Border.all(
             color: dragging ? _calendarPrimary : _calendarLine,
           ),
         ),
         child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Row(
-              children: const [
-                Icon(Icons.upload_file, size: 18, color: _calendarMuted),
+            const Row(
+              children: [
+                Icon(
+                  Icons.upload_file_outlined,
+                  size: 18,
+                  color: _calendarMuted,
+                ),
                 SizedBox(width: 8),
                 Expanded(
                   child: Text(
                     'NAS 파일을 여기에 드롭하거나 아래에 직접 입력',
-                    style: TextStyle(color: _calendarMuted),
+                    style: TextStyle(
+                      color: _calendarMuted,
+                      fontSize: 13,
+                      fontWeight: FontWeight.w700,
+                    ),
                   ),
                 ),
               ],
             ),
+            const SizedBox(height: 6),
             TextField(
               controller: fileNameController,
               decoration: const InputDecoration(labelText: 'NAS 파일명'),
@@ -3840,9 +4119,20 @@ class _DateTimePickerRow extends StatelessWidget {
       padding: const EdgeInsets.symmetric(vertical: 6),
       child: Row(
         children: [
-          SizedBox(width: 46, child: Text(label)),
+          SizedBox(
+            width: 46,
+            child: Text(
+              label,
+              style: const TextStyle(
+                color: _calendarText,
+                fontSize: 14,
+                fontWeight: FontWeight.w800,
+              ),
+            ),
+          ),
           Expanded(
             child: OutlinedButton.icon(
+              style: _editorPickerButtonStyle,
               onPressed: () async {
                 final date = await showDatePicker(
                   context: context,
@@ -3864,13 +4154,17 @@ class _DateTimePickerRow extends StatelessWidget {
                 );
               },
               icon: const Icon(Icons.calendar_month, size: 18),
-              label: Text('${value.year}.${value.month}.${value.day}'),
+              label: Text(
+                '${value.year}.${value.month}.${value.day}',
+                overflow: TextOverflow.ellipsis,
+              ),
             ),
           ),
           if (!allDay) ...[
             const SizedBox(width: 8),
             Expanded(
               child: OutlinedButton.icon(
+                style: _editorPickerButtonStyle,
                 onPressed: () async {
                   final time = await showTimePicker(
                     context: context,
@@ -3890,7 +4184,10 @@ class _DateTimePickerRow extends StatelessWidget {
                   );
                 },
                 icon: const Icon(Icons.schedule, size: 18),
-                label: Text(_formatTime(value)),
+                label: Text(
+                  _formatTime(value),
+                  overflow: TextOverflow.ellipsis,
+                ),
               ),
             ),
           ],
@@ -3908,13 +4205,27 @@ class _EditorSection extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(title, style: const TextStyle(fontWeight: FontWeight.w900)),
-        const SizedBox(height: 8),
-        ...children,
-      ],
+    return Container(
+      margin: const EdgeInsets.only(top: 20),
+      padding: const EdgeInsets.only(top: 16),
+      decoration: const BoxDecoration(
+        border: Border(top: BorderSide(color: _calendarLine)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            title,
+            style: const TextStyle(
+              color: _calendarText,
+              fontSize: 14,
+              fontWeight: FontWeight.w900,
+            ),
+          ),
+          const SizedBox(height: 8),
+          ...children,
+        ],
+      ),
     );
   }
 }
@@ -3953,29 +4264,40 @@ class _ColorPickerState extends State<_ColorPicker> {
       '#111827',
     ];
     return Wrap(
-      spacing: 8,
+      spacing: 10,
+      runSpacing: 8,
       children: [
         for (final color in colors)
           InkWell(
-            borderRadius: BorderRadius.circular(16),
+            borderRadius: BorderRadius.circular(18),
             onTap: () {
               setState(() => _selectedColor = color);
               widget.onChanged(color);
             },
-            child: Container(
+            child: AnimatedContainer(
+              duration: const Duration(milliseconds: 140),
               width: 30,
               height: 30,
+              padding: const EdgeInsets.all(2),
               decoration: BoxDecoration(
-                color: _parseColor(color),
                 shape: BoxShape.circle,
                 border: Border.all(
-                  color: _selectedColor == color ? Colors.black : Colors.white,
-                  width: 2,
+                  color: _selectedColor == color
+                      ? _calendarPrimary
+                      : _calendarLine,
+                  width: _selectedColor == color ? 2 : 1,
                 ),
+                color: _calendarSurface,
               ),
-              child: _selectedColor == color
-                  ? const Icon(Icons.check, color: Colors.white, size: 16)
-                  : null,
+              child: DecoratedBox(
+                decoration: BoxDecoration(
+                  color: _parseColor(color),
+                  shape: BoxShape.circle,
+                ),
+                child: _selectedColor == color
+                    ? const Icon(Icons.check, color: Colors.white, size: 15)
+                    : null,
+              ),
             ),
           ),
       ],
