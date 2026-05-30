@@ -21,15 +21,16 @@ AVA is an internal desktop messenger, AZOOM collaboration space, and AVA AI clie
 - AVA AI: per-user conversation, persisted user/assistant messages, local LLM abstraction, web-search support
 - Admin: overview, user role/enabled management, app settings, audit/system log list, Flutter admin panel
 - Notifications: persisted user notifications and user WebSocket delivery
-- Updates: Windows and macOS update manifest/download endpoints
+- Updates: Windows, Android, macOS, and iOS update manifest/download endpoints
 - Operations: readiness endpoint, auth rate limiting, production config fail-fast checks
 
 ## Important Rules
 
 - Do not use Docker for AVA development or verification.
 - AZOOM text chat channels are removed; keep AZOOM focused on voice, Notiva AI, and meeting transcripts.
-- User-visible changes require a Flutter version bump and matching Windows update package.
-- Windows packages must use public backend URL `http://112.166.136.198:8080`.
+- User-visible changes require a Flutter version bump and matching shipped-platform update packages.
+- All release packages must use public backend URL `http://112.166.136.198:8080` and WebSocket URL `ws://112.166.136.198:8080/ws`.
+- Mac, Windows/Android, and server machines collaborate through GitHub `main`; see `DEVELOPMENT_RULES.md` before release work.
 
 ## Quick Commands
 
