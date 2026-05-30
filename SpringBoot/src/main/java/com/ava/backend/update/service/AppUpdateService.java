@@ -29,10 +29,14 @@ public class AppUpdateService {
 
 	private static final String WINDOWS_PLATFORM = "windows";
 	private static final String ANDROID_PLATFORM = "android";
+	private static final String MACOS_PLATFORM = "macos";
+	private static final String IOS_PLATFORM = "ios";
 
 	private final Path updateDirectory;
 	private final PlatformUpdateConfig windowsConfig;
 	private final PlatformUpdateConfig androidConfig;
+	private final PlatformUpdateConfig macosConfig;
+	private final PlatformUpdateConfig iosConfig;
 	private final AppUpdateReleaseRepository releaseRepository;
 
 	public AppUpdateService(
@@ -45,7 +49,15 @@ public class AppUpdateService {
 		@Value("${ava.app-update.android.latest-version:0.1.0}") String latestAndroidVersion,
 		@Value("${ava.app-update.android.file-name:ava-android-${ava.app-update.android.latest-version:0.1.0}.apk}") String androidFileName,
 		@Value("${ava.app-update.android.required:false}") boolean androidRequired,
-		@Value("${ava.app-update.android.release-notes:AVA Android update}") String androidReleaseNotes
+		@Value("${ava.app-update.android.release-notes:AVA Android update}") String androidReleaseNotes,
+		@Value("${ava.app-update.macos.latest-version:0.1.0}") String latestMacosVersion,
+		@Value("${ava.app-update.macos.file-name:ava-macos-${ava.app-update.macos.latest-version:0.1.0}.dmg}") String macosFileName,
+		@Value("${ava.app-update.macos.required:false}") boolean macosRequired,
+		@Value("${ava.app-update.macos.release-notes:AVA macOS update}") String macosReleaseNotes,
+		@Value("${ava.app-update.ios.latest-version:0.1.0}") String latestIosVersion,
+		@Value("${ava.app-update.ios.file-name:ava-ios-${ava.app-update.ios.latest-version:0.1.0}.ipa}") String iosFileName,
+		@Value("${ava.app-update.ios.required:false}") boolean iosRequired,
+		@Value("${ava.app-update.ios.release-notes:AVA iOS update}") String iosReleaseNotes
 	) {
 		this.releaseRepository = releaseRepository;
 		this.updateDirectory = Path.of(updateDirectory).toAbsolutePath().normalize();
@@ -65,6 +77,22 @@ public class AppUpdateService {
 			androidReleaseNotes,
 			".apk"
 		);
+		this.macosConfig = buildConfig(
+			MACOS_PLATFORM,
+			latestMacosVersion,
+			macosFileName,
+			macosRequired,
+			macosReleaseNotes,
+			".dmg"
+		);
+		this.iosConfig = buildConfig(
+			IOS_PLATFORM,
+			latestIosVersion,
+			iosFileName,
+			iosRequired,
+			iosReleaseNotes,
+			".ipa"
+		);
 	}
 
 	public AppUpdateManifestResponse windowsManifest(String currentVersion) {
@@ -73,6 +101,14 @@ public class AppUpdateService {
 
 	public AppUpdateManifestResponse androidManifest(String currentVersion) {
 		return manifest(ANDROID_PLATFORM, currentVersion);
+	}
+
+	public AppUpdateManifestResponse macosManifest(String currentVersion) {
+		return manifest(MACOS_PLATFORM, currentVersion);
+	}
+
+	public AppUpdateManifestResponse iosManifest(String currentVersion) {
+		return manifest(IOS_PLATFORM, currentVersion);
 	}
 
 	public AppUpdateManifestResponse manifest(String platform, String currentVersion) {
@@ -133,6 +169,14 @@ public class AppUpdateService {
 		return packageFor(ANDROID_PLATFORM, fileName);
 	}
 
+	public UpdatePackage macosPackage(String fileName) {
+		return packageFor(MACOS_PLATFORM, fileName);
+	}
+
+	public UpdatePackage iosPackage(String fileName) {
+		return packageFor(IOS_PLATFORM, fileName);
+	}
+
 	public UpdatePackage packageFor(String platform, String fileName) {
 		PlatformUpdateConfig config = configFor(platform);
 		if (!config.fileName().equals(fileName)) {
@@ -177,6 +221,12 @@ public class AppUpdateService {
 		}
 		if (ANDROID_PLATFORM.equals(normalized)) {
 			return androidConfig;
+		}
+		if (MACOS_PLATFORM.equals(normalized)) {
+			return macosConfig;
+		}
+		if (IOS_PLATFORM.equals(normalized)) {
+			return iosConfig;
 		}
 		throw new IllegalArgumentException("Unsupported update platform.");
 	}

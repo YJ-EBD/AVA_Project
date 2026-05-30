@@ -185,10 +185,10 @@ Requires `ADMIN`.
 
 ## App Updates
 
-- `GET /api/app-updates/windows/latest`
-- `GET /api/app-updates/android/latest`
-- `GET /api/app-updates/windows/download/{fileName}`
-- `GET /api/app-updates/android/download/{fileName}`
+- `GET /api/app-updates/{platform}/latest`
+- `GET /api/app-updates/{platform}/releases/{version}`
+- `GET /api/app-updates/{platform}/download/{fileName}`
+  - Supported platforms: `windows`, `android`, `macos`, `ios`
 
 ## Error Shape
 

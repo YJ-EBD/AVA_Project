@@ -28,6 +28,8 @@ public class ProductionReadinessValidator implements ApplicationRunner {
 	private final String updateDirectory;
 	private final String windowsUpdateFileName;
 	private final String androidUpdateFileName;
+	private final String macosUpdateFileName;
+	private final String iosUpdateFileName;
 	private final boolean requireLiveKit;
 	private final String liveKitUrl;
 	private final String liveKitApiKey;
@@ -45,6 +47,8 @@ public class ProductionReadinessValidator implements ApplicationRunner {
 		@Value("${ava.app-update.directory:AppUpdates}") String updateDirectory,
 		@Value("${ava.app-update.windows.file-name:}") String windowsUpdateFileName,
 		@Value("${ava.app-update.android.file-name:}") String androidUpdateFileName,
+		@Value("${ava.app-update.macos.file-name:}") String macosUpdateFileName,
+		@Value("${ava.app-update.ios.file-name:}") String iosUpdateFileName,
 		@Value("${ava.azoom.require-livekit-in-production:false}") boolean requireLiveKit,
 		@Value("${ava.azoom.livekit.url:}") String liveKitUrl,
 		@Value("${ava.azoom.livekit.api-key:}") String liveKitApiKey,
@@ -61,6 +65,8 @@ public class ProductionReadinessValidator implements ApplicationRunner {
 		this.updateDirectory = updateDirectory;
 		this.windowsUpdateFileName = windowsUpdateFileName;
 		this.androidUpdateFileName = androidUpdateFileName;
+		this.macosUpdateFileName = macosUpdateFileName;
+		this.iosUpdateFileName = iosUpdateFileName;
 		this.requireLiveKit = requireLiveKit;
 		this.liveKitUrl = liveKitUrl;
 		this.liveKitApiKey = liveKitApiKey;
@@ -103,6 +109,12 @@ public class ProductionReadinessValidator implements ApplicationRunner {
 		}
 		if (!isBlank(androidUpdateFileName) && !Files.exists(Path.of(updateDirectory, androidUpdateFileName))) {
 			problems.add("Android update package is missing: " + androidUpdateFileName);
+		}
+		if (!isBlank(macosUpdateFileName) && !Files.exists(Path.of(updateDirectory, macosUpdateFileName))) {
+			problems.add("macOS update package is missing: " + macosUpdateFileName);
+		}
+		if (!isBlank(iosUpdateFileName) && !Files.exists(Path.of(updateDirectory, iosUpdateFileName))) {
+			problems.add("iOS update package is missing: " + iosUpdateFileName);
 		}
 		if (requireLiveKit && (isBlank(liveKitUrl) || isBlank(liveKitApiKey) || isBlank(liveKitApiSecret))) {
 			problems.add("LiveKit URL/API key/API secret are required for production AZOOM media.");

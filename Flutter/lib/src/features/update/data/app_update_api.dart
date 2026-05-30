@@ -57,6 +57,12 @@ class AppUpdateApi {
     if (io.Platform.isAndroid) {
       return 'android';
     }
+    if (io.Platform.isMacOS) {
+      return 'macos';
+    }
+    if (io.Platform.isIOS) {
+      return 'ios';
+    }
     return null;
   }
 

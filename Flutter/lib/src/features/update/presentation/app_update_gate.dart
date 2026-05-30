@@ -7,6 +7,7 @@ import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter/services.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../../../config/app_version.dart';
 import '../../../shared/ava_dialog.dart';
@@ -38,7 +39,11 @@ class _AppUpdateGateState extends ConsumerState<AppUpdateGate>
   bool _postUpdateCheckInProgress = false;
   bool _retryAfterCurrentCheck = false;
 
-  bool get _updatesSupported => io.Platform.isWindows || io.Platform.isAndroid;
+  bool get _updatesSupported =>
+      io.Platform.isWindows ||
+      io.Platform.isAndroid ||
+      io.Platform.isMacOS ||
+      io.Platform.isIOS;
 
   @override
   void initState() {
@@ -61,7 +66,7 @@ class _AppUpdateGateState extends ConsumerState<AppUpdateGate>
     if (state != AppLifecycleState.resumed || !_updatesSupported) {
       return;
     }
-    if (io.Platform.isAndroid) {
+    if (io.Platform.isAndroid || io.Platform.isIOS) {
       _checked = false;
       _scheduleCheck(delay: const Duration(milliseconds: 500));
     }
@@ -327,6 +332,14 @@ class _AppUpdateGateState extends ConsumerState<AppUpdateGate>
           io.Directory.systemTemp.path;
       return io.Directory('$base${io.Platform.pathSeparator}AVA');
     }
+    if (io.Platform.isMacOS) {
+      final home = io.Platform.environment['HOME'];
+      if (home != null && home.trim().isNotEmpty) {
+        return io.Directory(
+          '${home.trim()}${io.Platform.pathSeparator}Library${io.Platform.pathSeparator}Application Support${io.Platform.pathSeparator}AVA',
+        );
+      }
+    }
     return io.Directory(
       '${io.Directory.systemTemp.path}${io.Platform.pathSeparator}AVA',
     );
@@ -464,7 +477,7 @@ class _AppUpdateDialogState extends ConsumerState<_AppUpdateDialog> {
   String? _error;
   bool _updating = false;
   _UpdatePhase _phase = _UpdatePhase.idle;
-  String? _downloadedApkLocation;
+  String? _downloadedPackageLocation;
 
   String _phaseMessage(_UpdatePhase phase) {
     return switch (phase) {
@@ -480,10 +493,12 @@ class _AppUpdateDialogState extends ConsumerState<_AppUpdateDialog> {
     final progress = _progress;
     final phase = _phase;
     final isAndroid = io.Platform.isAndroid;
-    final androidDownloadReady =
-        isAndroid &&
+    final isMacOS = io.Platform.isMacOS;
+    final isIOS = io.Platform.isIOS;
+    final packageDownloadReady =
+        (isAndroid || isMacOS) &&
         phase == _UpdatePhase.downloaded &&
-        (_downloadedApkLocation?.isNotEmpty ?? false);
+        (_downloadedPackageLocation?.isNotEmpty ?? false);
     return AvaDialog(
       title: 'AVA 업데이트',
       subtitle: '새 버전 ${manifest.latestVersion}이 준비되었습니다.',
@@ -496,19 +511,23 @@ class _AppUpdateDialogState extends ConsumerState<_AppUpdateDialog> {
       actions: [
         if (!manifest.required)
           AvaDialogButton(
-            label: androidDownloadReady ? '닫기' : '나중에',
+            label: packageDownloadReady ? '닫기' : '나중에',
             onPressed: _updating ? null : () => Navigator.of(context).pop(),
           ),
         AvaDialogButton(
-          label: androidDownloadReady
+          label: packageDownloadReady
               ? '확인'
               : isAndroid
               ? 'APK 다운로드'
+              : isMacOS
+              ? 'DMG 다운로드'
+              : isIOS
+              ? '업데이트 열기'
               : '업데이트',
           filled: true,
           onPressed: _updating
               ? null
-              : androidDownloadReady
+              : packageDownloadReady
               ? () => Navigator.of(context).pop()
               : _downloadAndInstall,
         ),
@@ -534,6 +553,10 @@ class _AppUpdateDialogState extends ConsumerState<_AppUpdateDialog> {
               progress == null
                   ? isAndroid
                         ? 'APK 다운로드를 준비하고 있습니다.'
+                        : isMacOS
+                        ? 'DMG 다운로드를 준비하고 있습니다.'
+                        : isIOS
+                        ? '업데이트 페이지를 열고 있습니다.'
                         : '업데이트 파일을 준비하고 있습니다.'
                   : '${(progress * 100).clamp(0, 100).toStringAsFixed(0)}% 다운로드중',
               style: const TextStyle(
@@ -543,9 +566,12 @@ class _AppUpdateDialogState extends ConsumerState<_AppUpdateDialog> {
               ),
             ),
           ],
-          if (androidDownloadReady) ...[
+          if (packageDownloadReady) ...[
             const SizedBox(height: 16),
-            _AndroidDownloadCompleteStatus(location: _downloadedApkLocation!),
+            _UpdateDownloadCompleteStatus(
+              location: _downloadedPackageLocation!,
+              isMacOS: isMacOS,
+            ),
           ],
           if (_updating &&
               phase != _UpdatePhase.downloading &&
@@ -575,12 +601,21 @@ class _AppUpdateDialogState extends ConsumerState<_AppUpdateDialog> {
       _phase = _UpdatePhase.downloading;
       _progress = null;
       _error = null;
-      _downloadedApkLocation = null;
+      _downloadedPackageLocation = null;
     });
 
     try {
       final api = ref.read(appUpdateApiProvider);
       final url = api.absoluteDownloadUrl(widget.manifest.downloadUrl);
+
+      if (io.Platform.isIOS) {
+        await _openIosUpdateUrl(url);
+        if (mounted) {
+          Navigator.of(context).pop();
+        }
+        return;
+      }
+
       final updateDir = await _updateWorkingDirectory();
       final packagePath =
           '${updateDir.path}${io.Platform.pathSeparator}${widget.manifest.fileName}';
@@ -612,9 +647,7 @@ class _AppUpdateDialogState extends ConsumerState<_AppUpdateDialog> {
       }
 
       if (widget.manifest.sha256.isNotEmpty) {
-        final actual = io.Platform.isAndroid
-            ? await _sha256Dart(packagePath)
-            : await _sha256(packagePath);
+        final actual = await _sha256ForPlatform(packagePath);
         if (actual.toLowerCase() != widget.manifest.sha256.toLowerCase()) {
           throw StateError('업데이트 파일 검증에 실패했습니다.');
         }
@@ -627,7 +660,20 @@ class _AppUpdateDialogState extends ConsumerState<_AppUpdateDialog> {
             _updating = false;
             _phase = _UpdatePhase.downloaded;
             _progress = 1;
-            _downloadedApkLocation = visibleLocation;
+            _downloadedPackageLocation = visibleLocation;
+          });
+        }
+        return;
+      }
+
+      if (io.Platform.isMacOS) {
+        await _openMacUpdatePackage(packagePath);
+        if (mounted) {
+          setState(() {
+            _updating = false;
+            _phase = _UpdatePhase.downloaded;
+            _progress = 1;
+            _downloadedPackageLocation = packagePath;
           });
         }
         return;
@@ -691,6 +737,16 @@ class _AppUpdateDialogState extends ConsumerState<_AppUpdateDialog> {
         // Fall back to the app temp directory below.
       }
     }
+    if (io.Platform.isMacOS) {
+      final home = io.Platform.environment['HOME'];
+      if (home != null && home.trim().isNotEmpty) {
+        final directory = io.Directory(
+          '${home.trim()}${io.Platform.pathSeparator}Downloads${io.Platform.pathSeparator}AVA Updates',
+        );
+        await directory.create(recursive: true);
+        return directory;
+      }
+    }
     final directory = io.Directory(
       '${io.Directory.systemTemp.path}${io.Platform.pathSeparator}ava_update_${DateTime.now().millisecondsSinceEpoch}',
     );
@@ -703,7 +759,14 @@ class _AppUpdateDialogState extends ConsumerState<_AppUpdateDialog> {
     return digest.toString();
   }
 
-  Future<String> _sha256(String path) async {
+  Future<String> _sha256ForPlatform(String path) {
+    if (io.Platform.isWindows) {
+      return _sha256Windows(path);
+    }
+    return _sha256Dart(path);
+  }
+
+  Future<String> _sha256Windows(String path) async {
     final result = await io.Process.run('powershell.exe', [
       '-NoProfile',
       '-Command',
@@ -713,6 +776,24 @@ class _AppUpdateDialogState extends ConsumerState<_AppUpdateDialog> {
       throw StateError('업데이트 파일 해시를 확인할 수 없습니다.');
     }
     return result.stdout.toString().trim();
+  }
+
+  Future<void> _openMacUpdatePackage(String packagePath) async {
+    final result = await io.Process.run('open', [packagePath]);
+    if (result.exitCode != 0) {
+      throw StateError('macOS 업데이트 설치 파일을 열지 못했습니다.');
+    }
+  }
+
+  Future<void> _openIosUpdateUrl(String url) async {
+    final uri = Uri.tryParse(url);
+    if (uri == null || !uri.hasScheme) {
+      throw StateError('iOS 업데이트 주소가 올바르지 않습니다.');
+    }
+    final launched = await launchUrl(uri, mode: LaunchMode.externalApplication);
+    if (!launched) {
+      throw StateError('iOS 업데이트 페이지를 열지 못했습니다.');
+    }
   }
 
   Future<String> _saveAndroidApkToDownloads(String packagePath) async {
@@ -1039,10 +1120,14 @@ List<int> _versionParts(String version) {
       .toList();
 }
 
-class _AndroidDownloadCompleteStatus extends StatelessWidget {
-  const _AndroidDownloadCompleteStatus({required this.location});
+class _UpdateDownloadCompleteStatus extends StatelessWidget {
+  const _UpdateDownloadCompleteStatus({
+    required this.location,
+    required this.isMacOS,
+  });
 
   final String location;
+  final bool isMacOS;
 
   @override
   Widget build(BuildContext context) {
@@ -1068,9 +1153,9 @@ class _AndroidDownloadCompleteStatus extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               mainAxisSize: MainAxisSize.min,
               children: [
-                const Text(
-                  '다운로드 완료',
-                  style: TextStyle(
+                Text(
+                  isMacOS ? 'DMG 다운로드 완료' : '다운로드 완료',
+                  style: const TextStyle(
                     color: Color(0xFF102040),
                     fontSize: 14,
                     fontWeight: FontWeight.w900,
@@ -1078,7 +1163,9 @@ class _AndroidDownloadCompleteStatus extends StatelessWidget {
                 ),
                 const SizedBox(height: 6),
                 Text(
-                  '$location에 APK 다운로드가 완료되었습니다.\n휴대폰의 다운로드 앱 또는 파일 관리자에서 APK를 열어 설치해주세요. 설치가 끝나면 AVA를 다시 실행해주세요.',
+                  isMacOS
+                      ? '$location에 DMG 다운로드가 완료되었습니다.\n열린 설치 이미지에서 ava_flutter.app을 Applications로 옮긴 뒤 AVA를 다시 실행해주세요.'
+                      : '$location에 APK 다운로드가 완료되었습니다.\n휴대폰의 다운로드 앱 또는 파일 관리자에서 APK를 열어 설치해주세요. 설치가 끝나면 AVA를 다시 실행해주세요.',
                   style: const TextStyle(
                     color: Color(0xFF3F5068),
                     fontSize: 12,

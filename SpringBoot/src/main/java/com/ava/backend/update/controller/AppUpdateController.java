@@ -25,18 +25,12 @@ public class AppUpdateController {
 		this.appUpdateService = appUpdateService;
 	}
 
-	@GetMapping("/windows/latest")
-	public AppUpdateManifestResponse windowsLatest(
+	@GetMapping("/{platform}/latest")
+	public AppUpdateManifestResponse latest(
+		@PathVariable String platform,
 		@RequestParam(value = "currentVersion", required = false) String currentVersion
 	) {
-		return appUpdateService.windowsManifest(currentVersion);
-	}
-
-	@GetMapping("/android/latest")
-	public AppUpdateManifestResponse androidLatest(
-		@RequestParam(value = "currentVersion", required = false) String currentVersion
-	) {
-		return appUpdateService.androidManifest(currentVersion);
+		return appUpdateService.manifest(platform, currentVersion);
 	}
 
 	@GetMapping("/{platform}/releases/{version}")
@@ -47,15 +41,12 @@ public class AppUpdateController {
 		return appUpdateService.release(platform, version);
 	}
 
-	@GetMapping("/windows/download/{fileName}")
-	public ResponseEntity<Resource> windowsDownload(@PathVariable String fileName) {
-		AppUpdateService.UpdatePackage updatePackage = appUpdateService.windowsPackage(fileName);
-		return updatePackageResponse(updatePackage);
-	}
-
-	@GetMapping("/android/download/{fileName}")
-	public ResponseEntity<Resource> androidDownload(@PathVariable String fileName) {
-		AppUpdateService.UpdatePackage updatePackage = appUpdateService.androidPackage(fileName);
+	@GetMapping("/{platform}/download/{fileName}")
+	public ResponseEntity<Resource> download(
+		@PathVariable String platform,
+		@PathVariable String fileName
+	) {
+		AppUpdateService.UpdatePackage updatePackage = appUpdateService.packageFor(platform, fileName);
 		return updatePackageResponse(updatePackage);
 	}
 

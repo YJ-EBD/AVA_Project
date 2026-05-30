@@ -1,4 +1,4 @@
-AVA Windows update packages live here.
+AVA update packages live here.
 
 Workflow:
 
@@ -11,8 +11,8 @@ client/server compatibility, runtime connectivity, media, login, messaging,
 updates, or distributed app behavior, bump the Flutter version in the same
 change and keep the backend Windows update version in sync.
 
-Codex rule: a version bump is not complete until the matching Windows update
-zip and Android release APK exist, and both update manifests return
+Codex rule: a version bump is not complete until the matching update packages
+exist for the platforms being shipped, and their update manifests return
 `updateAvailable: true` for the previous released version.
 
 1. Run `Flutter/bump_version.cmd 0.1.1`.
@@ -37,13 +37,29 @@ zip and Android release APK exist, and both update manifests return
    - Confirm `SpringBoot/AppUpdates/ava-android-<version>.apk` exists.
    - Android APKs must use the local AVA release signing key, not the debug
      signing key.
-4. Set the backend update version to the same version.
+4. Build and copy the macOS DMG for the same version when shipping macOS.
+   - Run the macOS Flutter release build and package it as a DMG.
+   - Confirm `SpringBoot/AppUpdates/AVA_Project_<version>_<build>_macOS.dmg`
+     exists, or set `AVA_APP_MACOS_FILE_NAME` to the actual DMG name.
+   - macOS clients download the DMG and open it; the user must drag
+     `ava_flutter.app` into Applications and restart AVA.
+5. Build and copy the iOS IPA for the same version when shipping iOS.
+   - Confirm `SpringBoot/AppUpdates/ava-ios-<version>.ipa` exists, or set
+     `AVA_APP_IOS_FILE_NAME` to the actual IPA name.
+   - iOS cannot silently install arbitrary IPA files from inside the app; the
+     client opens the update URL externally.
+6. Set the backend update version to the same version.
    - `AVA_APP_WINDOWS_LATEST_VERSION=0.1.1`
    - `AVA_APP_WINDOWS_FILE_NAME=ava-windows-0.1.1.zip`
    - `AVA_APP_ANDROID_LATEST_VERSION=0.1.1`
    - `AVA_APP_ANDROID_FILE_NAME=ava-android-0.1.1.apk`
-5. Restart the backend.
-6. Verify the update API before calling the work done.
+   - `AVA_APP_MACOS_LATEST_VERSION=0.1.1`
+   - `AVA_APP_MACOS_BUILD_NUMBER=1001`
+   - `AVA_APP_MACOS_FILE_NAME=AVA_Project_0.1.1_1001_macOS.dmg`
+   - `AVA_APP_IOS_LATEST_VERSION=0.1.1`
+   - `AVA_APP_IOS_FILE_NAME=ava-ios-0.1.1.ipa`
+7. Restart the backend.
+8. Verify the update API before calling the work done.
    - `GET /api/app-updates/windows/latest?currentVersion=<previous-version>`
      must return `updateAvailable: true`.
    - `GET /api/app-updates/windows/download/ava-windows-<version>.zip` must
@@ -52,6 +68,12 @@ zip and Android release APK exist, and both update manifests return
      must return `updateAvailable: true`.
    - `GET /api/app-updates/android/download/ava-android-<version>.apk` must
      return `200 OK`.
+   - `GET /api/app-updates/macos/latest?currentVersion=<previous-version>`
+     must return `updateAvailable: true` when macOS is shipped.
+   - `GET /api/app-updates/macos/download/<file-name>.dmg` must return `200 OK`.
+   - `GET /api/app-updates/ios/latest?currentVersion=<previous-version>`
+     must return `updateAvailable: true` when iOS is shipped.
+   - `GET /api/app-updates/ios/download/<file-name>.ipa` must return `200 OK`.
 
 Clients check their platform update endpoint on app startup. If the server
 version is higher than the local app version and the package exists, the app
