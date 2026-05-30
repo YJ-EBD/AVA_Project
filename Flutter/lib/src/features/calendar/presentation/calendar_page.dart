@@ -11,11 +11,16 @@ import '../domain/calendar_models.dart';
 
 const double _mobileBreakpoint = 600;
 const double _desktopBreakpoint = 1024;
-const Color _calendarBackground = Color(0xFFF6F8FC);
-const Color _calendarLine = Color(0xFFE2E7EF);
-const Color _calendarText = Color(0xFF1F2937);
-const Color _calendarMuted = Color(0xFF687385);
-const Color _calendarPrimary = Color(0xFF3157D5);
+const Color _calendarBackground = Color(0xFFF4F7FB);
+const Color _calendarSurface = Color(0xFFFFFFFF);
+const Color _calendarSoftSurface = Color(0xFFF8FAFE);
+const Color _calendarLine = Color(0xFFE4EAF3);
+const Color _calendarText = Color(0xFF17233C);
+const Color _calendarMuted = Color(0xFF6A7890);
+const Color _calendarPrimary = Color(0xFF1463F3);
+const Color _calendarNavy = Color(0xFF09275B);
+const Color _calendarDanger = Color(0xFFFF4D5E);
+const Color _calendarPurple = Color(0xFF7A55FF);
 
 typedef CalendarExternalLinkOpener =
     Future<void> Function(String? target, String fallback);
@@ -245,48 +250,70 @@ class _DesktopCalendarLayout extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    return Row(
+    return Column(
       children: [
-        SizedBox(
-          width: 264,
-          child: _CalendarSidebar(
-            state: state,
-            compact: false,
-            onAddCategory: _showCategoryDialog,
-          ),
+        _CalendarGlobalHeader(
+          searchController: searchController,
+          state: state,
+          onAdd: onAdd,
         ),
-        const VerticalDivider(width: 1, color: _calendarLine),
         Expanded(
-          child: Column(
-            children: [
-              _CalendarToolbar(
-                state: state,
-                searchController: searchController,
-                onAdd: onAdd,
-              ),
-              Expanded(
-                child: _CalendarBody(
-                  state: state,
-                  desktop: true,
-                  onEventTap: (event) => ref
-                      .read(calendarControllerProvider.notifier)
-                      .selectEvent(event),
-                  onEmptyTimeTap: (date) => onAdd(),
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(14, 10, 14, 14),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                SizedBox(
+                  width: 286,
+                  child: _CalendarPanel(
+                    child: _CalendarSidebar(
+                      state: state,
+                      compact: false,
+                      onAdd: onAdd,
+                      onAddCategory: _showCategoryDialog,
+                    ),
+                  ),
                 ),
-              ),
-            ],
-          ),
-        ),
-        const VerticalDivider(width: 1, color: _calendarLine),
-        SizedBox(
-          width: 344,
-          child: _EventDetailPanel(
-            event: state.selectedEvent,
-            onEdit: onEdit,
-            onDelete: onDelete,
-            onOpenLink: onOpenLink,
-            onOpenChatRoom: onOpenChatRoom,
-            onOpenAzoomMeeting: onOpenAzoomMeeting,
+                const SizedBox(width: 10),
+                Expanded(
+                  child: _CalendarPanel(
+                    child: Column(
+                      children: [
+                        _CalendarToolbar(
+                          state: state,
+                          searchController: searchController,
+                          onAdd: onAdd,
+                        ),
+                        Expanded(
+                          child: _CalendarBody(
+                            state: state,
+                            desktop: true,
+                            onEventTap: (event) => ref
+                                .read(calendarControllerProvider.notifier)
+                                .selectEvent(event),
+                            onEmptyTimeTap: (date) => onAdd(),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 10),
+                SizedBox(
+                  width: 366,
+                  child: _CalendarPanel(
+                    child: _EventDetailPanel(
+                      event: state.selectedEvent,
+                      onEdit: onEdit,
+                      onDelete: onDelete,
+                      onOpenLink: onOpenLink,
+                      onOpenChatRoom: onOpenChatRoom,
+                      onOpenAzoomMeeting: onOpenAzoomMeeting,
+                    ),
+                  ),
+                ),
+              ],
+            ),
           ),
         ),
       ],
@@ -344,6 +371,166 @@ class _DesktopCalendarLayout extends ConsumerWidget {
   }
 }
 
+class _CalendarPanel extends StatelessWidget {
+  const _CalendarPanel({required this.child});
+
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: _calendarSurface,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: _calendarLine),
+        boxShadow: [
+          BoxShadow(
+            color: const Color(0xFF1B2B4A).withValues(alpha: 0.05),
+            blurRadius: 18,
+            offset: const Offset(0, 8),
+          ),
+        ],
+      ),
+      child: ClipRRect(borderRadius: BorderRadius.circular(12), child: child),
+    );
+  }
+}
+
+class _CalendarGlobalHeader extends ConsumerWidget {
+  const _CalendarGlobalHeader({
+    required this.searchController,
+    required this.state,
+    required this.onAdd,
+  });
+
+  final TextEditingController searchController;
+  final CalendarState state;
+  final VoidCallback onAdd;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final controller = ref.read(calendarControllerProvider.notifier);
+    return Container(
+      height: 66,
+      padding: const EdgeInsets.symmetric(horizontal: 20),
+      decoration: const BoxDecoration(
+        color: _calendarSurface,
+        border: Border(bottom: BorderSide(color: _calendarLine)),
+      ),
+      child: Row(
+        children: [
+          ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 620),
+            child: SizedBox(
+              height: 42,
+              child: TextField(
+                controller: searchController,
+                textInputAction: TextInputAction.search,
+                decoration: InputDecoration(
+                  prefixIcon: const Icon(Icons.search_rounded, size: 20),
+                  hintText: '메시지, 파일, 멤버 검색 (⌘ + K)',
+                  hintStyle: const TextStyle(
+                    color: Color(0xFF8A96AA),
+                    fontWeight: FontWeight.w600,
+                  ),
+                  isDense: true,
+                  filled: true,
+                  fillColor: const Color(0xFFF2F5FA),
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(9),
+                    borderSide: BorderSide.none,
+                  ),
+                ),
+                onSubmitted: controller.setSearchQuery,
+              ),
+            ),
+          ),
+          const Spacer(),
+          _HeaderIconButton(
+            tooltip: '도움말',
+            icon: Icons.help_outline_rounded,
+            onTap: () {},
+          ),
+          const SizedBox(width: 12),
+          _HeaderIconButton(
+            tooltip: '알림',
+            icon: Icons.notifications_none_rounded,
+            badge: state.visibleEvents
+                .where((event) => _sameDate(event.displayStart, DateTime.now()))
+                .length,
+            onTap: () {},
+          ),
+          const SizedBox(width: 12),
+          PopupMenuButton<String?>(
+            tooltip: '팀 선택',
+            initialValue: state.teamFilter,
+            onSelected: controller.setTeamFilter,
+            itemBuilder: (context) => [
+              const PopupMenuItem<String?>(value: null, child: Text('전체 팀')),
+              for (final team in calendarTeams)
+                PopupMenuItem<String?>(value: team.id, child: Text(team.name)),
+            ],
+            child: Container(
+              height: 42,
+              padding: const EdgeInsets.symmetric(horizontal: 14),
+              decoration: BoxDecoration(
+                color: _calendarSoftSurface,
+                border: Border.all(color: _calendarLine),
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: Row(
+                children: [
+                  const Icon(
+                    Icons.groups_2_outlined,
+                    color: _calendarNavy,
+                    size: 21,
+                  ),
+                  const SizedBox(width: 8),
+                  Text(
+                    calendarTeamLabel(state.teamFilter),
+                    style: const TextStyle(
+                      color: _calendarText,
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  const Icon(Icons.keyboard_arrow_down_rounded, size: 20),
+                ],
+              ),
+            ),
+          ),
+          const SizedBox(width: 12),
+          Container(
+            height: 42,
+            padding: const EdgeInsets.symmetric(horizontal: 13),
+            decoration: BoxDecoration(
+              color: _calendarSoftSurface,
+              border: Border.all(color: _calendarLine),
+              borderRadius: BorderRadius.circular(10),
+            ),
+            child: Row(
+              children: [
+                const Icon(Icons.person_add_alt_1_rounded, size: 20),
+                const SizedBox(width: 7),
+                Text(
+                  '${_uniqueAttendeeCount(state.visibleEvents)}',
+                  style: const TextStyle(fontWeight: FontWeight.w900),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(width: 12),
+          _HeaderIconButton(
+            tooltip: '앱 메뉴',
+            icon: Icons.apps_rounded,
+            onTap: onAdd,
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 class _MobileCalendarLayout extends ConsumerWidget {
   const _MobileCalendarLayout({
     required this.state,
@@ -377,6 +564,7 @@ class _MobileCalendarLayout extends ConsumerWidget {
             child: _CalendarSidebar(
               state: state,
               compact: true,
+              onAdd: onAdd,
               onAddCategory: (_) {},
             ),
           ),
@@ -401,6 +589,10 @@ class _MobileCalendarLayout extends ConsumerWidget {
         bottom: false,
         child: Column(
           children: [
+            _MobileCalendarHeader(
+              state: state,
+              searchController: searchController,
+            ),
             _CalendarToolbar(
               state: state,
               searchController: searchController,
@@ -446,6 +638,186 @@ class _MobileCalendarLayout extends ConsumerWidget {
   }
 }
 
+class _HeaderIconButton extends StatelessWidget {
+  const _HeaderIconButton({
+    required this.tooltip,
+    required this.icon,
+    required this.onTap,
+    this.badge = 0,
+  });
+
+  final String tooltip;
+  final IconData icon;
+  final VoidCallback onTap;
+  final int badge;
+
+  @override
+  Widget build(BuildContext context) {
+    return Tooltip(
+      message: tooltip,
+      child: InkWell(
+        borderRadius: BorderRadius.circular(10),
+        onTap: onTap,
+        child: SizedBox(
+          width: 42,
+          height: 42,
+          child: Stack(
+            clipBehavior: Clip.none,
+            alignment: Alignment.center,
+            children: [
+              Icon(icon, color: _calendarNavy, size: 22),
+              if (badge > 0)
+                Positioned(
+                  top: 5,
+                  right: 4,
+                  child: Container(
+                    constraints: const BoxConstraints(minWidth: 17),
+                    height: 17,
+                    padding: const EdgeInsets.symmetric(horizontal: 4),
+                    alignment: Alignment.center,
+                    decoration: BoxDecoration(
+                      color: _calendarDanger,
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    child: Text(
+                      badge > 99 ? '99+' : '$badge',
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 10,
+                        fontWeight: FontWeight.w900,
+                      ),
+                    ),
+                  ),
+                ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _MobileCalendarHeader extends ConsumerWidget {
+  const _MobileCalendarHeader({
+    required this.state,
+    required this.searchController,
+  });
+
+  final CalendarState state;
+  final TextEditingController searchController;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    return Container(
+      height: 58,
+      padding: const EdgeInsets.symmetric(horizontal: 15),
+      decoration: const BoxDecoration(
+        color: _calendarSurface,
+        border: Border(bottom: BorderSide(color: _calendarLine)),
+      ),
+      child: Row(
+        children: [
+          const Text(
+            'AVA',
+            style: TextStyle(
+              color: _calendarPrimary,
+              fontSize: 21,
+              fontWeight: FontWeight.w900,
+            ),
+          ),
+          Container(
+            width: 1,
+            height: 22,
+            margin: const EdgeInsets.symmetric(horizontal: 12),
+            color: _calendarLine,
+          ),
+          const Text(
+            '캘린더',
+            style: TextStyle(
+              color: _calendarText,
+              fontSize: 17,
+              fontWeight: FontWeight.w900,
+            ),
+          ),
+          const Spacer(),
+          IconButton(
+            tooltip: '검색',
+            onPressed: () => _showMobileSearch(context, ref),
+            icon: const Icon(Icons.search_rounded),
+          ),
+          Stack(
+            clipBehavior: Clip.none,
+            children: [
+              IconButton(
+                tooltip: '알림',
+                onPressed: () {},
+                icon: const Icon(Icons.notifications_none_rounded),
+              ),
+              if (state.visibleEvents.any(
+                (event) => _sameDate(event.displayStart, DateTime.now()),
+              ))
+                Positioned(
+                  top: 8,
+                  right: 8,
+                  child: Container(
+                    width: 16,
+                    height: 16,
+                    alignment: Alignment.center,
+                    decoration: const BoxDecoration(
+                      color: _calendarDanger,
+                      shape: BoxShape.circle,
+                    ),
+                    child: const Text(
+                      '!',
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontSize: 10,
+                        fontWeight: FontWeight.w900,
+                      ),
+                    ),
+                  ),
+                ),
+            ],
+          ),
+          const SizedBox(width: 8),
+          const CircleAvatar(
+            radius: 15,
+            backgroundColor: Color(0xFFE9EEF8),
+            child: Icon(Icons.person, size: 17, color: _calendarNavy),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _showMobileSearch(BuildContext context, WidgetRef ref) {
+    final controller = ref.read(calendarControllerProvider.notifier);
+    return showModalBottomSheet<void>(
+      context: context,
+      showDragHandle: true,
+      builder: (context) => SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(18, 0, 18, 18),
+          child: TextField(
+            controller: searchController,
+            autofocus: true,
+            textInputAction: TextInputAction.search,
+            decoration: const InputDecoration(
+              prefixIcon: Icon(Icons.search_rounded),
+              labelText: '일정 검색',
+              hintText: '제목, 참석자, 파일, Notion 검색',
+            ),
+            onSubmitted: (value) {
+              controller.setSearchQuery(value);
+              Navigator.pop(context);
+            },
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 class _CalendarToolbar extends ConsumerWidget {
   const _CalendarToolbar({
     required this.state,
@@ -462,15 +834,87 @@ class _CalendarToolbar extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final controller = ref.read(calendarControllerProvider.notifier);
+    if (compact) {
+      return Container(
+        padding: const EdgeInsets.fromLTRB(14, 10, 14, 8),
+        color: _calendarSurface,
+        child: Column(
+          children: [
+            Row(
+              children: [
+                _SmallSquareButton(
+                  tooltip: '이전',
+                  icon: Icons.chevron_left_rounded,
+                  onTap: () => controller.move(-1),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Center(
+                    child: Text(
+                      _titleForState(state),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        color: _calendarText,
+                        fontSize: 18,
+                        fontWeight: FontWeight.w900,
+                      ),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                _SmallSquareButton(
+                  tooltip: '다음',
+                  icon: Icons.chevron_right_rounded,
+                  onTap: () => controller.move(1),
+                ),
+              ],
+            ),
+            const SizedBox(height: 10),
+            SingleChildScrollView(
+              scrollDirection: Axis.horizontal,
+              child: Row(
+                children: [
+                  _PillActionButton(label: '오늘', onTap: controller.goToday),
+                  const SizedBox(width: 8),
+                  _ViewModeButton(
+                    label: '월간',
+                    selected: state.viewMode == CalendarViewMode.month,
+                    onTap: () => controller.setViewMode(CalendarViewMode.month),
+                  ),
+                  const SizedBox(width: 6),
+                  _ViewModeButton(
+                    label: '주간',
+                    selected: state.viewMode == CalendarViewMode.week,
+                    onTap: () => controller.setViewMode(CalendarViewMode.week),
+                  ),
+                  const SizedBox(width: 6),
+                  _ViewModeButton(
+                    label: '일간',
+                    selected: state.viewMode == CalendarViewMode.day,
+                    onTap: () => controller.setViewMode(CalendarViewMode.day),
+                  ),
+                  const SizedBox(width: 6),
+                  _ViewModeButton(
+                    label: '리스트',
+                    selected: state.viewMode == CalendarViewMode.list,
+                    onTap: () => controller.setViewMode(CalendarViewMode.list),
+                  ),
+                ],
+              ),
+            ),
+            if (state.errorText != null) ...[
+              const SizedBox(height: 8),
+              _InlineError(message: state.errorText!),
+            ],
+          ],
+        ),
+      );
+    }
     return Container(
-      padding: EdgeInsets.fromLTRB(
-        compact ? 14 : 22,
-        12,
-        compact ? 14 : 22,
-        10,
-      ),
+      padding: const EdgeInsets.fromLTRB(26, 22, 26, 14),
       decoration: const BoxDecoration(
-        color: Colors.white,
+        color: _calendarSurface,
         border: Border(bottom: BorderSide(color: _calendarLine)),
       ),
       child: Column(
@@ -478,104 +922,68 @@ class _CalendarToolbar extends ConsumerWidget {
         children: [
           Row(
             children: [
-              IconButton(
-                tooltip: '이전',
-                onPressed: () => controller.move(-1),
-                icon: const Icon(Icons.chevron_left),
-              ),
               Expanded(
                 child: Text(
                   _titleForState(state),
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
+                  style: const TextStyle(
                     color: _calendarText,
-                    fontSize: compact ? 18 : 22,
-                    fontWeight: FontWeight.w800,
+                    fontSize: 27,
+                    fontWeight: FontWeight.w900,
                   ),
                 ),
               ),
-              IconButton(
-                tooltip: '다음',
-                onPressed: () => controller.move(1),
-                icon: const Icon(Icons.chevron_right),
+              _SmallSquareButton(
+                tooltip: '이전',
+                icon: Icons.chevron_left_rounded,
+                onTap: () => controller.move(-1),
               ),
-              if (!compact) const SizedBox(width: 8),
-              if (!compact)
-                FilledButton.icon(
-                  onPressed: onAdd,
-                  icon: const Icon(Icons.add, size: 18),
-                  label: const Text('일정 추가'),
-                )
-              else
-                IconButton(
-                  tooltip: '일정 추가',
-                  onPressed: onAdd,
-                  icon: const Icon(Icons.add_circle_outline),
-                ),
+              const SizedBox(width: 8),
+              _SmallSquareButton(
+                tooltip: '다음',
+                icon: Icons.chevron_right_rounded,
+                onTap: () => controller.move(1),
+              ),
+              const SizedBox(width: 18),
+              _PillActionButton(label: '오늘', onTap: controller.goToday),
+              const SizedBox(width: 10),
+              _ViewModeMenu(state: state),
+              const SizedBox(width: 10),
+              FilledButton.icon(
+                onPressed: onAdd,
+                icon: const Icon(Icons.add_rounded, size: 18),
+                label: const Text('일정 추가'),
+              ),
             ],
           ),
-          const SizedBox(height: 10),
-          Wrap(
-            spacing: 8,
-            runSpacing: 8,
-            crossAxisAlignment: WrapCrossAlignment.center,
+          const SizedBox(height: 14),
+          Row(
             children: [
-              OutlinedButton.icon(
-                onPressed: controller.goToday,
-                icon: const Icon(Icons.today, size: 17),
-                label: const Text('오늘'),
-              ),
               _ViewModeButton(
                 label: '월간',
                 selected: state.viewMode == CalendarViewMode.month,
                 onTap: () => controller.setViewMode(CalendarViewMode.month),
               ),
+              const SizedBox(width: 8),
               _ViewModeButton(
                 label: '주간',
                 selected: state.viewMode == CalendarViewMode.week,
                 onTap: () => controller.setViewMode(CalendarViewMode.week),
               ),
+              const SizedBox(width: 8),
               _ViewModeButton(
                 label: '일간',
                 selected: state.viewMode == CalendarViewMode.day,
                 onTap: () => controller.setViewMode(CalendarViewMode.day),
               ),
+              const SizedBox(width: 8),
               _ViewModeButton(
                 label: '리스트',
                 selected: state.viewMode == CalendarViewMode.list,
                 onTap: () => controller.setViewMode(CalendarViewMode.list),
               ),
-              SizedBox(
-                width: compact ? 170 : 260,
-                height: 40,
-                child: TextField(
-                  controller: searchController,
-                  textInputAction: TextInputAction.search,
-                  decoration: InputDecoration(
-                    prefixIcon: const Icon(Icons.search, size: 18),
-                    suffixIcon: searchController.text.isEmpty
-                        ? null
-                        : IconButton(
-                            tooltip: '검색 지우기',
-                            onPressed: () {
-                              searchController.clear();
-                              controller.setSearchQuery('');
-                            },
-                            icon: const Icon(Icons.close, size: 18),
-                          ),
-                    hintText: '검색',
-                    isDense: true,
-                    filled: true,
-                    fillColor: _calendarBackground,
-                    border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(8),
-                      borderSide: BorderSide.none,
-                    ),
-                  ),
-                  onSubmitted: controller.setSearchQuery,
-                ),
-              ),
+              const Spacer(),
               _StatusFilterButton(status: state.statusFilter),
             ],
           ),
@@ -603,10 +1011,126 @@ class _ViewModeButton extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return SizedBox(
-      height: 40,
-      child: selected
-          ? FilledButton(onPressed: onTap, child: Text(label))
-          : OutlinedButton(onPressed: onTap, child: Text(label)),
+      height: 34,
+      child: TextButton(
+        onPressed: onTap,
+        style: TextButton.styleFrom(
+          foregroundColor: selected ? Colors.white : _calendarMuted,
+          backgroundColor: selected ? _calendarPrimary : _calendarSoftSurface,
+          padding: const EdgeInsets.symmetric(horizontal: 15),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(9),
+            side: BorderSide(
+              color: selected ? _calendarPrimary : _calendarLine,
+            ),
+          ),
+          textStyle: const TextStyle(fontWeight: FontWeight.w900),
+        ),
+        child: Text(label),
+      ),
+    );
+  }
+}
+
+class _SmallSquareButton extends StatelessWidget {
+  const _SmallSquareButton({
+    required this.tooltip,
+    required this.icon,
+    required this.onTap,
+  });
+
+  final String tooltip;
+  final IconData icon;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Tooltip(
+      message: tooltip,
+      child: InkWell(
+        borderRadius: BorderRadius.circular(8),
+        onTap: onTap,
+        child: Container(
+          width: 38,
+          height: 38,
+          alignment: Alignment.center,
+          decoration: BoxDecoration(
+            color: _calendarSoftSurface,
+            border: Border.all(color: _calendarLine),
+            borderRadius: BorderRadius.circular(8),
+          ),
+          child: Icon(icon, color: _calendarText, size: 22),
+        ),
+      ),
+    );
+  }
+}
+
+class _PillActionButton extends StatelessWidget {
+  const _PillActionButton({required this.label, required this.onTap});
+
+  final String label;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      height: 34,
+      child: OutlinedButton(
+        onPressed: onTap,
+        style: OutlinedButton.styleFrom(
+          foregroundColor: _calendarText,
+          side: const BorderSide(color: _calendarLine),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(9)),
+          textStyle: const TextStyle(fontWeight: FontWeight.w900),
+        ),
+        child: Text(label),
+      ),
+    );
+  }
+}
+
+class _ViewModeMenu extends ConsumerWidget {
+  const _ViewModeMenu({required this.state});
+
+  final CalendarState state;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final controller = ref.read(calendarControllerProvider.notifier);
+    return PopupMenuButton<CalendarViewMode>(
+      tooltip: '보기 방식',
+      initialValue: state.viewMode,
+      onSelected: controller.setViewMode,
+      itemBuilder: (context) => [
+        for (final mode in CalendarViewMode.values)
+          PopupMenuItem<CalendarViewMode>(
+            value: mode,
+            child: Text(_viewModeLabel(mode)),
+          ),
+      ],
+      child: Container(
+        height: 38,
+        padding: const EdgeInsets.symmetric(horizontal: 14),
+        decoration: BoxDecoration(
+          color: _calendarSoftSurface,
+          border: Border.all(color: _calendarLine),
+          borderRadius: BorderRadius.circular(9),
+        ),
+        child: Row(
+          children: [
+            Text(
+              _viewModeLabel(state.viewMode),
+              style: const TextStyle(
+                color: _calendarText,
+                fontWeight: FontWeight.w900,
+              ),
+            ),
+            const SizedBox(width: 8),
+            const Icon(Icons.keyboard_arrow_down_rounded, size: 20),
+          ],
+        ),
+      ),
     );
   }
 }
@@ -651,108 +1175,219 @@ class _CalendarSidebar extends ConsumerWidget {
   const _CalendarSidebar({
     required this.state,
     required this.compact,
+    required this.onAdd,
     required this.onAddCategory,
   });
 
   final CalendarState state;
   final bool compact;
+  final VoidCallback onAdd;
   final ValueChanged<BuildContext> onAddCategory;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final selectedEvents = state.selectedDateEvents(state.selectedDate);
     return Container(
-      color: Colors.white,
+      color: _calendarSurface,
       child: SafeArea(
         right: false,
-        child: ListView(
-          padding: EdgeInsets.all(compact ? 14 : 18),
+        bottom: false,
+        child: Column(
           children: [
-            Text(
-              '캘린더',
-              style: TextStyle(
-                color: _calendarText,
-                fontSize: compact ? 18 : 22,
-                fontWeight: FontWeight.w800,
-              ),
-            ),
-            const SizedBox(height: 16),
-            _MiniCalendar(state: state),
-            const SizedBox(height: 18),
-            const Text('팀 필터', style: TextStyle(fontWeight: FontWeight.w800)),
-            const SizedBox(height: 8),
-            _TeamFilterTile(
-              label: '전체 팀',
-              selected: state.teamFilter == null,
-              onTap: () => ref
-                  .read(calendarControllerProvider.notifier)
-                  .setTeamFilter(null),
-            ),
-            for (final team in calendarTeams)
-              _TeamFilterTile(
-                label: team.name,
-                selected: state.teamFilter == team.id,
-                onTap: () => ref
-                    .read(calendarControllerProvider.notifier)
-                    .setTeamFilter(team.id),
-              ),
-            const Divider(height: 28),
-            Row(
-              children: [
-                const Expanded(
-                  child: Text(
-                    '카테고리',
-                    style: TextStyle(fontWeight: FontWeight.w800),
+            Expanded(
+              child: ListView(
+                padding: EdgeInsets.fromLTRB(
+                  compact ? 14 : 22,
+                  compact ? 14 : 20,
+                  compact ? 14 : 22,
+                  18,
+                ),
+                children: [
+                  Row(
+                    children: [
+                      Expanded(
+                        child: Row(
+                          children: [
+                            Flexible(
+                              child: Text(
+                                'AVA 일정표',
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: TextStyle(
+                                  color: _calendarText,
+                                  fontSize: compact ? 17 : 20,
+                                  fontWeight: FontWeight.w900,
+                                ),
+                              ),
+                            ),
+                            const SizedBox(width: 4),
+                            const Icon(
+                              Icons.keyboard_arrow_down_rounded,
+                              size: 20,
+                              color: _calendarMuted,
+                            ),
+                          ],
+                        ),
+                      ),
+                      IconButton(
+                        tooltip: '고정',
+                        visualDensity: VisualDensity.compact,
+                        onPressed: () {},
+                        icon: const Icon(
+                          Icons.push_pin_outlined,
+                          size: 19,
+                          color: _calendarPrimary,
+                        ),
+                      ),
+                    ],
                   ),
-                ),
-                IconButton(
-                  tooltip: '카테고리 추가',
-                  onPressed: () => onAddCategory(context),
-                  icon: const Icon(Icons.add, size: 18),
-                ),
-              ],
+                  const SizedBox(height: 18),
+                  _MiniCalendar(state: state),
+                  const SizedBox(height: 22),
+                  _SidebarSectionHeader(
+                    title: '팀 필터',
+                    trailing: const Icon(
+                      Icons.tune_rounded,
+                      size: 18,
+                      color: _calendarMuted,
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                  _TeamFilterTile(
+                    label: '전체 팀',
+                    selected: state.teamFilter == null,
+                    color: _calendarPrimary,
+                    onTap: () => ref
+                        .read(calendarControllerProvider.notifier)
+                        .setTeamFilter(null),
+                  ),
+                  for (var i = 0; i < calendarTeams.length; i++)
+                    _TeamFilterTile(
+                      label: calendarTeams[i].name,
+                      selected: state.teamFilter == calendarTeams[i].id,
+                      color: _teamColor(i),
+                      onTap: () => ref
+                          .read(calendarControllerProvider.notifier)
+                          .setTeamFilter(calendarTeams[i].id),
+                    ),
+                  const SizedBox(height: 18),
+                  const Divider(height: 1),
+                  const SizedBox(height: 18),
+                  _SidebarSectionHeader(
+                    title: '카테고리',
+                    trailing: IconButton(
+                      tooltip: '카테고리 추가',
+                      visualDensity: VisualDensity.compact,
+                      onPressed: () => onAddCategory(context),
+                      icon: const Icon(Icons.add_rounded, size: 19),
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  for (final category in state.categories)
+                    _CategoryFilterTile(
+                      category: category,
+                      selected:
+                          state.visibleCategoryIds.isEmpty ||
+                          state.visibleCategoryIds.contains(category.id),
+                      onTap: () => ref
+                          .read(calendarControllerProvider.notifier)
+                          .toggleCategory(category.id),
+                    ),
+                  const SizedBox(height: 18),
+                  const Divider(height: 1),
+                  const SizedBox(height: 18),
+                  _SidebarSectionHeader(
+                    title: '선택 날짜',
+                    trailing: Text(
+                      '${selectedEvents.length}개',
+                      style: const TextStyle(
+                        color: _calendarMuted,
+                        fontSize: 12,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    _formatFullDate(state.selectedDate),
+                    style: const TextStyle(
+                      color: _calendarMuted,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                  if (selectedEvents.isEmpty)
+                    const Text(
+                      '등록된 일정이 없습니다.',
+                      style: TextStyle(color: _calendarMuted),
+                    )
+                  else
+                    for (final event in selectedEvents.take(4))
+                      _CompactEventTile(
+                        event: event,
+                        onTap: () => ref
+                            .read(calendarControllerProvider.notifier)
+                            .selectEvent(event),
+                      ),
+                ],
+              ),
             ),
-            for (final category in state.categories)
-              CheckboxListTile(
-                dense: true,
-                contentPadding: EdgeInsets.zero,
-                value:
-                    state.visibleCategoryIds.isEmpty ||
-                    state.visibleCategoryIds.contains(category.id),
-                onChanged: (_) => ref
-                    .read(calendarControllerProvider.notifier)
-                    .toggleCategory(category.id),
-                secondary: _ColorDot(color: _parseColor(category.color)),
-                title: Text(
-                  category.name,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
+            Padding(
+              padding: EdgeInsets.fromLTRB(
+                compact ? 14 : 22,
+                0,
+                compact ? 14 : 22,
+                compact ? 14 : 20,
+              ),
+              child: SizedBox(
+                width: double.infinity,
+                height: 50,
+                child: FilledButton.icon(
+                  onPressed: onAdd,
+                  style: FilledButton.styleFrom(
+                    backgroundColor: _calendarPrimary,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(9),
+                    ),
+                    textStyle: const TextStyle(
+                      fontSize: 15,
+                      fontWeight: FontWeight.w900,
+                    ),
+                  ),
+                  icon: const Icon(Icons.add_rounded),
+                  label: const Text('일정 추가'),
                 ),
               ),
-            const Divider(height: 28),
-            const Text('선택 날짜', style: TextStyle(fontWeight: FontWeight.w800)),
-            const SizedBox(height: 8),
-            Text(
-              _formatFullDate(state.selectedDate),
-              style: const TextStyle(color: _calendarMuted),
             ),
-            const SizedBox(height: 12),
-            if (selectedEvents.isEmpty)
-              const Text(
-                '등록된 일정이 없습니다.',
-                style: TextStyle(color: _calendarMuted),
-              )
-            else
-              for (final event in selectedEvents.take(4))
-                _CompactEventTile(
-                  event: event,
-                  onTap: () => ref
-                      .read(calendarControllerProvider.notifier)
-                      .selectEvent(event),
-                ),
           ],
         ),
       ),
+    );
+  }
+}
+
+class _SidebarSectionHeader extends StatelessWidget {
+  const _SidebarSectionHeader({required this.title, this.trailing});
+
+  final String title;
+  final Widget? trailing;
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      children: [
+        Expanded(
+          child: Text(
+            title,
+            style: const TextStyle(
+              color: _calendarText,
+              fontSize: 14,
+              fontWeight: FontWeight.w900,
+            ),
+          ),
+        ),
+        ...?trailing == null ? null : [trailing!],
+      ],
     );
   }
 }
@@ -761,11 +1396,13 @@ class _TeamFilterTile extends StatelessWidget {
   const _TeamFilterTile({
     required this.label,
     required this.selected,
+    required this.color,
     required this.onTap,
   });
 
   final String label;
   final bool selected;
+  final Color color;
   final VoidCallback onTap;
 
   @override
@@ -774,15 +1411,27 @@ class _TeamFilterTile extends StatelessWidget {
       borderRadius: BorderRadius.circular(8),
       onTap: onTap,
       child: Padding(
-        padding: const EdgeInsets.symmetric(vertical: 5),
+        padding: const EdgeInsets.symmetric(vertical: 6),
         child: Row(
           children: [
-            Icon(
-              selected ? Icons.radio_button_checked : Icons.radio_button_off,
-              size: 18,
-              color: selected ? _calendarPrimary : _calendarMuted,
+            Container(
+              width: 24,
+              height: 24,
+              alignment: Alignment.center,
+              decoration: BoxDecoration(
+                color: color.withValues(alpha: 0.14),
+                shape: BoxShape.circle,
+              ),
+              child: Text(
+                label == '전체 팀' ? 'All' : label.characters.first,
+                style: TextStyle(
+                  color: color,
+                  fontSize: label == '전체 팀' ? 9 : 11,
+                  fontWeight: FontWeight.w900,
+                ),
+              ),
             ),
-            const SizedBox(width: 8),
+            const SizedBox(width: 9),
             Expanded(
               child: Text(
                 label,
@@ -792,6 +1441,56 @@ class _TeamFilterTile extends StatelessWidget {
                   fontWeight: selected ? FontWeight.w800 : FontWeight.w500,
                 ),
               ),
+            ),
+            Icon(
+              selected ? Icons.check_circle_rounded : Icons.circle_outlined,
+              size: 18,
+              color: selected ? _calendarPrimary : const Color(0xFFB6C0D1),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _CategoryFilterTile extends StatelessWidget {
+  const _CategoryFilterTile({
+    required this.category,
+    required this.selected,
+    required this.onTap,
+  });
+
+  final CalendarCategory category;
+  final bool selected;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final color = _parseColor(category.color);
+    return InkWell(
+      borderRadius: BorderRadius.circular(8),
+      onTap: onTap,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 6),
+        child: Row(
+          children: [
+            _ColorDot(color: color, size: 9),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Text(
+                category.name,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(fontWeight: FontWeight.w700),
+              ),
+            ),
+            Icon(
+              selected
+                  ? Icons.check_box_rounded
+                  : Icons.check_box_outline_blank_rounded,
+              color: selected ? _calendarPrimary : const Color(0xFFB6C0D1),
+              size: 18,
             ),
           ],
         ),
@@ -811,16 +1510,14 @@ class _MiniCalendar extends ConsumerWidget {
       state.focusedDate.year,
       state.focusedDate.month,
     );
-    final gridStart = monthStart.subtract(
-      Duration(days: monthStart.weekday - DateTime.monday),
-    );
+    final gridStart = _monthGridStart(monthStart);
     return Column(
       children: [
         Row(
           mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
             Text(
-              '${monthStart.month}월',
+              '${monthStart.year}년 ${monthStart.month}월',
               style: const TextStyle(fontWeight: FontWeight.w800),
             ),
             Row(
@@ -842,6 +1539,25 @@ class _MiniCalendar extends ConsumerWidget {
             ),
           ],
         ),
+        const SizedBox(height: 4),
+        Row(
+          children: [
+            for (final label in ['일', '월', '화', '수', '목', '금', '토'])
+              Expanded(
+                child: Center(
+                  child: Text(
+                    label,
+                    style: const TextStyle(
+                      color: _calendarMuted,
+                      fontSize: 11,
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                ),
+              ),
+          ],
+        ),
+        const SizedBox(height: 4),
         GridView.builder(
           shrinkWrap: true,
           physics: const NeverScrollableScrollPhysics(),
@@ -953,45 +1669,60 @@ class _MonthView extends ConsumerWidget {
       state.focusedDate.year,
       state.focusedDate.month,
     );
-    final gridStart = monthStart.subtract(
-      Duration(days: monthStart.weekday - DateTime.monday),
-    );
-    final cellAspect = desktop ? 1.38 : 0.86;
+    final gridStart = _monthGridStart(monthStart);
+    final cellAspect = desktop ? 1.04 : 1.22;
     return ListView(
-      padding: EdgeInsets.all(desktop ? 18 : 12),
+      padding: EdgeInsets.fromLTRB(desktop ? 16 : 12, 0, desktop ? 16 : 12, 16),
       children: [
         _WeekHeader(compact: !desktop),
-        const SizedBox(height: 8),
-        GridView.builder(
-          shrinkWrap: true,
-          physics: const NeverScrollableScrollPhysics(),
-          itemCount: 42,
-          gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-            crossAxisCount: 7,
-            mainAxisSpacing: 8,
-            crossAxisSpacing: 8,
-            childAspectRatio: cellAspect,
-          ),
-          itemBuilder: (context, index) {
-            final date = gridStart.add(Duration(days: index));
-            final events = state.selectedDateEvents(date);
-            return _MonthDayCell(
-              date: date,
-              inMonth: date.month == state.focusedDate.month,
-              selected: _sameDate(date, state.selectedDate),
-              today: _sameDate(date, DateTime.now()),
-              events: events,
-              desktop: desktop,
-              onDateTap: () {
-                ref.read(calendarControllerProvider.notifier).selectDate(date);
-                if (!desktop && events.isNotEmpty) {
-                  _showDayEvents(context, date, events);
-                }
+        SizedBox(height: desktop ? 10 : 6),
+        ClipRRect(
+          borderRadius: BorderRadius.circular(desktop ? 12 : 0),
+          child: DecoratedBox(
+            decoration: BoxDecoration(
+              border: Border.all(
+                color: desktop ? _calendarLine : Colors.transparent,
+              ),
+              borderRadius: BorderRadius.circular(desktop ? 12 : 0),
+            ),
+            child: GridView.builder(
+              shrinkWrap: true,
+              physics: const NeverScrollableScrollPhysics(),
+              itemCount: 42,
+              gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                crossAxisCount: 7,
+                mainAxisSpacing: 0,
+                crossAxisSpacing: 0,
+                childAspectRatio: cellAspect,
+              ),
+              itemBuilder: (context, index) {
+                final date = gridStart.add(Duration(days: index));
+                final events = state.selectedDateEvents(date);
+                return _MonthDayCell(
+                  date: date,
+                  inMonth: date.month == state.focusedDate.month,
+                  selected: _sameDate(date, state.selectedDate),
+                  today: _sameDate(date, DateTime.now()),
+                  events: events,
+                  desktop: desktop,
+                  onDateTap: () {
+                    ref
+                        .read(calendarControllerProvider.notifier)
+                        .selectDate(date);
+                    if (!desktop && events.isNotEmpty) {
+                      _showDayEvents(context, date, events);
+                    }
+                  },
+                  onEventTap: onEventTap,
+                );
               },
-              onEventTap: onEventTap,
-            );
-          },
+            ),
+          ),
         ),
+        if (desktop) ...[
+          const SizedBox(height: 14),
+          _CalendarLegend(categories: state.categories),
+        ],
         if (!desktop) ...[
           const SizedBox(height: 16),
           _SelectedDateList(state: state, onEventTap: onEventTap),
@@ -1039,7 +1770,7 @@ class _WeekHeader extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    const labels = ['월', '화', '수', '목', '금', '토', '일'];
+    const labels = ['일', '월', '화', '수', '목', '금', '토'];
     return Row(
       children: [
         for (final label in labels)
@@ -1083,83 +1814,85 @@ class _MonthDayCell extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final mutedDay = !inMonth;
     return Material(
-      color: selected ? const Color(0xFFEFF3FF) : Colors.white,
-      borderRadius: BorderRadius.circular(8),
+      color: desktop
+          ? (selected ? const Color(0xFFF2F6FF) : _calendarSurface)
+          : _calendarSurface,
       child: InkWell(
         onTap: onDateTap,
-        borderRadius: BorderRadius.circular(8),
         child: Container(
-          padding: EdgeInsets.all(desktop ? 8 : 5),
+          padding: EdgeInsets.all(desktop ? 8 : 4),
           decoration: BoxDecoration(
-            border: Border.all(
-              color: today ? _calendarPrimary : _calendarLine,
-              width: today ? 1.4 : 1,
+            border: Border(
+              right: BorderSide(
+                color: desktop ? _calendarLine : Colors.transparent,
+              ),
+              bottom: BorderSide(
+                color: desktop ? _calendarLine : Colors.transparent,
+              ),
             ),
-            borderRadius: BorderRadius.circular(8),
+            borderRadius: BorderRadius.circular(desktop && selected ? 9 : 0),
+          ),
+          foregroundDecoration: BoxDecoration(
+            border: selected
+                ? Border.all(color: _calendarPrimary, width: desktop ? 1.3 : 0)
+                : null,
+            borderRadius: BorderRadius.circular(desktop ? 9 : 0),
           ),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Row(
-                children: [
-                  Container(
-                    width: desktop ? 26 : 22,
-                    height: desktop ? 26 : 22,
-                    alignment: Alignment.center,
-                    decoration: BoxDecoration(
-                      color: today ? _calendarPrimary : Colors.transparent,
-                      shape: BoxShape.circle,
-                    ),
-                    child: Text(
-                      '${date.day}',
-                      style: TextStyle(
-                        color: today
-                            ? Colors.white
-                            : inMonth
-                            ? _calendarText
-                            : _calendarMuted,
-                        fontWeight: today || selected
-                            ? FontWeight.w800
-                            : FontWeight.w600,
-                        fontSize: desktop ? 13 : 11,
-                      ),
+              Align(
+                alignment: desktop ? Alignment.centerLeft : Alignment.center,
+                child: Container(
+                  width: desktop ? 26 : 25,
+                  height: desktop ? 26 : 25,
+                  alignment: Alignment.center,
+                  decoration: BoxDecoration(
+                    color: today || (!desktop && selected)
+                        ? _calendarPrimary
+                        : Colors.transparent,
+                    shape: BoxShape.circle,
+                  ),
+                  child: Text(
+                    '${date.day}',
+                    style: TextStyle(
+                      color: today || (!desktop && selected)
+                          ? Colors.white
+                          : mutedDay
+                          ? const Color(0xFFA7B1C3)
+                          : _weekdayDayColor(date),
+                      fontWeight: today || selected
+                          ? FontWeight.w900
+                          : FontWeight.w700,
+                      fontSize: desktop ? 13 : 12,
                     ),
                   ),
-                  const Spacer(),
-                  if (events.isNotEmpty && !desktop)
-                    Text(
-                      '${events.length}',
-                      style: const TextStyle(
-                        color: _calendarMuted,
-                        fontSize: 10,
-                        fontWeight: FontWeight.w700,
-                      ),
-                    ),
-                ],
+                ),
               ),
-              const SizedBox(height: 4),
+              SizedBox(height: desktop ? 5 : 2),
               if (desktop)
                 Expanded(
                   child: ListView(
                     padding: EdgeInsets.zero,
                     children: [
-                      for (final event in events.take(4))
+                      for (final event in events.take(3))
                         _MonthEventPill(
                           event: event,
                           onTap: () => onEventTap(event),
                         ),
-                      if (events.length > 4)
+                      if (events.length > 3)
                         Padding(
-                          padding: const EdgeInsets.only(top: 1),
+                          padding: const EdgeInsets.only(top: 2),
                           child: Text(
-                            '+${events.length - 4}개 더보기',
+                            '+${events.length - 3}개 더보기',
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
                             style: const TextStyle(
                               color: _calendarMuted,
                               fontSize: 11,
-                              fontWeight: FontWeight.w800,
+                              fontWeight: FontWeight.w900,
                             ),
                           ),
                         ),
@@ -1167,16 +1900,21 @@ class _MonthDayCell extends StatelessWidget {
                   ),
                 )
               else
-                Wrap(
-                  spacing: 3,
-                  runSpacing: 3,
-                  children: [
-                    for (final event in events.take(5))
-                      _ColorDot(
-                        color: _parseColor(event.effectiveColor),
-                        size: 6,
-                      ),
-                  ],
+                Expanded(
+                  child: Center(
+                    child: Wrap(
+                      spacing: 3,
+                      runSpacing: 3,
+                      alignment: WrapAlignment.center,
+                      children: [
+                        for (final event in events.take(4))
+                          _ColorDot(
+                            color: _parseColor(event.effectiveColor),
+                            size: 4.5,
+                          ),
+                      ],
+                    ),
+                  ),
                 ),
             ],
           ),
@@ -1196,37 +1934,91 @@ class _MonthEventPill extends StatelessWidget {
   Widget build(BuildContext context) {
     final color = _parseColor(event.effectiveColor);
     return Padding(
-      padding: const EdgeInsets.only(bottom: 3),
+      padding: const EdgeInsets.only(bottom: 4),
       child: InkWell(
-        borderRadius: BorderRadius.circular(5),
+        borderRadius: BorderRadius.circular(6),
         onTap: onTap,
         child: Container(
-          height: 22,
-          padding: const EdgeInsets.symmetric(horizontal: 6),
+          height: 25,
+          padding: const EdgeInsets.symmetric(horizontal: 7),
           decoration: BoxDecoration(
-            color: color.withValues(alpha: 0.12),
-            borderRadius: BorderRadius.circular(5),
+            color: color.withValues(alpha: 0.13),
+            borderRadius: BorderRadius.circular(6),
+            border: Border.all(color: color.withValues(alpha: 0.16)),
           ),
           child: Row(
             children: [
-              _ColorDot(color: color, size: 6),
-              const SizedBox(width: 5),
+              if (!event.allDay) ...[
+                Text(
+                  _formatTime(event.displayStart),
+                  style: TextStyle(
+                    color: color,
+                    fontSize: 11,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+                const SizedBox(width: 5),
+              ],
               Expanded(
                 child: Text(
                   event.title,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
+                  style: const TextStyle(
                     color: _calendarText,
                     fontSize: 11,
-                    fontWeight: FontWeight.w700,
+                    fontWeight: FontWeight.w800,
                   ),
                 ),
               ),
+              if (event.hasAzoom)
+                Icon(Icons.videocam_rounded, size: 12, color: color),
             ],
           ),
         ),
       ),
+    );
+  }
+}
+
+class _CalendarLegend extends StatelessWidget {
+  const _CalendarLegend({required this.categories});
+
+  final List<CalendarCategory> categories;
+
+  @override
+  Widget build(BuildContext context) {
+    final visible = categories.take(6).toList(growable: false);
+    return Row(
+      children: [
+        for (final category in visible) ...[
+          _ColorDot(color: _parseColor(category.color), size: 8),
+          const SizedBox(width: 6),
+          Text(
+            category.name,
+            style: const TextStyle(
+              color: _calendarMuted,
+              fontSize: 12,
+              fontWeight: FontWeight.w800,
+            ),
+          ),
+          const SizedBox(width: 16),
+        ],
+        const Spacer(),
+        Text(
+          '표시된 일정 ${categories.length}개 카테고리',
+          style: const TextStyle(
+            color: _calendarMuted,
+            fontSize: 12,
+            fontWeight: FontWeight.w800,
+          ),
+        ),
+        const Icon(
+          Icons.keyboard_arrow_up_rounded,
+          size: 18,
+          color: _calendarMuted,
+        ),
+      ],
     );
   }
 }
@@ -1512,12 +2304,36 @@ class _SelectedDateList extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final events = state.selectedDateEvents(state.selectedDate);
+    final today = _sameDate(state.selectedDate, DateTime.now());
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(
-          _formatFullDate(state.selectedDate),
-          style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w900),
+        Row(
+          children: [
+            Expanded(
+              child: Text(
+                '${_formatFullDate(state.selectedDate)}${today ? ' · 오늘' : ''}',
+                style: const TextStyle(
+                  fontSize: 15,
+                  color: _calendarText,
+                  fontWeight: FontWeight.w900,
+                ),
+              ),
+            ),
+            Text(
+              '일정 ${events.length}개',
+              style: const TextStyle(
+                color: _calendarMuted,
+                fontSize: 12,
+                fontWeight: FontWeight.w800,
+              ),
+            ),
+            const Icon(
+              Icons.keyboard_arrow_up_rounded,
+              color: _calendarMuted,
+              size: 18,
+            ),
+          ],
         ),
         const SizedBox(height: 10),
         if (events.isEmpty)
@@ -1539,35 +2355,138 @@ class _EventListTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final color = _parseColor(event.effectiveColor);
-    return Card(
-      elevation: 0,
-      margin: const EdgeInsets.only(bottom: 8),
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(8),
-        side: const BorderSide(color: _calendarLine),
-      ),
-      child: ListTile(
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 9),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(10),
         onTap: onTap,
-        leading: Container(
-          width: 4,
-          height: 46,
-          decoration: BoxDecoration(
-            color: color,
-            borderRadius: BorderRadius.circular(3),
-          ),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            SizedBox(
+              width: 54,
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Text(
+                    _formatTime(event.displayStart),
+                    style: const TextStyle(
+                      color: _calendarText,
+                      fontSize: 12,
+                      fontWeight: FontWeight.w900,
+                    ),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    _formatTime(event.displayEnd),
+                    style: const TextStyle(
+                      color: _calendarMuted,
+                      fontSize: 12,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            Expanded(
+              child: Container(
+                constraints: const BoxConstraints(minHeight: 62),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 12,
+                  vertical: 9,
+                ),
+                decoration: BoxDecoration(
+                  color: color.withValues(alpha: 0.10),
+                  border: Border.all(color: color.withValues(alpha: 0.18)),
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: Row(
+                  children: [
+                    Container(
+                      width: 3,
+                      height: 42,
+                      decoration: BoxDecoration(
+                        color: color,
+                        borderRadius: BorderRadius.circular(3),
+                      ),
+                    ),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Wrap(
+                            spacing: 6,
+                            runSpacing: 4,
+                            children: [
+                              _TinyTag(
+                                label: event.category?.name ?? '일정',
+                                color: color,
+                              ),
+                              if (event.hasAzoom)
+                                const _TinyTag(
+                                  label: 'AZOOM',
+                                  color: _calendarPrimary,
+                                ),
+                              if (event.importance == 'HIGH')
+                                const _TinyTag(
+                                  label: '중요',
+                                  color: _calendarDanger,
+                                ),
+                            ],
+                          ),
+                          const SizedBox(height: 5),
+                          Text(
+                            event.title,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(
+                              color: _calendarText,
+                              fontWeight: FontWeight.w900,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    _ConnectionIcons(event: event),
+                    const Icon(
+                      Icons.chevron_right_rounded,
+                      color: _calendarMuted,
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ],
         ),
-        title: Text(
-          event.title,
-          maxLines: 1,
-          overflow: TextOverflow.ellipsis,
-          style: const TextStyle(fontWeight: FontWeight.w800),
+      ),
+    );
+  }
+}
+
+class _TinyTag extends StatelessWidget {
+  const _TinyTag({required this.label, required this.color});
+
+  final String label;
+  final Color color;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.12),
+        borderRadius: BorderRadius.circular(6),
+      ),
+      child: Text(
+        label,
+        style: TextStyle(
+          color: color,
+          fontSize: 11,
+          fontWeight: FontWeight.w900,
         ),
-        subtitle: Text(
-          '${_formatMonthDayTime(event.displayStart)} - ${_formatMonthDayTime(event.displayEnd)} · ${calendarTeamLabel(event.teamId)}',
-          maxLines: 1,
-          overflow: TextOverflow.ellipsis,
-        ),
-        trailing: _ConnectionIcons(event: event),
       ),
     );
   }
@@ -1634,46 +2553,115 @@ class _EventDetailPanel extends ConsumerWidget {
     final event = this.event;
     if (event == null) {
       return Container(
-        color: Colors.white,
-        child: const Center(child: Text('선택한 일정이 없습니다.')),
+        color: _calendarSurface,
+        child: const Center(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(Icons.event_note_outlined, color: _calendarMuted, size: 36),
+              SizedBox(height: 10),
+              Text(
+                '선택한 일정이 없습니다.',
+                style: TextStyle(
+                  color: _calendarMuted,
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+            ],
+          ),
+        ),
       );
     }
     final azoom = event.azoomLinks.isEmpty ? null : event.azoomLinks.first;
     final chat = event.chatLinks.isEmpty ? null : event.chatLinks.first;
     final notion = event.notionLinks.isEmpty ? null : event.notionLinks.first;
     final file = event.files.isEmpty ? null : event.files.first;
+    final color = _parseColor(event.effectiveColor);
     return Container(
-      color: Colors.white,
+      color: _calendarSurface,
       child: SafeArea(
         child: Column(
           children: [
+            if (mobile)
+              Container(
+                width: 42,
+                height: 4,
+                margin: const EdgeInsets.only(top: 9),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFD5DCE8),
+                  borderRadius: BorderRadius.circular(99),
+                ),
+              ),
             Expanded(
               child: ListView(
-                padding: EdgeInsets.all(mobile ? 18 : 22),
+                padding: EdgeInsets.fromLTRB(22, mobile ? 14 : 22, 22, 22),
                 children: [
                   Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      _ColorDot(
-                        color: _parseColor(event.effectiveColor),
-                        size: 12,
-                      ),
-                      const SizedBox(width: 8),
                       Expanded(
-                        child: Text(
-                          event.title,
-                          style: const TextStyle(
-                            fontSize: 21,
-                            fontWeight: FontWeight.w900,
-                          ),
+                        child: Wrap(
+                          spacing: 7,
+                          runSpacing: 7,
+                          children: [
+                            _TinyTag(
+                              label: event.category?.name ?? '일정',
+                              color: color,
+                            ),
+                            const _TinyTag(
+                              label: 'AVA AI 추천',
+                              color: _calendarPurple,
+                            ),
+                            _TinyTag(
+                              label: calendarStatusLabel(event.status),
+                              color: _calendarPrimary,
+                            ),
+                          ],
                         ),
+                      ),
+                      IconButton(
+                        tooltip: '닫기',
+                        visualDensity: VisualDensity.compact,
+                        onPressed: () {
+                          if (mobile) {
+                            Navigator.maybePop(context);
+                          } else {
+                            ref
+                                .read(calendarControllerProvider.notifier)
+                                .selectEvent(null);
+                          }
+                        },
+                        icon: const Icon(Icons.close_rounded),
                       ),
                     ],
                   ),
                   const SizedBox(height: 12),
+                  Text(
+                    event.title,
+                    style: TextStyle(
+                      color: _calendarText,
+                      fontSize: mobile ? 22 : 24,
+                      height: 1.2,
+                      fontWeight: FontWeight.w900,
+                    ),
+                  ),
+                  if (event.description != null &&
+                      event.description!.trim().isNotEmpty) ...[
+                    const SizedBox(height: 8),
+                    Text(
+                      event.description!,
+                      style: const TextStyle(
+                        color: _calendarMuted,
+                        height: 1.45,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ],
+                  const SizedBox(height: 16),
                   _DetailLine(
-                    icon: Icons.schedule,
+                    icon: Icons.calendar_today_outlined,
                     label:
-                        '${_formatFullDateTime(event.displayStart)}\n${_formatFullDateTime(event.displayEnd)}',
+                        '${_formatFullDateTime(event.displayStart)}\n${_formatFullDateTime(event.displayEnd)} · ${_durationLabel(event)}',
                   ),
                   if (event.location != null)
                     _DetailLine(icon: Icons.place, label: event.location!),
@@ -1692,9 +2680,6 @@ class _EventDetailPanel extends ConsumerWidget {
                     label:
                         '${calendarVisibilityLabel(event.visibility)} · ${event.detailVisibility}',
                   ),
-                  if (event.description != null &&
-                      event.description!.trim().isNotEmpty)
-                    _DetailBlock(title: '설명', text: event.description!),
                   if (event.memo != null && event.memo!.trim().isNotEmpty)
                     _DetailBlock(title: '메모', text: event.memo!),
                   if (event.recurrence?.isRepeating ?? false)
@@ -1825,13 +2810,22 @@ class _DetailLine extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Padding(
-      padding: const EdgeInsets.only(top: 12),
+      padding: const EdgeInsets.only(bottom: 13),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Icon(icon, size: 19, color: _calendarMuted),
-          const SizedBox(width: 10),
-          Expanded(child: Text(label, style: const TextStyle(height: 1.45))),
+          Icon(icon, size: 20, color: _calendarMuted),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Text(
+              label,
+              style: const TextStyle(
+                color: _calendarText,
+                height: 1.45,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+          ),
         ],
       ),
     );
@@ -1846,14 +2840,27 @@ class _DetailBlock extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.only(top: 18),
+    return Container(
+      margin: const EdgeInsets.only(top: 16),
+      padding: const EdgeInsets.all(14),
+      decoration: const BoxDecoration(
+        border: Border(top: BorderSide(color: _calendarLine)),
+      ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(title, style: const TextStyle(fontWeight: FontWeight.w900)),
+          Text(
+            title,
+            style: const TextStyle(
+              color: _calendarText,
+              fontWeight: FontWeight.w900,
+            ),
+          ),
           const SizedBox(height: 8),
-          Text(text, style: const TextStyle(height: 1.45)),
+          Text(
+            text,
+            style: const TextStyle(color: _calendarMuted, height: 1.45),
+          ),
         ],
       ),
     );
@@ -1875,8 +2882,12 @@ class _DetailCollection extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.only(top: 18),
+    return Container(
+      margin: const EdgeInsets.only(top: 16),
+      padding: const EdgeInsets.all(14),
+      decoration: const BoxDecoration(
+        border: Border(top: BorderSide(color: _calendarLine)),
+      ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -1891,7 +2902,8 @@ class _DetailCollection extends StatelessWidget {
           if (children.isEmpty)
             Text(emptyText, style: const TextStyle(color: _calendarMuted))
           else
-            ...children,
+            for (final child in children)
+              Padding(padding: const EdgeInsets.only(bottom: 5), child: child),
         ],
       ),
     );
@@ -1908,10 +2920,10 @@ class _AvaAiRecommendationCard extends ConsumerWidget {
     final message = _aiRecommendationFor(event);
     return Container(
       margin: const EdgeInsets.only(top: 18),
-      padding: const EdgeInsets.all(12),
+      padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
-        color: const Color(0xFFF5F2FF),
-        borderRadius: BorderRadius.circular(8),
+        color: const Color(0xFFF5F1FF),
+        borderRadius: BorderRadius.circular(10),
         border: Border.all(color: const Color(0xFFE3D8FF)),
       ),
       child: Column(
@@ -1925,7 +2937,14 @@ class _AvaAiRecommendationCard extends ConsumerWidget {
             ],
           ),
           const SizedBox(height: 8),
-          Text(message, style: const TextStyle(height: 1.4)),
+          Text(
+            message,
+            style: const TextStyle(
+              color: _calendarText,
+              height: 1.45,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
           const SizedBox(height: 10),
           Wrap(
             spacing: 8,
@@ -3041,6 +4060,68 @@ class _EmptyState extends StatelessWidget {
   }
 }
 
+String _viewModeLabel(CalendarViewMode mode) {
+  return switch (mode) {
+    CalendarViewMode.month => '월간',
+    CalendarViewMode.week => '주간',
+    CalendarViewMode.day => '일간',
+    CalendarViewMode.list => '리스트',
+  };
+}
+
+DateTime _monthGridStart(DateTime monthStart) {
+  final daysFromSunday = monthStart.weekday % DateTime.daysPerWeek;
+  return monthStart.subtract(Duration(days: daysFromSunday));
+}
+
+Color _teamColor(int index) {
+  const colors = [
+    Color(0xFF1463F3),
+    Color(0xFF2C7BE5),
+    Color(0xFF6D5DFB),
+    Color(0xFFF39C12),
+    Color(0xFFE85D75),
+    Color(0xFF2EA872),
+  ];
+  return colors[index % colors.length];
+}
+
+Color _weekdayDayColor(DateTime date) {
+  if (date.weekday == DateTime.sunday) {
+    return _calendarDanger;
+  }
+  if (date.weekday == DateTime.saturday) {
+    return _calendarText;
+  }
+  return _calendarText;
+}
+
+int _uniqueAttendeeCount(List<CalendarEvent> events) {
+  final names = <String>{};
+  for (final event in events) {
+    for (final attendee in event.attendees) {
+      names.add(attendee.userId ?? attendee.email ?? attendee.displayName);
+    }
+  }
+  return names.length;
+}
+
+String _durationLabel(CalendarEvent event) {
+  final minutes = event.displayEnd.difference(event.displayStart).inMinutes;
+  if (minutes <= 0) {
+    return '시간 미정';
+  }
+  final hours = minutes ~/ 60;
+  final rest = minutes % 60;
+  if (hours == 0) {
+    return '$minutes분';
+  }
+  if (rest == 0) {
+    return '$hours시간';
+  }
+  return '$hours시간 $rest분';
+}
+
 String _titleForState(CalendarState state) {
   final date = state.focusedDate;
   return switch (state.viewMode) {
@@ -3062,10 +4143,6 @@ String _formatFullDateTime(DateTime date) {
 
 String _formatMonthDay(DateTime date) {
   return '${date.month}/${date.day}';
-}
-
-String _formatMonthDayTime(DateTime date) {
-  return '${date.month}/${date.day} ${_formatTime(date)}';
 }
 
 String _formatTime(DateTime date) {
