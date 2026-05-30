@@ -2721,11 +2721,8 @@ class _FolderManageDialog extends ConsumerWidget {
             physics: const NeverScrollableScrollPhysics(),
             buildDefaultDragHandles: false,
             itemCount: entries.length,
-            onReorder: (oldIndex, newIndex) {
+            onReorderItem: (oldIndex, newIndex) {
               final next = [...entries];
-              if (newIndex > oldIndex) {
-                newIndex -= 1;
-              }
               final moved = next.removeAt(oldIndex);
               next.insert(newIndex, moved);
               ref.read(chatFilterOrderProvider.notifier).reorder([

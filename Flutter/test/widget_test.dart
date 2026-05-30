@@ -1,3 +1,4 @@
+import 'dart:io' show Platform;
 import 'dart:ui';
 
 import 'package:ava_flutter/src/features/admin/data/admin_api.dart';
@@ -404,10 +405,7 @@ void main() {
 
     await tester.tap(updatedUser);
     await tester.pump(const Duration(milliseconds: 80));
-    await _sendWindowMethodCall(tester, 'profilePopupAction', {
-      'action': 'directChat',
-    });
-    await tester.pumpAndSettle();
+    await _openDirectChatFromProfile(tester);
 
     final selectedDirectRoom = container.read(selectedChatRoomProvider);
     expect(selectedDirectRoom, isNotNull);
@@ -508,15 +506,19 @@ void main() {
     );
     await tester.pump(const Duration(milliseconds: 80));
 
-    final firstTap = _sendWindowMethodCall(tester, 'profilePopupAction', {
-      'action': 'directChat',
-    });
-    final secondTap = _sendWindowMethodCall(tester, 'profilePopupAction', {
-      'action': 'directChat',
-    });
-    await tester.pump(const Duration(milliseconds: 80));
-    await Future.wait([firstTap, secondTap]);
-    await tester.pump();
+    if (Platform.isWindows) {
+      final firstTap = _sendWindowMethodCall(tester, 'profilePopupAction', {
+        'action': 'directChat',
+      });
+      final secondTap = _sendWindowMethodCall(tester, 'profilePopupAction', {
+        'action': 'directChat',
+      });
+      await tester.pump(const Duration(milliseconds: 80));
+      await Future.wait([firstTap, secondTap]);
+      await tester.pump();
+    } else {
+      await _openDirectChatFromProfile(tester);
+    }
 
     expect(chatApi.directRoomCalls, 1);
     expect(container.read(selectedChatRoomProvider)?.id, 'direct-test-target');
@@ -668,6 +670,10 @@ void main() {
     final designTile = find.byKey(const ValueKey('chat-room-design-team'));
     await tester.tapAt(tester.getCenter(designTile), buttons: kSecondaryButton);
     await tester.pumpAndSettle();
+    if (!Platform.isWindows) {
+      await tester.tap(find.byKey(const ValueKey('room-menu-pin')));
+      await tester.pumpAndSettle();
+    }
 
     expect(
       container
@@ -1290,6 +1296,19 @@ Future<void> _sendWindowMethodCall(
     data,
     (_) {},
   );
+}
+
+Future<void> _openDirectChatFromProfile(WidgetTester tester) async {
+  if (Platform.isWindows) {
+    await _sendWindowMethodCall(tester, 'profilePopupAction', {
+      'action': 'directChat',
+    });
+  } else {
+    await tester.tap(find.text('1:1 채팅').last);
+  }
+  await tester.pump();
+  await tester.pump(const Duration(milliseconds: 350));
+  await tester.pump();
 }
 
 String? _nativeMenuResult(MethodCall call) {
