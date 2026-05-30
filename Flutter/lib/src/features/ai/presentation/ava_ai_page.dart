@@ -2965,6 +2965,10 @@ class _CalendarEventTile extends StatelessWidget {
                         ),
                         if (event.categoryName.isNotEmpty)
                           _TinyCalendarChip(event.categoryName),
+                        if (event.teamLabel.isNotEmpty)
+                          _TinyCalendarChip(event.teamLabel),
+                        if (event.importanceLabel.isNotEmpty)
+                          _TinyCalendarChip(event.importanceLabel),
                         if (event.hasAzoom)
                           const _TinyCalendarIcon(Icons.video_call_rounded),
                         if (event.hasChat)
@@ -3048,6 +3052,18 @@ class _CalendarEventDetail extends StatelessWidget {
             icon: Icons.label_rounded,
             label: '카테고리',
             value: item.categoryName,
+          ),
+        if (item.teamLabel.isNotEmpty)
+          _CalendarDetailRow(
+            icon: Icons.groups_rounded,
+            label: '팀',
+            value: item.teamLabel,
+          ),
+        if (item.importanceLabel.isNotEmpty)
+          _CalendarDetailRow(
+            icon: Icons.priority_high_rounded,
+            label: '중요도',
+            value: item.importanceLabel,
           ),
         if (item.location.isNotEmpty)
           _CalendarDetailRow(

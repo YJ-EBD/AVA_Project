@@ -26,6 +26,10 @@ void main() {
           'status': 'SCHEDULED',
           'statusLabel': '예정',
           'categoryName': '개발 일정',
+          'teamId': 'development',
+          'teamLabel': '개발팀',
+          'importance': 'HIGH',
+          'importanceLabel': '중요',
           'color': '#4F7CFF',
           'hasAzoom': true,
           'hasChat': false,
@@ -37,6 +41,8 @@ void main() {
 
     expect(workspace.hasSignal, isTrue);
     expect(workspace.selectedEvent()?.title, '재고앱 개발');
+    expect(workspace.selectedEvent()?.teamLabel, '개발팀');
+    expect(workspace.selectedEvent()?.importanceLabel, '중요');
     expect(workspace.summary?.countsByStatus['SCHEDULED'], 1);
     expect(workspace.toJson()['mode'], 'created');
   });

@@ -27,6 +27,7 @@ interface CalendarEventRepository extends JpaRepository<CalendarEventEntity, UUI
 		    or lower(coalesce(e.description, '')) like lower(concat('%', :query, '%'))
 		    or lower(coalesce(e.location, '')) like lower(concat('%', :query, '%'))
 		    or lower(coalesce(e.projectName, '')) like lower(concat('%', :query, '%'))
+		    or lower(coalesce(e.teamId, '')) like lower(concat('%', :query, '%'))
 		  )
 		order by e.startAt asc
 		""")

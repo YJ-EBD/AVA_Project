@@ -1637,6 +1637,9 @@ public class AvaAiNotionService {
 		if (end == null) {
 			end = extractIsoDate(normalized).orElse(null);
 		}
+		if (start != null && end != null && start.isAfter(end)) {
+			start = start.minusYears(1);
+		}
 		return new NotionDateRange(start, end);
 	}
 

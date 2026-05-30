@@ -679,6 +679,24 @@ class _CalendarSidebar extends ConsumerWidget {
             const SizedBox(height: 16),
             _MiniCalendar(state: state),
             const SizedBox(height: 18),
+            const Text('팀 필터', style: TextStyle(fontWeight: FontWeight.w800)),
+            const SizedBox(height: 8),
+            _TeamFilterTile(
+              label: '전체 팀',
+              selected: state.teamFilter == null,
+              onTap: () => ref
+                  .read(calendarControllerProvider.notifier)
+                  .setTeamFilter(null),
+            ),
+            for (final team in calendarTeams)
+              _TeamFilterTile(
+                label: team.name,
+                selected: state.teamFilter == team.id,
+                onTap: () => ref
+                    .read(calendarControllerProvider.notifier)
+                    .setTeamFilter(team.id),
+              ),
+            const Divider(height: 28),
             Row(
               children: [
                 const Expanded(
@@ -732,6 +750,49 @@ class _CalendarSidebar extends ConsumerWidget {
                       .read(calendarControllerProvider.notifier)
                       .selectEvent(event),
                 ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _TeamFilterTile extends StatelessWidget {
+  const _TeamFilterTile({
+    required this.label,
+    required this.selected,
+    required this.onTap,
+  });
+
+  final String label;
+  final bool selected;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      borderRadius: BorderRadius.circular(8),
+      onTap: onTap,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 5),
+        child: Row(
+          children: [
+            Icon(
+              selected ? Icons.radio_button_checked : Icons.radio_button_off,
+              size: 18,
+              color: selected ? _calendarPrimary : _calendarMuted,
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text(
+                label,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  fontWeight: selected ? FontWeight.w800 : FontWeight.w500,
+                ),
+              ),
+            ),
           ],
         ),
       ),
@@ -1087,6 +1148,20 @@ class _MonthDayCell extends StatelessWidget {
                         _MonthEventPill(
                           event: event,
                           onTap: () => onEventTap(event),
+                        ),
+                      if (events.length > 4)
+                        Padding(
+                          padding: const EdgeInsets.only(top: 1),
+                          child: Text(
+                            '+${events.length - 4}개 더보기',
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(
+                              color: _calendarMuted,
+                              fontSize: 11,
+                              fontWeight: FontWeight.w800,
+                            ),
+                          ),
                         ),
                     ],
                   ),
@@ -1488,7 +1563,7 @@ class _EventListTile extends StatelessWidget {
           style: const TextStyle(fontWeight: FontWeight.w800),
         ),
         subtitle: Text(
-          '${_formatMonthDayTime(event.displayStart)} - ${_formatMonthDayTime(event.displayEnd)}',
+          '${_formatMonthDayTime(event.displayStart)} - ${_formatMonthDayTime(event.displayEnd)} · ${calendarTeamLabel(event.teamId)}',
           maxLines: 1,
           overflow: TextOverflow.ellipsis,
         ),
@@ -1608,6 +1683,11 @@ class _EventDetailPanel extends ConsumerWidget {
                         '${event.category?.name ?? '기타'} · ${calendarStatusLabel(event.status)}',
                   ),
                   _DetailLine(
+                    icon: Icons.groups_rounded,
+                    label:
+                        '${calendarTeamLabel(event.teamId)} · 중요도 ${calendarImportanceLabel(event.importance)}',
+                  ),
+                  _DetailLine(
                     icon: Icons.visibility,
                     label:
                         '${calendarVisibilityLabel(event.visibility)} · ${event.detailVisibility}',
@@ -1644,6 +1724,51 @@ class _EventDetailPanel extends ConsumerWidget {
                         Text('${reminder.remindBeforeMinutes}분 전'),
                     ],
                   ),
+                  if (event.chatLinks.isNotEmpty)
+                    _DetailCollection(
+                      title: '연결된 채팅방',
+                      icon: Icons.tag,
+                      emptyText: '연결된 채팅방이 없습니다.',
+                      children: [
+                        for (final link in event.chatLinks)
+                          Text(link.chatRoomName ?? link.chatRoomId),
+                      ],
+                    ),
+                  if (event.files.isNotEmpty)
+                    _DetailCollection(
+                      title: 'NAS 첨부 파일',
+                      icon: Icons.attach_file,
+                      emptyText: '첨부 파일이 없습니다.',
+                      children: [
+                        for (final file in event.files)
+                          Text(
+                            '${file.fileName}${file.fileSize == null ? '' : ' · ${_formatBytes(file.fileSize!)}'}',
+                          ),
+                        if (event.files.length > 1)
+                          Align(
+                            alignment: Alignment.centerLeft,
+                            child: TextButton.icon(
+                              onPressed: () => onOpenLink(
+                                event.files.first.filePath,
+                                '파일 ${event.files.length}개',
+                              ),
+                              icon: const Icon(Icons.download, size: 17),
+                              label: Text('파일 ${event.files.length}개 모두 다운로드'),
+                            ),
+                          ),
+                      ],
+                    ),
+                  if (event.notionLinks.isNotEmpty)
+                    _DetailCollection(
+                      title: '연결된 Notion',
+                      icon: Icons.article_outlined,
+                      emptyText: '연결된 Notion 문서가 없습니다.',
+                      children: [
+                        for (final link in event.notionLinks)
+                          Text(link.notionTitle),
+                      ],
+                    ),
+                  _AvaAiRecommendationCard(event: event),
                   _LinkButtons(
                     azoom: azoom,
                     chat: chat,
@@ -1773,6 +1898,105 @@ class _DetailCollection extends StatelessWidget {
   }
 }
 
+class _AvaAiRecommendationCard extends ConsumerWidget {
+  const _AvaAiRecommendationCard({required this.event});
+
+  final CalendarEvent event;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final message = _aiRecommendationFor(event);
+    return Container(
+      margin: const EdgeInsets.only(top: 18),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: const Color(0xFFF5F2FF),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: const Color(0xFFE3D8FF)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Row(
+            children: [
+              Icon(Icons.auto_awesome, size: 18, color: Color(0xFF6D45D5)),
+              SizedBox(width: 7),
+              Text('AVA AI 추천', style: TextStyle(fontWeight: FontWeight.w900)),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Text(message, style: const TextStyle(height: 1.4)),
+          const SizedBox(height: 10),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: [
+              OutlinedButton(
+                onPressed: () async {
+                  final suggestions = await ref
+                      .read(calendarControllerProvider.notifier)
+                      .suggestAvailability(
+                        durationMinutes: event.displayEnd
+                            .difference(event.displayStart)
+                            .inMinutes
+                            .clamp(30, 480)
+                            .toInt(),
+                      );
+                  if (!context.mounted) {
+                    return;
+                  }
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                      content: Text(
+                        suggestions.isEmpty
+                            ? '추천 가능한 시간이 없습니다.'
+                            : '추천 시간 ${suggestions.length}개를 찾았습니다.',
+                      ),
+                    ),
+                  );
+                },
+                child: const Text('다른 시간 추천'),
+              ),
+              OutlinedButton(
+                onPressed: () async {
+                  final conflicts = await ref
+                      .read(calendarControllerProvider.notifier)
+                      .checkConflicts(event);
+                  if (!context.mounted) {
+                    return;
+                  }
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                      content: Text(
+                        conflicts.isEmpty
+                            ? '겹치는 일정이 없습니다.'
+                            : '충돌 일정 ${conflicts.length}개를 찾았습니다.',
+                      ),
+                    ),
+                  );
+                },
+                child: const Text('충돌 확인'),
+              ),
+              OutlinedButton(
+                onPressed: () => ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text('회의 요약 준비 구조가 연결되어 있습니다.')),
+                ),
+                child: const Text('회의 요약 준비'),
+              ),
+              OutlinedButton(
+                onPressed: () => ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text('관련 파일 추천 구조가 연결되어 있습니다.')),
+                ),
+                child: const Text('관련 파일 찾기'),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 class _LinkButtons extends StatelessWidget {
   const _LinkButtons({
     required this.azoom,
@@ -1872,7 +2096,9 @@ class _CalendarEventEditorState extends ConsumerState<CalendarEventEditor> {
   late DateTime _endAt;
   late bool _allDay;
   late String? _categoryId;
+  late String? _teamId;
   late String _status;
+  late String _importance;
   late String _visibility;
   late String _recurrenceType;
   late int _reminderMinutes;
@@ -1890,7 +2116,9 @@ class _CalendarEventEditorState extends ConsumerState<CalendarEventEditor> {
     _endAt = event?.endAt ?? _startAt.add(const Duration(hours: 1));
     _allDay = event?.allDay ?? false;
     _categoryId = event?.categoryId;
+    _teamId = event?.teamId;
     _status = event?.status ?? 'SCHEDULED';
+    _importance = event?.importance ?? 'NORMAL';
     _visibility = event?.visibility ?? 'ATTENDEES';
     _recurrenceType = event?.recurrence?.recurrenceType ?? 'NONE';
     _reminderMinutes = event?.reminders.firstOrNull?.remindBeforeMinutes ?? 10;
@@ -2027,6 +2255,23 @@ class _CalendarEventEditorState extends ConsumerState<CalendarEventEditor> {
                   ),
                   const SizedBox(height: 12),
                   DropdownButtonFormField<String?>(
+                    initialValue: _teamId,
+                    decoration: const InputDecoration(labelText: '팀'),
+                    items: [
+                      const DropdownMenuItem<String?>(
+                        value: null,
+                        child: Text('전체 팀'),
+                      ),
+                      for (final team in calendarTeams)
+                        DropdownMenuItem<String?>(
+                          value: team.id,
+                          child: Text(team.name),
+                        ),
+                    ],
+                    onChanged: (value) => setState(() => _teamId = value),
+                  ),
+                  const SizedBox(height: 12),
+                  DropdownButtonFormField<String?>(
                     initialValue: _categoryId,
                     decoration: const InputDecoration(labelText: '카테고리'),
                     items: [
@@ -2074,6 +2319,18 @@ class _CalendarEventEditorState extends ConsumerState<CalendarEventEditor> {
                     ],
                     onChanged: (value) =>
                         setState(() => _status = value ?? 'SCHEDULED'),
+                  ),
+                  DropdownButtonFormField<String>(
+                    initialValue: _importance,
+                    decoration: const InputDecoration(labelText: '중요도'),
+                    items: const [
+                      DropdownMenuItem(value: 'LOW', child: Text('낮음')),
+                      DropdownMenuItem(value: 'NORMAL', child: Text('보통')),
+                      DropdownMenuItem(value: 'HIGH', child: Text('중요')),
+                      DropdownMenuItem(value: 'CRITICAL', child: Text('긴급')),
+                    ],
+                    onChanged: (value) =>
+                        setState(() => _importance = value ?? 'NORMAL'),
                   ),
                   DropdownButtonFormField<String>(
                     initialValue: _visibility,
@@ -2284,8 +2541,10 @@ class _CalendarEventEditorState extends ConsumerState<CalendarEventEditor> {
       categoryId: _categoryId,
       color: _color,
       status: _status,
+      importance: _importance,
       visibility: _visibility,
       detailVisibility: 'FULL',
+      teamId: _teamId,
       memo: _memoController.text.trim().isEmpty
           ? null
           : _memoController.text.trim(),
@@ -2811,6 +3070,29 @@ String _formatMonthDayTime(DateTime date) {
 
 String _formatTime(DateTime date) {
   return '${date.hour.toString().padLeft(2, '0')}:${date.minute.toString().padLeft(2, '0')}';
+}
+
+String _formatBytes(int bytes) {
+  if (bytes >= 1024 * 1024) {
+    return '${(bytes / (1024 * 1024)).toStringAsFixed(1)} MB';
+  }
+  if (bytes >= 1024) {
+    return '${(bytes / 1024).toStringAsFixed(1)} KB';
+  }
+  return '$bytes B';
+}
+
+String _aiRecommendationFor(CalendarEvent event) {
+  if (event.hasAzoom && event.files.isEmpty) {
+    return '회의 전 공유할 자료가 아직 연결되지 않았습니다. 관련 파일을 찾아 첨부하면 참석자가 바로 준비할 수 있어요.';
+  }
+  if (event.attendees.length >= 2) {
+    return '동일 참석자의 충돌 여부를 확인하고, 오후 집중 시간대의 대체 회의 시간을 추천할 수 있습니다.';
+  }
+  if (event.importance == 'CRITICAL' || event.importance == 'HIGH') {
+    return '중요 일정입니다. 하루 전과 정시 리마인더를 함께 유지하는 것을 추천합니다.';
+  }
+  return '동일한 참석자의 회의가 오후 2시 이후에 없습니다. 이 시간대가 집중도에 가장 적합해요.';
 }
 
 String _weekdayLabel(DateTime date) {

@@ -1,5 +1,34 @@
 enum CalendarViewMode { month, week, day, list }
 
+const Object _unchanged = Object();
+
+class CalendarTeam {
+  const CalendarTeam({required this.id, required this.name});
+
+  final String id;
+  final String name;
+}
+
+const calendarTeams = [
+  CalendarTeam(id: 'product', name: '프로덕트팀'),
+  CalendarTeam(id: 'development', name: '개발팀'),
+  CalendarTeam(id: 'design', name: '디자인팀'),
+  CalendarTeam(id: 'marketing', name: '마케팅팀'),
+  CalendarTeam(id: 'management', name: '경영지원팀'),
+];
+
+String calendarTeamLabel(String? id) {
+  if (id == null || id.isEmpty) {
+    return '전체 팀';
+  }
+  for (final team in calendarTeams) {
+    if (team.id == id) {
+      return team.name;
+    }
+  }
+  return id;
+}
+
 class CalendarCategory {
   const CalendarCategory({
     required this.id,
@@ -384,6 +413,8 @@ class CalendarEvent {
     this.updatedBy,
     this.memo,
     this.projectName,
+    this.teamId,
+    this.importance = 'NORMAL',
     this.attendees = const [],
     this.reminders = const [],
     this.recurrence,
@@ -421,6 +452,8 @@ class CalendarEvent {
       updatedBy: _nullableString(json['updatedBy']),
       memo: _nullableString(json['memo']),
       projectName: _nullableString(json['projectName']),
+      teamId: _nullableString(json['teamId']),
+      importance: _string(json['importance'], fallback: 'NORMAL'),
       attendees: [
         for (final item in json['attendees'] as List? ?? const [])
           CalendarAttendee.fromJson((item as Map).cast<String, dynamic>()),
@@ -476,6 +509,8 @@ class CalendarEvent {
   final String? updatedBy;
   final String? memo;
   final String? projectName;
+  final String? teamId;
+  final String importance;
   final List<CalendarAttendee> attendees;
   final List<CalendarReminder> reminders;
   final CalendarRecurrence? recurrence;
@@ -511,6 +546,8 @@ class CalendarEvent {
     String? detailVisibility,
     String? memo,
     String? projectName,
+    Object? teamId = _unchanged,
+    String? importance,
     List<CalendarAttendee>? attendees,
     List<CalendarReminder>? reminders,
     CalendarRecurrence? recurrence,
@@ -541,6 +578,8 @@ class CalendarEvent {
       updatedBy: updatedBy,
       memo: memo ?? this.memo,
       projectName: projectName ?? this.projectName,
+      teamId: identical(teamId, _unchanged) ? this.teamId : teamId as String?,
+      importance: importance ?? this.importance,
       attendees: attendees ?? this.attendees,
       reminders: reminders ?? this.reminders,
       recurrence: recurrence ?? this.recurrence,
@@ -575,6 +614,8 @@ class CalendarEvent {
       if (memo != null && memo!.isNotEmpty) 'memo': memo,
       if (projectName != null && projectName!.isNotEmpty)
         'projectName': projectName,
+      if (teamId != null && teamId!.isNotEmpty) 'teamId': teamId,
+      'importance': importance,
       if (includeEmptyCollections || attendees.isNotEmpty)
         'attendees': attendees.map((item) => item.toRequest()).toList(),
       if (includeEmptyCollections || reminders.isNotEmpty)
@@ -657,6 +698,15 @@ String calendarStatusLabel(String value) {
     'POSTPONED' => '연기',
     'ON_HOLD' => '보류',
     _ => '예정',
+  };
+}
+
+String calendarImportanceLabel(String value) {
+  return switch (value) {
+    'LOW' => '낮음',
+    'HIGH' => '중요',
+    'CRITICAL' => '긴급',
+    _ => '보통',
   };
 }
 

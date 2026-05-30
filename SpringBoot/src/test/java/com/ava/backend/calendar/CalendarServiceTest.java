@@ -71,6 +71,8 @@ class CalendarServiceTest {
 				"메모",
 				null,
 				null,
+				CalendarImportance.NORMAL,
+				null,
 				null,
 				null,
 				null,
@@ -139,6 +141,8 @@ class CalendarServiceTest {
 			CalendarDetailVisibility.FULL,
 			null,
 			null,
+			"development",
+			CalendarImportance.HIGH,
 			List.of(new CalendarDtos.AttendeeRequest(other.userId(), "Other", "연구소", "팀원", "other@abba-s.local", CalendarAttendeeStatus.PENDING, null, null)),
 			List.of(new CalendarDtos.ReminderRequest(30, CalendarReminderType.IN_APP, CalendarReminderTargetType.OWNER, null)),
 			new CalendarDtos.RecurrenceRequest(CalendarRecurrenceType.DAILY, 1, null, null, CalendarRecurrenceEndType.COUNT, null, 3, null, "Asia/Seoul"),
@@ -150,10 +154,12 @@ class CalendarServiceTest {
 			"APP"
 		), owner);
 
-		List<CalendarDtos.EventResponse> expanded = calendarService.events(start.minus(1, ChronoUnit.HOURS), start.plus(4, ChronoUnit.DAYS), null, null, null, null, null, owner);
+		List<CalendarDtos.EventResponse> expanded = calendarService.events(start.minus(1, ChronoUnit.HOURS), start.plus(4, ChronoUnit.DAYS), null, null, null, null, null, null, owner);
 		assertTrue(expanded.size() >= 3);
 		assertEquals(1, calendarService.event(created.id(), owner).attendees().size());
 		assertEquals(3, calendarService.event(created.id(), owner).reminders().size());
+		assertEquals("development", calendarService.event(created.id(), owner).teamId());
+		assertEquals(CalendarImportance.HIGH, calendarService.event(created.id(), owner).importance());
 		assertThrows(AccessDeniedException.class, () -> calendarService.delete(created.id(), "ALL", other));
 	}
 
@@ -180,6 +186,8 @@ class CalendarServiceTest {
 			CalendarDetailVisibility.FULL,
 			null,
 			null,
+			"product",
+			CalendarImportance.NORMAL,
 			List.of(new CalendarDtos.AttendeeRequest(null, "장유종", "연구소", "팀장", "jang@example.com", CalendarAttendeeStatus.PENDING, null, null)),
 			List.of(),
 			null,
@@ -191,11 +199,12 @@ class CalendarServiceTest {
 			"APP"
 		), owner);
 
-		assertEquals(1, calendarService.events(start.minus(1, ChronoUnit.HOURS), start.plus(2, ChronoUnit.HOURS), null, null, "장유종", null, null, owner).size());
-		assertEquals(1, calendarService.events(start.minus(1, ChronoUnit.HOURS), start.plus(2, ChronoUnit.HOURS), null, null, "회의자료", null, null, owner).size());
-		assertEquals(1, calendarService.events(start.minus(1, ChronoUnit.HOURS), start.plus(2, ChronoUnit.HOURS), null, null, "연구소 채팅방", null, null, owner).size());
-		assertEquals(1, calendarService.events(start.minus(1, ChronoUnit.HOURS), start.plus(2, ChronoUnit.HOURS), null, null, "azoom-room-1", null, null, owner).size());
-		assertEquals(1, calendarService.events(start.minus(1, ChronoUnit.HOURS), start.plus(2, ChronoUnit.HOURS), null, null, null, 0, 1, owner).size());
+		assertEquals(1, calendarService.events(start.minus(1, ChronoUnit.HOURS), start.plus(2, ChronoUnit.HOURS), null, null, null, "장유종", null, null, owner).size());
+		assertEquals(1, calendarService.events(start.minus(1, ChronoUnit.HOURS), start.plus(2, ChronoUnit.HOURS), null, null, null, "회의자료", null, null, owner).size());
+		assertEquals(1, calendarService.events(start.minus(1, ChronoUnit.HOURS), start.plus(2, ChronoUnit.HOURS), null, null, null, "연구소 채팅방", null, null, owner).size());
+		assertEquals(1, calendarService.events(start.minus(1, ChronoUnit.HOURS), start.plus(2, ChronoUnit.HOURS), null, null, null, "azoom-room-1", null, null, owner).size());
+		assertEquals(1, calendarService.events(start.minus(1, ChronoUnit.HOURS), start.plus(2, ChronoUnit.HOURS), null, "product", null, null, null, null, owner).size());
+		assertEquals(1, calendarService.events(start.minus(1, ChronoUnit.HOURS), start.plus(2, ChronoUnit.HOURS), null, null, null, null, 0, 1, owner).size());
 	}
 
 	private CalendarDtos.EventRequest request(String title, Instant start, Instant end) {
@@ -214,6 +223,8 @@ class CalendarServiceTest {
 			CalendarDetailVisibility.FULL,
 			null,
 			null,
+			null,
+			CalendarImportance.NORMAL,
 			List.of(),
 			List.of(),
 			null,

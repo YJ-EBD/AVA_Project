@@ -74,6 +74,13 @@ public class CalendarEventEntity {
 	@Column(name = "project_name", length = 160)
 	private String projectName;
 
+	@Column(name = "team_id", length = 80)
+	private String teamId;
+
+	@Enumerated(EnumType.STRING)
+	@Column(nullable = false, length = 20)
+	private CalendarImportance importance = CalendarImportance.NORMAL;
+
 	@Column(name = "created_at", nullable = false)
 	private Instant createdAt;
 
@@ -130,6 +137,8 @@ public class CalendarEventEntity {
 	public UUID getUpdatedBy() { return updatedBy; }
 	public String getMemo() { return memo; }
 	public String getProjectName() { return projectName; }
+	public String getTeamId() { return teamId; }
+	public CalendarImportance getImportance() { return importance; }
 	public Instant getCreatedAt() { return createdAt; }
 	public Instant getUpdatedAt() { return updatedAt; }
 	public Instant getDeletedAt() { return deletedAt; }
@@ -149,6 +158,8 @@ public class CalendarEventEntity {
 		this.detailVisibility = request.detailVisibility() == null ? CalendarDetailVisibility.FULL : request.detailVisibility();
 		this.memo = blankToNull(request.memo());
 		this.projectName = blankToNull(request.projectName());
+		this.teamId = blankToNull(request.teamId());
+		this.importance = request.importance() == null ? CalendarImportance.NORMAL : request.importance();
 		this.updatedBy = actorUserId;
 	}
 

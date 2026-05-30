@@ -8,6 +8,8 @@ void main() {
       title: '수정 테스트',
       startAt: DateTime.utc(2026, 6, 1, 1),
       endAt: DateTime.utc(2026, 6, 1, 2),
+      teamId: 'development',
+      importance: 'HIGH',
     );
   }
 
@@ -20,16 +22,21 @@ void main() {
     expect(data.containsKey('notionLinks'), isFalse);
     expect(data.containsKey('chatLinks'), isFalse);
     expect(data.containsKey('azoomLinks'), isFalse);
+    expect(data['teamId'], 'development');
+    expect(data['importance'], 'HIGH');
   });
 
-  test('update request includes empty relationship collections for clearing', () {
-    final data = event().toRequest(includeEmptyCollections: true);
+  test(
+    'update request includes empty relationship collections for clearing',
+    () {
+      final data = event().toRequest(includeEmptyCollections: true);
 
-    expect(data['attendees'], isEmpty);
-    expect(data['reminders'], isEmpty);
-    expect(data['files'], isEmpty);
-    expect(data['notionLinks'], isEmpty);
-    expect(data['chatLinks'], isEmpty);
-    expect(data['azoomLinks'], isEmpty);
-  });
+      expect(data['attendees'], isEmpty);
+      expect(data['reminders'], isEmpty);
+      expect(data['files'], isEmpty);
+      expect(data['notionLinks'], isEmpty);
+      expect(data['chatLinks'], isEmpty);
+      expect(data['azoomLinks'], isEmpty);
+    },
+  );
 }

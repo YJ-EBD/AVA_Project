@@ -34,13 +34,14 @@ public class CalendarController {
 		@RequestParam(value = "startAt", required = false) Instant startAt,
 		@RequestParam(value = "endAt", required = false) Instant endAt,
 		@RequestParam(value = "categoryId", required = false) UUID categoryId,
+		@RequestParam(value = "teamId", required = false) String teamId,
 		@RequestParam(value = "status", required = false) CalendarEventStatus status,
 		@RequestParam(value = "query", required = false) String query,
 		@RequestParam(value = "page", required = false) Integer page,
 		@RequestParam(value = "size", required = false) Integer size,
 		@AuthenticationPrincipal AuthPrincipal principal
 	) {
-		return calendarService.events(startAt, endAt, categoryId, status, query, page, size, principal);
+		return calendarService.events(startAt, endAt, categoryId, teamId, status, query, page, size, principal);
 	}
 
 	@GetMapping("/events/{id}")
@@ -214,7 +215,7 @@ public class CalendarController {
 		@RequestParam(value = "size", required = false) Integer size,
 		@AuthenticationPrincipal AuthPrincipal principal
 	) {
-		return calendarService.events(startAt, endAt, null, null, query, page, size, principal);
+		return calendarService.events(startAt, endAt, null, null, null, query, page, size, principal);
 	}
 
 	@GetMapping("/tools")

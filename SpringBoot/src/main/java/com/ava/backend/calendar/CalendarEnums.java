@@ -9,6 +9,13 @@ enum CalendarEventStatus {
 	ON_HOLD
 }
 
+enum CalendarImportance {
+	LOW,
+	NORMAL,
+	HIGH,
+	CRITICAL
+}
+
 enum CalendarMeetingStatus {
 	RESERVED,
 	BEFORE_START,

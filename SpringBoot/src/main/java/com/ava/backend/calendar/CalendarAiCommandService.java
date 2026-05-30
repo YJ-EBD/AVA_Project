@@ -115,6 +115,7 @@ public class CalendarAiCommandService {
 				null,
 				null,
 				null,
+				null,
 				0,
 				100,
 				principal
@@ -168,6 +169,8 @@ public class CalendarAiCommandService {
 			CalendarDetailVisibility.FULL,
 			"",
 			extractProjectName(content),
+			extractTeamId(normalized),
+			extractImportance(normalized),
 			attendees,
 			List.of(new CalendarDtos.ReminderRequest(10, CalendarReminderType.IN_APP, CalendarReminderTargetType.OWNER, null)),
 			parseRecurrence(normalized),
@@ -220,6 +223,7 @@ public class CalendarAiCommandService {
 		List<CalendarDtos.EventResponse> events = calendarService.events(
 			queryRange.range().start(),
 			queryRange.range().end(),
+			null,
 			null,
 			status,
 			query.isBlank() ? null : query,
@@ -295,6 +299,7 @@ public class CalendarAiCommandService {
 		List<CalendarDtos.EventResponse> remaining = calendarService.events(
 			target.startAt().minus(Duration.ofDays(1)),
 			target.endAt().plus(Duration.ofDays(1)),
+			null,
 			null,
 			null,
 			target.title(),
@@ -626,6 +631,7 @@ public class CalendarAiCommandService {
 			defaultSearchRange().end(),
 			null,
 			null,
+			null,
 			query.isBlank() ? null : query,
 			0,
 			20,
@@ -815,6 +821,38 @@ public class CalendarAiCommandService {
 		return matcher.find() ? matcher.group(1).strip() : null;
 	}
 
+	private String extractTeamId(String normalized) {
+		if (containsAny(normalized, "프로덕트팀", "제품팀", "product")) {
+			return "product";
+		}
+		if (containsAny(normalized, "개발팀", "dev", "developer", "engineering")) {
+			return "development";
+		}
+		if (containsAny(normalized, "디자인팀", "design")) {
+			return "design";
+		}
+		if (containsAny(normalized, "마케팅팀", "marketing")) {
+			return "marketing";
+		}
+		if (containsAny(normalized, "경영지원팀", "지원팀", "admin team")) {
+			return "management";
+		}
+		return null;
+	}
+
+	private CalendarImportance extractImportance(String normalized) {
+		if (containsAny(normalized, "매우 중요", "긴급", "critical", "urgent")) {
+			return CalendarImportance.CRITICAL;
+		}
+		if (containsAny(normalized, "중요", "high")) {
+			return CalendarImportance.HIGH;
+		}
+		if (containsAny(normalized, "낮음", "low")) {
+			return CalendarImportance.LOW;
+		}
+		return CalendarImportance.NORMAL;
+	}
+
 	private CalendarDtos.EventPatchRequest patchFrom(
 		CalendarDtos.EventResponse current,
 		String title,
@@ -838,6 +876,8 @@ public class CalendarAiCommandService {
 			current.detailVisibility(),
 			current.memo(),
 			current.projectName(),
+			current.teamId(),
+			current.importance(),
 			current.attendees().stream().map(this::attendeeRequestFrom).toList(),
 			current.reminders().stream().map(this::reminderRequestFrom).toList(),
 			recurrenceRequestFrom(current.recurrence()),
@@ -960,6 +1000,7 @@ public class CalendarAiCommandService {
 			null,
 			null,
 			null,
+			null,
 			0,
 			100,
 			principal
@@ -1038,6 +1079,10 @@ public class CalendarAiCommandService {
 			event.status().name(),
 			statusLabel(event.status()),
 			event.category() == null ? "" : event.category().name(),
+			event.teamId(),
+			teamLabel(event.teamId()),
+			event.importance() == null ? CalendarImportance.NORMAL.name() : event.importance().name(),
+			importanceLabel(event.importance()),
 			event.color(),
 			event.azoomLinks() != null && !event.azoomLinks().isEmpty(),
 			event.chatLinks() != null && !event.chatLinks().isEmpty(),
@@ -1045,6 +1090,29 @@ public class CalendarAiCommandService {
 			event.notionLinks() != null && !event.notionLinks().isEmpty(),
 			event.memo()
 		);
+	}
+
+	private String teamLabel(String teamId) {
+		if (teamId == null || teamId.isBlank()) {
+			return "";
+		}
+		return switch (teamId) {
+			case "product" -> "프로덕트팀";
+			case "development" -> "개발팀";
+			case "design" -> "디자인팀";
+			case "marketing" -> "마케팅팀";
+			case "management" -> "경영지원팀";
+			default -> teamId;
+		};
+	}
+
+	private String importanceLabel(CalendarImportance importance) {
+		return switch (importance == null ? CalendarImportance.NORMAL : importance) {
+			case LOW -> "낮음";
+			case NORMAL -> "보통";
+			case HIGH -> "중요";
+			case CRITICAL -> "긴급";
+		};
 	}
 
 	private List<DateMatch> explicitDates(String content, LocalDate today) {

@@ -520,6 +520,10 @@ class AvaAiCalendarEventCardDto {
     required this.status,
     required this.statusLabel,
     required this.categoryName,
+    required this.teamId,
+    required this.teamLabel,
+    required this.importance,
+    required this.importanceLabel,
     required this.color,
     required this.hasAzoom,
     required this.hasChat,
@@ -540,6 +544,10 @@ class AvaAiCalendarEventCardDto {
       status: json['status'] as String? ?? '',
       statusLabel: json['statusLabel'] as String? ?? '',
       categoryName: json['categoryName'] as String? ?? '',
+      teamId: json['teamId'] as String? ?? '',
+      teamLabel: json['teamLabel'] as String? ?? '',
+      importance: json['importance'] as String? ?? 'NORMAL',
+      importanceLabel: json['importanceLabel'] as String? ?? '',
       color: json['color'] as String? ?? '',
       hasAzoom: json['hasAzoom'] as bool? ?? false,
       hasChat: json['hasChat'] as bool? ?? false,
@@ -559,6 +567,10 @@ class AvaAiCalendarEventCardDto {
   final String status;
   final String statusLabel;
   final String categoryName;
+  final String teamId;
+  final String teamLabel;
+  final String importance;
+  final String importanceLabel;
   final String color;
   final bool hasAzoom;
   final bool hasChat;
@@ -578,6 +590,10 @@ class AvaAiCalendarEventCardDto {
       'status': status,
       'statusLabel': statusLabel,
       'categoryName': categoryName,
+      'teamId': teamId,
+      'teamLabel': teamLabel,
+      'importance': importance,
+      'importanceLabel': importanceLabel,
       'color': color,
       'hasAzoom': hasAzoom,
       'hasChat': hasChat,

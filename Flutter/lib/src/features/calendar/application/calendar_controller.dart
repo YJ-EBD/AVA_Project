@@ -18,6 +18,7 @@ class CalendarState {
     required this.categories,
     required this.visibleCategoryIds,
     this.selectedEventId,
+    this.teamFilter,
     this.statusFilter,
     this.searchQuery = '',
     this.loading = false,
@@ -45,6 +46,7 @@ class CalendarState {
   final List<CalendarCategory> categories;
   final Set<String> visibleCategoryIds;
   final String? selectedEventId;
+  final String? teamFilter;
   final String? statusFilter;
   final String searchQuery;
   final bool loading;
@@ -67,7 +69,10 @@ class CalendarState {
   List<CalendarEvent> get visibleEvents {
     return [
       for (final event in events)
-        if (_isVisibleByCategory(event) && _isVisibleByStatus(event)) event,
+        if (_isVisibleByCategory(event) &&
+            _isVisibleByTeam(event) &&
+            _isVisibleByStatus(event))
+          event,
     ]..sort((a, b) => a.displayStart.compareTo(b.displayStart));
   }
 
@@ -101,6 +106,11 @@ class CalendarState {
     return filter == null || filter.isEmpty || event.status == filter;
   }
 
+  bool _isVisibleByTeam(CalendarEvent event) {
+    final filter = teamFilter;
+    return filter == null || filter.isEmpty || event.teamId == filter;
+  }
+
   CalendarState copyWith({
     DateTime? focusedDate,
     DateTime? selectedDate,
@@ -109,6 +119,7 @@ class CalendarState {
     List<CalendarCategory>? categories,
     Set<String>? visibleCategoryIds,
     Object? selectedEventId = _unchanged,
+    Object? teamFilter = _unchanged,
     Object? statusFilter = _unchanged,
     String? searchQuery,
     bool? loading,
@@ -126,6 +137,9 @@ class CalendarState {
       selectedEventId: identical(selectedEventId, _unchanged)
           ? this.selectedEventId
           : selectedEventId as String?,
+      teamFilter: identical(teamFilter, _unchanged)
+          ? this.teamFilter
+          : teamFilter as String?,
       statusFilter: identical(statusFilter, _unchanged)
           ? this.statusFilter
           : statusFilter as String?,
@@ -166,6 +180,7 @@ class CalendarController extends Notifier<CalendarState> {
           categoryId: state.visibleCategoryIds.length == 1
               ? state.visibleCategoryIds.first
               : null,
+          teamId: state.teamFilter,
           status: state.statusFilter,
           query: state.searchQuery,
         ),
@@ -277,6 +292,11 @@ class CalendarController extends Notifier<CalendarState> {
 
   void setStatusFilter(String? status) {
     state = state.copyWith(statusFilter: status);
+    unawaited(refresh());
+  }
+
+  void setTeamFilter(String? teamId) {
+    state = state.copyWith(teamFilter: teamId);
     unawaited(refresh());
   }
 

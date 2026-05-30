@@ -79,6 +79,7 @@ class CalendarAiCommandServiceTest {
 			Instant.parse("2026-06-11T00:00:00Z"),
 			null,
 			null,
+			null,
 			"재고앱 개발",
 			null,
 			null,

@@ -39,6 +39,11 @@ public class CalendarService {
 		new DefaultCategory("팀 일정", "#7C3AED", "groups"),
 		new DefaultCategory("부서 일정", "#0EA5E9", "account_tree"),
 		new DefaultCategory("프로젝트 일정", "#F97316", "folder"),
+		new DefaultCategory("회의", "#4F7CFF", "groups"),
+		new DefaultCategory("업무 / 작업", "#2563EB", "task_alt"),
+		new DefaultCategory("마감 / 데드라인", "#E5484D", "flag"),
+		new DefaultCategory("이벤트", "#EC4899", "celebration"),
+		new DefaultCategory("리마인더", "#22A06B", "notifications"),
 		new DefaultCategory("회의 일정", "#EF4444", "meeting_room"),
 		new DefaultCategory("AZOOM 회의", "#2563EB", "videocam"),
 		new DefaultCategory("개발 일정", "#14B8A6", "code"),
@@ -96,6 +101,7 @@ public class CalendarService {
 		Instant startAt,
 		Instant endAt,
 		UUID categoryId,
+		String teamId,
 		CalendarEventStatus status,
 		String query,
 		Integer page,
@@ -111,6 +117,7 @@ public class CalendarService {
 		List<CalendarDtos.EventResponse> results = candidates.stream()
 			.filter(event -> canView(event, principal))
 			.filter(event -> categoryId == null || categoryId.equals(event.getCategoryId()))
+			.filter(event -> teamId == null || teamId.isBlank() || teamId.equals(event.getTeamId()))
 			.filter(event -> status == null || status == event.getStatus())
 			.flatMap(event -> expandEvent(event, rangeStart, rangeEnd, principal).stream())
 			.sorted(Comparator.comparing(CalendarDtos.EventResponse::occurrenceStartAt))
@@ -403,9 +410,9 @@ public class CalendarService {
 
 	public List<Map<String, Object>> toolSpecs() {
 		return List.of(
-			tool("calendar.list_events", "권한 범위 내 일정 목록을 조회합니다.", Map.of("startAt", "ISO-8601", "endAt", "ISO-8601", "status", "optional", "query", "optional", "page", "optional", "size", "optional")),
+			tool("calendar.list_events", "권한 범위 내 일정 목록을 조회합니다.", Map.of("startAt", "ISO-8601", "endAt", "ISO-8601", "teamId", "optional", "status", "optional", "query", "optional", "page", "optional", "size", "optional")),
 			tool("calendar.get_event", "단일 일정 상세를 조회합니다.", Map.of("id", "UUID")),
-			tool("calendar.create_event", "사용자 확인 후 일정을 생성합니다.", Map.of("title", "string", "startAt", "ISO-8601", "endAt", "ISO-8601")),
+			tool("calendar.create_event", "사용자 확인 후 일정을 생성합니다.", Map.of("title", "string", "startAt", "ISO-8601", "endAt", "ISO-8601", "teamId", "optional", "importance", "LOW|NORMAL|HIGH|CRITICAL")),
 			tool("calendar.update_event", "사용자 확인 후 일정을 수정합니다.", Map.of("id", "UUID", "patch", "CalendarEvent")),
 			tool("calendar.delete_event", "사용자 확인 후 일정을 삭제합니다.", Map.of("id", "UUID", "recurrenceDeleteScope", "THIS|FUTURE|ALL")),
 			tool("calendar.check_conflicts", "일정 충돌을 확인합니다.", Map.of("startAt", "ISO-8601", "endAt", "ISO-8601", "attendeeUserIds", "UUID[]")),
@@ -420,7 +427,7 @@ public class CalendarService {
 	}
 
 	private CalendarDtos.CalendarSummaryResponse summary(String title, Instant start, Instant end, AuthPrincipal principal) {
-		List<CalendarDtos.EventResponse> events = events(start, end, null, null, null, null, null, principal);
+		List<CalendarDtos.EventResponse> events = events(start, end, null, null, null, null, null, null, principal);
 		Map<String, Long> counts = events.stream().collect(Collectors.groupingBy(event -> event.status().name(), LinkedHashMap::new, Collectors.counting()));
 		return new CalendarDtos.CalendarSummaryResponse(title, start, end, events.size(), events, counts);
 	}
@@ -544,6 +551,8 @@ public class CalendarService {
 			event.getUpdatedBy(),
 			redact ? null : event.getMemo(),
 			redact ? null : event.getProjectName(),
+			redact ? null : event.getTeamId(),
+			redact ? CalendarImportance.NORMAL : event.getImportance(),
 			redact ? List.of() : attendeeRepository.findByEventIdOrderByCreatedAtAsc(event.getId()).stream().map(this::toAttendeeResponse).toList(),
 			redact ? List.of() : reminderRepository.findByEventIdOrderByRemindBeforeMinutesAsc(event.getId()).stream().map(this::toReminderResponse).toList(),
 			redact ? null : recurrenceRepository.findByEventId(event.getId()).map(this::toRecurrenceResponse).orElse(null),
@@ -812,7 +821,7 @@ public class CalendarService {
 	}
 
 	private CalendarDtos.EventRequest withCategory(CalendarDtos.EventRequest request, UUID categoryId) {
-		return new CalendarDtos.EventRequest(request.title(), request.description(), request.startAt(), request.endAt(), request.allDay(), request.location(), categoryId, request.color(), request.status(), request.meetingStatus(), request.visibility(), request.detailVisibility(), request.memo(), request.projectName(), request.attendees(), request.reminders(), request.recurrence(), request.files(), request.notionLinks(), request.chatLinks(), request.azoomLinks(), request.ignoreConflicts(), request.source());
+		return new CalendarDtos.EventRequest(request.title(), request.description(), request.startAt(), request.endAt(), request.allDay(), request.location(), categoryId, request.color(), request.status(), request.meetingStatus(), request.visibility(), request.detailVisibility(), request.memo(), request.projectName(), request.teamId(), request.importance(), request.attendees(), request.reminders(), request.recurrence(), request.files(), request.notionLinks(), request.chatLinks(), request.azoomLinks(), request.ignoreConflicts(), request.source());
 	}
 
 	private java.util.Optional<CalendarCategoryEntity> defaultCategory() {

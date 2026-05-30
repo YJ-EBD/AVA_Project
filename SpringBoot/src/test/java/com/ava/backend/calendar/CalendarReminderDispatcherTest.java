@@ -82,6 +82,8 @@ class CalendarReminderDispatcherTest {
 			CalendarDetailVisibility.FULL,
 			null,
 			null,
+			null,
+			CalendarImportance.NORMAL,
 			List.of(),
 			List.of(),
 			null,

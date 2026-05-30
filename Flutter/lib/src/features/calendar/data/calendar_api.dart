@@ -20,6 +20,7 @@ class CalendarApi {
     DateTime? startAt,
     DateTime? endAt,
     String? categoryId,
+    String? teamId,
     String? status,
     String? query,
     int? page,
@@ -29,6 +30,7 @@ class CalendarApi {
       if (startAt != null) 'startAt': startAt.toUtc().toIso8601String(),
       if (endAt != null) 'endAt': endAt.toUtc().toIso8601String(),
       if (categoryId != null && categoryId.isNotEmpty) 'categoryId': categoryId,
+      if (teamId != null && teamId.isNotEmpty) 'teamId': teamId,
       if (status != null && status.isNotEmpty) 'status': status,
       if (query != null && query.trim().isNotEmpty) 'query': query.trim(),
     };
