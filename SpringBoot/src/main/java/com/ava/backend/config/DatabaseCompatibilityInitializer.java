@@ -84,6 +84,19 @@ public class DatabaseCompatibilityInitializer implements ApplicationRunner {
 			create index if not exists idx_chat_mentions_account_created
 			on chat_mention_notifications (mentioned_account_id, created_at desc)
 			""");
+		jdbcTemplate.execute("""
+			alter table if exists calendar_events
+			add column if not exists team_id varchar(80)
+			""");
+		jdbcTemplate.execute("""
+			alter table if exists calendar_events
+			add column if not exists importance varchar(20) not null default 'NORMAL'
+			""");
+		jdbcTemplate.execute("""
+			create index if not exists idx_calendar_events_team
+			on calendar_events (team_id, start_at)
+			where deleted_at is null
+			""");
 	}
 
 	private boolean isPostgreSql() throws Exception {

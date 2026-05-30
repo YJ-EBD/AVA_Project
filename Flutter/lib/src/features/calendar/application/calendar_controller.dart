@@ -199,7 +199,10 @@ class CalendarController extends Notifier<CalendarState> {
         loading: false,
       );
     } on Object catch (error) {
-      state = state.copyWith(loading: false, errorText: error.toString());
+      state = state.copyWith(
+        loading: false,
+        errorText: _calendarErrorMessage(error),
+      );
     }
   }
 
@@ -398,7 +401,10 @@ class CalendarController extends Notifier<CalendarState> {
       state = state.copyWith(selectedEventId: saved.id, loading: false);
       return saved;
     } on Object catch (error) {
-      state = state.copyWith(loading: false, errorText: error.toString());
+      state = state.copyWith(
+        loading: false,
+        errorText: _calendarErrorMessage(error),
+      );
       return null;
     }
   }
@@ -424,7 +430,10 @@ class CalendarController extends Notifier<CalendarState> {
       await refresh();
       state = state.copyWith(selectedEventId: null, loading: false);
     } on Object catch (error) {
-      state = state.copyWith(loading: false, errorText: error.toString());
+      state = state.copyWith(
+        loading: false,
+        errorText: _calendarErrorMessage(error),
+      );
     }
   }
 
@@ -484,6 +493,17 @@ class _CalendarRange {
 }
 
 const Object _unchanged = Object();
+
+String _calendarErrorMessage(Object error) {
+  final text = error.toString();
+  if (text.contains('401') || text.contains('403')) {
+    return '캘린더 접근 권한을 확인해 주세요.';
+  }
+  if (text.contains('500') || text.contains('DioException')) {
+    return '일정 정보를 불러오지 못했습니다. 잠시 후 다시 시도해 주세요.';
+  }
+  return '캘린더를 불러오는 중 문제가 발생했습니다.';
+}
 
 bool _sameDate(DateTime a, DateTime b) {
   return a.year == b.year && a.month == b.month && a.day == b.day;
