@@ -8881,12 +8881,10 @@ class _ImageGalleryMessage extends StatelessWidget {
                         ),
                       ),
                       const SizedBox(width: 6),
-                      Text(
-                        first.time,
-                        style: const TextStyle(
-                          color: Color(0xFF4D6370),
-                          fontSize: 10,
-                        ),
+                      _MessageMeta(
+                        time: first.time,
+                        unreadCount: first.unreadCount,
+                        crossAxisAlignment: CrossAxisAlignment.start,
                       ),
                     ],
                   ),
@@ -8911,21 +8909,10 @@ class _ImageGalleryMessage extends StatelessWidget {
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.end,
               children: [
-                if (first.unreadCount > 0)
-                  Text(
-                    '${first.unreadCount}',
-                    style: const TextStyle(
-                      color: Color(0xFFFFF263),
-                      fontSize: 10,
-                      fontWeight: FontWeight.w700,
-                    ),
-                  ),
-                Text(
-                  first.time,
-                  style: const TextStyle(
-                    color: Color(0xFF4D6370),
-                    fontSize: 10,
-                  ),
+                _MessageMeta(
+                  time: first.time,
+                  unreadCount: first.unreadCount,
+                  crossAxisAlignment: CrossAxisAlignment.end,
                 ),
               ],
             ),
@@ -8997,6 +8984,41 @@ class _ImageGalleryBubble extends StatelessWidget {
             ),
         ],
       ),
+    );
+  }
+}
+
+class _MessageMeta extends StatelessWidget {
+  const _MessageMeta({
+    required this.time,
+    required this.unreadCount,
+    required this.crossAxisAlignment,
+  });
+
+  final String time;
+  final int unreadCount;
+  final CrossAxisAlignment crossAxisAlignment;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: crossAxisAlignment,
+      children: [
+        if (unreadCount > 0)
+          Text(
+            '$unreadCount',
+            style: const TextStyle(
+              color: Color(0xFFFFF263),
+              fontSize: 10,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+        Text(
+          time,
+          style: const TextStyle(color: Color(0xFF4D6370), fontSize: 10),
+        ),
+      ],
     );
   }
 }
@@ -9244,12 +9266,10 @@ class _OtherMessage extends ConsumerWidget {
                         ),
                       ),
                       const SizedBox(width: 6),
-                      Text(
-                        message.time,
-                        style: const TextStyle(
-                          color: Color(0xFF4D6370),
-                          fontSize: 10,
-                        ),
+                      _MessageMeta(
+                        time: message.time,
+                        unreadCount: message.unreadCount,
+                        crossAxisAlignment: CrossAxisAlignment.start,
                       ),
                     ],
                   ),
@@ -9288,21 +9308,10 @@ class _MineMessage extends StatelessWidget {
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.end,
               children: [
-                if (message.unreadCount > 0)
-                  Text(
-                    '${message.unreadCount}',
-                    style: const TextStyle(
-                      color: Color(0xFFFFF263),
-                      fontSize: 10,
-                      fontWeight: FontWeight.w700,
-                    ),
-                  ),
-                Text(
-                  message.time,
-                  style: const TextStyle(
-                    color: Color(0xFF4D6370),
-                    fontSize: 10,
-                  ),
+                _MessageMeta(
+                  time: message.time,
+                  unreadCount: message.unreadCount,
+                  crossAxisAlignment: CrossAxisAlignment.end,
                 ),
               ],
             ),
