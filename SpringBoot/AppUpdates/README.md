@@ -9,17 +9,20 @@ Desktop unless the user explicitly reverses this rule.
 Codex rule: after any implemented change that affects user-visible behavior,
 client/server compatibility, runtime connectivity, media, login, messaging,
 updates, or distributed app behavior, bump the Flutter version in the same
-change and keep the backend Windows update version in sync.
+change and keep the backend update manifest in sync for every shipped platform.
 
 Codex rule: a version bump is not complete until the matching update packages
 exist for the platforms being shipped, and their update manifests return
 `updateAvailable: true` for the previous released version.
 
-1. Run `Flutter/bump_version.cmd 0.1.1`.
+1. Bump the Flutter version for the change.
+   - On Windows, run `Flutter/bump_version.cmd 0.1.1`.
+   - On macOS, run `Flutter/tooling/bump_version.sh 0.1.1 1001`.
    - Demo line starts at `0.1.0`.
    - Patch releases should increase like `0.1.1`, `0.1.2`, ... `0.1.37`.
    - Pass the build number explicitly when continuing the current scheme, for
-     example `Flutter/bump_version.cmd 0.1.3 1003`.
+     example `Flutter/bump_version.cmd 0.1.3 1003` or
+     `Flutter/tooling/bump_version.sh 0.1.3 1003`.
 2. Run `Flutter/package_windows_update.cmd`.
    - Confirm `SpringBoot/AppUpdates/ava-windows-<version>.zip` was created.
    - The package script builds clients against the public AVA backend address
@@ -38,7 +41,7 @@ exist for the platforms being shipped, and their update manifests return
    - Android APKs must use the local AVA release signing key, not the debug
      signing key.
 4. Build and copy the macOS DMG for the same version when shipping macOS.
-   - Run the macOS Flutter release build and package it as a DMG.
+   - Run `Flutter/tooling/package_macos_update.sh`.
    - Confirm `SpringBoot/AppUpdates/AVA_Project_<version>_<build>_macOS.dmg`
      exists, or set `AVA_APP_MACOS_FILE_NAME` to the actual DMG name.
    - macOS clients download the DMG and open it; the user must drag

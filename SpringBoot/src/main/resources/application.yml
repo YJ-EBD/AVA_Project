@@ -86,10 +86,10 @@ ava:
       required: ${AVA_APP_ANDROID_REQUIRED:true}
       release-notes: "${AVA_APP_ANDROID_RELEASE_NOTES:Enable Apple update checks and installers}"
     macos:
-      latest-version: ${AVA_APP_MACOS_LATEST_VERSION:0.1.296}
-      file-name: ${AVA_APP_MACOS_FILE_NAME:AVA_Project_${AVA_APP_MACOS_LATEST_VERSION:0.1.296}_${AVA_APP_MACOS_BUILD_NUMBER:1296}_macOS.dmg}
+      latest-version: ${AVA_APP_MACOS_LATEST_VERSION:0.1.298}
+      file-name: ${AVA_APP_MACOS_FILE_NAME:AVA_Project_${AVA_APP_MACOS_LATEST_VERSION:0.1.298}_${AVA_APP_MACOS_BUILD_NUMBER:1298}_macOS.dmg}
       required: ${AVA_APP_MACOS_REQUIRED:false}
-      release-notes: "${AVA_APP_MACOS_RELEASE_NOTES:Enable macOS update prompts and DMG downloads}"
+      release-notes: "${AVA_APP_MACOS_RELEASE_NOTES:Retry Apple update checks and package macOS updates}"
     ios:
       latest-version: ${AVA_APP_IOS_LATEST_VERSION:0.1.296}
       file-name: ${AVA_APP_IOS_FILE_NAME:ava-ios-${AVA_APP_IOS_LATEST_VERSION:0.1.296}.ipa}

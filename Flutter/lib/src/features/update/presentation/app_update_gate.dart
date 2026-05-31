@@ -38,6 +38,8 @@ class _AppUpdateGateState extends ConsumerState<AppUpdateGate>
   bool _postUpdateChecked = false;
   bool _postUpdateCheckInProgress = false;
   bool _retryAfterCurrentCheck = false;
+  int _consecutiveCheckFailures = 0;
+  Duration _retryDelayAfterCurrentCheck = const Duration(seconds: 1);
 
   bool get _updatesSupported =>
       io.Platform.isWindows ||
@@ -66,10 +68,8 @@ class _AppUpdateGateState extends ConsumerState<AppUpdateGate>
     if (state != AppLifecycleState.resumed || !_updatesSupported) {
       return;
     }
-    if (io.Platform.isAndroid || io.Platform.isIOS) {
-      _checked = false;
-      _scheduleCheck(delay: const Duration(milliseconds: 500));
-    }
+    _checked = false;
+    _scheduleCheck(delay: const Duration(milliseconds: 500));
   }
 
   void _scheduleCheck({Duration delay = Duration.zero}) {
@@ -106,6 +106,8 @@ class _AppUpdateGateState extends ConsumerState<AppUpdateGate>
       final manifest = await ref
           .read(appUpdateApiProvider)
           .latestForCurrentPlatform();
+      _consecutiveCheckFailures = 0;
+      _retryDelayAfterCurrentCheck = const Duration(seconds: 1);
       _checked = true;
       if (!mounted ||
           manifest == null ||
@@ -117,6 +119,7 @@ class _AppUpdateGateState extends ConsumerState<AppUpdateGate>
       final dialogContext = await _rootNavigatorContext();
       if (!mounted || dialogContext == null || !dialogContext.mounted) {
         _checked = false;
+        _retryDelayAfterCurrentCheck = const Duration(seconds: 1);
         _retryAfterCurrentCheck = true;
         return;
       }
@@ -128,20 +131,33 @@ class _AppUpdateGateState extends ConsumerState<AppUpdateGate>
       );
     } on Object {
       _checked = false;
-      if (io.Platform.isAndroid) {
-        _retryAfterCurrentCheck = true;
-      }
+      _consecutiveCheckFailures += 1;
+      _retryDelayAfterCurrentCheck = _retryDelayForFailure(
+        _consecutiveCheckFailures,
+      );
+      _retryAfterCurrentCheck = true;
       // Update checks must never block normal app startup.
     } finally {
       _checkInProgress = false;
       _dialogOpen = false;
       if (_retryAfterCurrentCheck) {
+        final retryDelay = _retryDelayAfterCurrentCheck;
         _retryAfterCurrentCheck = false;
         if (mounted) {
-          _scheduleCheck(delay: const Duration(seconds: 1));
+          _scheduleCheck(delay: retryDelay);
         }
       }
     }
+  }
+
+  Duration _retryDelayForFailure(int failures) {
+    if (failures <= 1) {
+      return const Duration(seconds: 2);
+    }
+    if (failures <= 3) {
+      return const Duration(seconds: 10);
+    }
+    return const Duration(seconds: 30);
   }
 
   Future<void> _checkPostUpdateNotice() async {

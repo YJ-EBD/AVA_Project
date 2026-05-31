@@ -27,8 +27,16 @@ $pubspec = $pubspec -replace "(?m)^version:\s*.*$", "version: $Version+$BuildNum
 [System.IO.File]::WriteAllText($pubspecPath, $pubspec, [System.Text.UTF8Encoding]::new($false))
 
 $appVersion = Get-Content -LiteralPath $appVersionPath -Raw
-$appVersion = $appVersion -replace "static const name = '[^']+';", "static const name = '$Version';"
-$appVersion = $appVersion -replace "static const buildNumber = \d+;", "static const buildNumber = $BuildNumber;"
+$appVersion = [regex]::Replace(
+    $appVersion,
+    "(?s)(static const name = String\.fromEnvironment\(\s*'AVA_APP_VERSION',\s*defaultValue:\s*')[^']+(',)",
+    { param($match) $match.Groups[1].Value + $Version + $match.Groups[2].Value }
+)
+$appVersion = [regex]::Replace(
+    $appVersion,
+    "(?s)(static const buildNumber = int\.fromEnvironment\(\s*'AVA_BUILD_NUMBER',\s*defaultValue:\s*)\d+(,)",
+    { param($match) $match.Groups[1].Value + $BuildNumber + $match.Groups[2].Value }
+)
 [System.IO.File]::WriteAllText($appVersionPath, $appVersion, [System.Text.UTF8Encoding]::new($false))
 
 Write-Host "AVA Flutter version bumped to $Version+$BuildNumber"
