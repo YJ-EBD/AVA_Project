@@ -9,6 +9,7 @@ import '../features/auth/application/auth_controller.dart';
 import '../features/auth/data/auth_api.dart';
 import '../features/auth/presentation/auth_session_gate.dart';
 import '../features/update/presentation/app_update_gate.dart';
+import '../platform/ava_platform.dart';
 import '../platform/window_control.dart';
 import '../shared/ava_dialog.dart';
 import 'router.dart';
@@ -19,6 +20,7 @@ class AvaApp extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final router = ref.watch(appRouterProvider);
+    final visualPlatform = avaVisualTargetPlatform;
 
     return MaterialApp.router(
       title: 'AVA',
@@ -28,6 +30,7 @@ class AvaApp extends ConsumerWidget {
           seedColor: const Color(0xFF2563EB),
           brightness: Brightness.light,
         ),
+        platform: visualPlatform,
         useMaterial3: true,
       ),
       themeMode: ThemeMode.light,
@@ -36,6 +39,7 @@ class AvaApp extends ConsumerWidget {
           seedColor: const Color(0xFF2563EB),
           brightness: Brightness.light,
         ),
+        platform: visualPlatform,
         useMaterial3: true,
       ),
       routerConfig: router,

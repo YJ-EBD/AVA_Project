@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/foundation.dart';
 
+import '../../../../platform/ava_platform.dart';
 import '../../../../platform/window_control.dart';
 
 class AuthWindowTitleBar extends StatelessWidget {
@@ -8,7 +8,7 @@ class AuthWindowTitleBar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    if (kIsWeb || defaultTargetPlatform != TargetPlatform.windows) {
+    if (!isAvaDesktopUiRuntime) {
       return const SizedBox.shrink();
     }
 

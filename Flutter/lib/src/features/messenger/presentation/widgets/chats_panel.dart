@@ -2,13 +2,13 @@ import 'dart:async';
 import 'dart:io';
 import 'dart:ui' as ui;
 
-import 'package:flutter/foundation.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter/services.dart';
 
 import '../../../../platform/window_control.dart';
+import '../../../../platform/ava_platform.dart';
 import '../../../../shared/ava_toast.dart';
 import '../../../auth/application/auth_controller.dart';
 import '../../../auth/data/auth_api.dart';
@@ -35,10 +35,7 @@ Map<String, Object?> _nativeMenuItem(
 }
 
 bool _isMobileRuntimeForChats() {
-  return Platform.isAndroid ||
-      Platform.isIOS ||
-      defaultTargetPlatform == TargetPlatform.android ||
-      defaultTargetPlatform == TargetPlatform.iOS;
+  return isAvaMobileUiRuntime;
 }
 
 Map<String, Object?> _nativeMenuSeparator() => {'separator': true};
@@ -2721,10 +2718,7 @@ class _FolderManageDialog extends ConsumerWidget {
             physics: const NeverScrollableScrollPhysics(),
             buildDefaultDragHandles: false,
             itemCount: entries.length,
-            onReorder: (oldIndex, newIndex) {
-              if (oldIndex < newIndex) {
-                newIndex -= 1;
-              }
+            onReorderItem: (oldIndex, newIndex) {
               final next = [...entries];
               final moved = next.removeAt(oldIndex);
               next.insert(newIndex, moved);

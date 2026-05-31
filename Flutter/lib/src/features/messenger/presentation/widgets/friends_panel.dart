@@ -7,6 +7,7 @@ import 'package:flutter/services.dart';
 import 'package:go_router/go_router.dart';
 import 'package:image_picker/image_picker.dart';
 
+import '../../../../platform/ava_platform.dart';
 import '../../../../platform/window_control.dart';
 import '../../../../shared/ava_toast.dart';
 import '../../../auth/application/auth_controller.dart';
@@ -30,7 +31,7 @@ const _scheduleLabel = '\uC77C\uC815\uD45C';
 const _defaultCompanyName = 'ABBA-S';
 const _mobileProfileGalleryBackground = Color(0xFF84919A);
 
-bool _isMobileCompanyRuntime() => Platform.isAndroid || Platform.isIOS;
+bool _isMobileCompanyRuntime() => isAvaMobileUiRuntime;
 
 final Map<String, ImageProvider> _mobileProfileImageCache = {};
 

@@ -3,7 +3,6 @@ import 'dart:convert';
 import 'dart:io';
 import 'dart:math' as math;
 
-import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter/services.dart';
@@ -29,6 +28,7 @@ import '../../calendar/presentation/calendar_page.dart';
 import '../../ai/presentation/ava_ai_page.dart';
 import '../../push/application/mobile_push_controller.dart';
 import '../../../config/app_config.dart';
+import '../../../platform/ava_platform.dart';
 import '../../../platform/window_control.dart';
 import '../../../shared/ava_toast.dart';
 import '../application/notification_center_controller.dart';
@@ -65,10 +65,7 @@ bool _isAzoomRoomCode(String roomCode) {
 }
 
 bool _isMobileRuntime() {
-  return Platform.isAndroid ||
-      Platform.isIOS ||
-      defaultTargetPlatform == TargetPlatform.android ||
-      defaultTargetPlatform == TargetPlatform.iOS;
+  return isAvaMobileUiRuntime;
 }
 
 File? _avaLocalCacheFile(String prefix, String scopedKey) {

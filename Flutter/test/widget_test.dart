@@ -15,6 +15,8 @@ import 'package:ava_flutter/src/features/messenger/data/mock_messenger_data.dart
 import 'package:ava_flutter/src/features/messenger/domain/messenger_models.dart';
 import 'package:ava_flutter/src/features/messenger/presentation/messenger_page.dart';
 import 'package:ava_flutter/src/features/messenger/presentation/widgets/more_panel.dart';
+import 'package:ava_flutter/src/platform/ava_platform.dart'
+    show debugAvaTargetPlatformOverride;
 import 'package:dio/dio.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
@@ -24,6 +26,17 @@ import 'package:flutter_test/flutter_test.dart';
 
 Finder _findAvaStockCodeSplash() {
   return find.byKey(const ValueKey('ava-stock-code-splash'));
+}
+
+void _setMobileTestSurface(WidgetTester tester, Size size) {
+  debugAvaTargetPlatformOverride = TargetPlatform.android;
+  tester.view.devicePixelRatio = 1;
+  tester.view.physicalSize = size;
+  addTearDown(() {
+    debugAvaTargetPlatformOverride = null;
+    tester.view.resetPhysicalSize();
+    tester.view.resetDevicePixelRatio();
+  });
 }
 
 void main() {
@@ -217,10 +230,7 @@ void main() {
   testWidgets('opens AVA_stock from the mobile common bottom nav', (
     WidgetTester tester,
   ) async {
-    tester.view.devicePixelRatio = 1;
-    tester.view.physicalSize = const Size(390, 820);
-    addTearDown(tester.view.resetPhysicalSize);
-    addTearDown(tester.view.resetDevicePixelRatio);
+    _setMobileTestSurface(tester, const Size(390, 820));
 
     final container = _messengerTestContainer();
     addTearDown(container.dispose);
@@ -246,10 +256,7 @@ void main() {
   testWidgets('opens AVA_stock directly from the ava-stock route shell', (
     WidgetTester tester,
   ) async {
-    tester.view.devicePixelRatio = 1;
-    tester.view.physicalSize = const Size(390, 820);
-    addTearDown(tester.view.resetPhysicalSize);
-    addTearDown(tester.view.resetDevicePixelRatio);
+    _setMobileTestSurface(tester, const Size(390, 820));
 
     final container = _messengerTestContainer();
     addTearDown(container.dispose);
@@ -272,10 +279,7 @@ void main() {
   testWidgets('opens space dashboard from AVA_stock quick menu', (
     WidgetTester tester,
   ) async {
-    tester.view.devicePixelRatio = 1;
-    tester.view.physicalSize = const Size(390, 820);
-    addTearDown(tester.view.resetPhysicalSize);
-    addTearDown(tester.view.resetDevicePixelRatio);
+    _setMobileTestSurface(tester, const Size(390, 820));
 
     await tester.pumpWidget(
       const ProviderScope(child: MaterialApp(home: AvaStockPage())),
@@ -853,10 +857,7 @@ void main() {
   testWidgets('uses mobile single-pane chat navigation', (
     WidgetTester tester,
   ) async {
-    tester.view.devicePixelRatio = 1;
-    tester.view.physicalSize = const Size(390, 844);
-    addTearDown(tester.view.resetPhysicalSize);
-    addTearDown(tester.view.resetDevicePixelRatio);
+    _setMobileTestSurface(tester, const Size(390, 844));
 
     final container = _messengerTestContainer();
     addTearDown(container.dispose);
@@ -960,10 +961,7 @@ void main() {
   testWidgets('opens mobile AZOOM from the messenger bottom nav', (
     WidgetTester tester,
   ) async {
-    tester.view.devicePixelRatio = 1;
-    tester.view.physicalSize = const Size(390, 844);
-    addTearDown(tester.view.resetPhysicalSize);
-    addTearDown(tester.view.resetDevicePixelRatio);
+    _setMobileTestSurface(tester, const Size(390, 844));
 
     final container = _messengerTestContainer();
     addTearDown(container.dispose);
@@ -1003,10 +1001,7 @@ void main() {
   testWidgets('keeps mobile AZOOM above any stale chat panel state', (
     WidgetTester tester,
   ) async {
-    tester.view.devicePixelRatio = 1;
-    tester.view.physicalSize = const Size(390, 844);
-    addTearDown(tester.view.resetPhysicalSize);
-    addTearDown(tester.view.resetDevicePixelRatio);
+    _setMobileTestSurface(tester, const Size(390, 844));
 
     final container = _messengerTestContainer();
     addTearDown(container.dispose);
@@ -1061,10 +1056,7 @@ void main() {
   testWidgets('uses mobile AZOOM channel list and voice sheets', (
     WidgetTester tester,
   ) async {
-    tester.view.devicePixelRatio = 1;
-    tester.view.physicalSize = const Size(390, 844);
-    addTearDown(tester.view.resetPhysicalSize);
-    addTearDown(tester.view.resetDevicePixelRatio);
+    _setMobileTestSurface(tester, const Size(390, 844));
 
     await tester.pumpWidget(
       const ProviderScope(
