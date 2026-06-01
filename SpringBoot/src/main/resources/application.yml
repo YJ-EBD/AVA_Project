@@ -86,10 +86,10 @@ ava:
       required: ${AVA_APP_ANDROID_REQUIRED:true}
       release-notes: "${AVA_APP_ANDROID_RELEASE_NOTES:Enable Apple update checks and installers}"
     macos:
-      latest-version: ${AVA_APP_MACOS_LATEST_VERSION:0.1.299}
-      file-name: ${AVA_APP_MACOS_FILE_NAME:AVA_Project_${AVA_APP_MACOS_LATEST_VERSION:0.1.299}_${AVA_APP_MACOS_BUILD_NUMBER:1299}_macOS.dmg}
+      latest-version: ${AVA_APP_MACOS_LATEST_VERSION:0.1.300}
+      file-name: ${AVA_APP_MACOS_FILE_NAME:AVA_Project_${AVA_APP_MACOS_LATEST_VERSION:0.1.300}_${AVA_APP_MACOS_BUILD_NUMBER:1300}_macOS.dmg}
       required: ${AVA_APP_MACOS_REQUIRED:false}
-      release-notes: "${AVA_APP_MACOS_RELEASE_NOTES:Enable macOS Control+Q AVA AI quick chat}"
+      release-notes: "${AVA_APP_MACOS_RELEASE_NOTES:Enable macOS tray and desktop notifications}"
     ios:
       latest-version: ${AVA_APP_IOS_LATEST_VERSION:0.1.296}
       file-name: ${AVA_APP_IOS_FILE_NAME:ava-ios-${AVA_APP_IOS_LATEST_VERSION:0.1.296}.ipa}

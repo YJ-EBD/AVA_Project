@@ -76,12 +76,13 @@ class _AvaTrayLifecycleGateState extends ConsumerState<_AvaTrayLifecycleGate> {
   bool? _lastQuickAvaAiEnabled;
   String _lockError = '';
 
+  bool get _supportsNativeTrayMenu => Platform.isWindows || Platform.isMacOS;
   bool get _supportsNativeQuickAvaAi => Platform.isWindows || Platform.isMacOS;
 
   @override
   void initState() {
     super.initState();
-    if (Platform.isWindows) {
+    if (_supportsNativeTrayMenu) {
       WindowControl.setTrayActionHandler(_handleTrayAction);
     }
     if (_supportsNativeQuickAvaAi) {
