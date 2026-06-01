@@ -76,11 +76,15 @@ class _AvaTrayLifecycleGateState extends ConsumerState<_AvaTrayLifecycleGate> {
   bool? _lastQuickAvaAiEnabled;
   String _lockError = '';
 
+  bool get _supportsNativeQuickAvaAi => Platform.isWindows || Platform.isMacOS;
+
   @override
   void initState() {
     super.initState();
     if (Platform.isWindows) {
       WindowControl.setTrayActionHandler(_handleTrayAction);
+    }
+    if (_supportsNativeQuickAvaAi) {
       WindowControl.setQuickAvaAiHandler(_openQuickAvaAi);
     }
   }
@@ -128,7 +132,7 @@ class _AvaTrayLifecycleGateState extends ConsumerState<_AvaTrayLifecycleGate> {
   }
 
   void _syncQuickAvaAiEnabled(bool enabled) {
-    if (!Platform.isWindows || _lastQuickAvaAiEnabled == enabled) {
+    if (!_supportsNativeQuickAvaAi || _lastQuickAvaAiEnabled == enabled) {
       return;
     }
     _lastQuickAvaAiEnabled = enabled;
