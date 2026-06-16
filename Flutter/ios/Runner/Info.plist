@@ -30,6 +30,10 @@
 	<string>AZOOM 화상회의에서 카메라를 사용합니다.</string>
 	<key>NSMicrophoneUsageDescription</key>
 	<string>AZOOM 음성회의에서 마이크를 사용합니다.</string>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>채팅, 프로필, 문서 첨부에 사용할 사진을 선택하기 위해 사진 보관함 접근이 필요합니다.</string>
+	<key>NSPhotoLibraryAddUsageDescription</key>
+	<string>앱에서 만든 이미지나 첨부 파일을 사진 보관함에 저장하기 위해 사용합니다.</string>
 	<key>NSAppTransportSecurity</key>
 	<dict>
 		<key>NSAllowsArbitraryLoads</key>
