@@ -3,11 +3,11 @@ class AppVersion {
 
   static const name = String.fromEnvironment(
     'AVA_APP_VERSION',
-    defaultValue: '0.1.300',
+    defaultValue: '0.1.301',
   );
   static const buildNumber = int.fromEnvironment(
     'AVA_BUILD_NUMBER',
-    defaultValue: 1300,
+    defaultValue: 1301,
   );
   static const display = 'ver. $name';
 }
