@@ -7,7 +7,6 @@ import 'dart:ui' as ui;
 import 'package:desktop_drop/desktop_drop.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter/rendering.dart' show ScrollCacheExtent;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter/services.dart';
 import 'package:image_picker/image_picker.dart';
@@ -998,42 +997,94 @@ class _ChatRoomPanelState extends ConsumerState<ChatRoomPanel> {
       return;
     }
 
-    final sentOverRealtime =
-        _realtimeClient?.send(
-          trimmed,
-          silent: options.silent,
-          spoiler: options.spoiler,
-          mentions: options.mentions,
-        ) ??
-        false;
-    DateTime? sentAt;
-    if (!sentOverRealtime) {
-      final message = await ref
-          .read(chatApiProvider)
-          .send(
-            accessToken: session.accessToken,
-            roomCode: _room.id,
-            content: trimmed,
-            silent: options.silent,
-            spoiler: options.spoiler,
-            mentions: options.mentions,
-          );
-      if (!mounted) {
-        return;
-      }
-      sentAt = message.sentAt;
-      _appendMessage(_messageFromDto(message, currentUserId: session.user.id));
-    }
-
+    final sentAt = DateTime.now();
+    final pendingId =
+        'pending-${_room.id}-${sentAt.microsecondsSinceEpoch}-${trimmed.hashCode}';
+    _appendMessage(
+      ChatMessage(
+        id: pendingId,
+        senderId: session.user.id,
+        sender: _currentUserProfile,
+        text: trimmed,
+        time: formatChatClockTime(sentAt),
+        isMine: true,
+        sentAt: sentAt,
+        isSilent: options.silent,
+        isSpoiler: options.spoiler,
+        mentions: [
+          for (final mention in options.mentions)
+            ChatMention(
+              userId: mention.userId,
+              displayName: mention.displayName,
+            ),
+        ],
+      ),
+    );
     ref
         .read(chatRoomsProvider.notifier)
         .messagePosted(
           _room.id,
           trimmed,
-          sentAt ?? DateTime.now(),
+          sentAt,
           fallbackRoom: _room,
           spoiler: options.spoiler,
         );
+
+    unawaited(
+      _confirmSentMessage(
+        pendingKey: pendingId,
+        roomCode: _room.id,
+        accessToken: session.accessToken,
+        currentUserId: session.user.id,
+        content: trimmed,
+        options: options,
+      ),
+    );
+  }
+
+  Future<void> _confirmSentMessage({
+    required String pendingKey,
+    required String roomCode,
+    required String accessToken,
+    required String currentUserId,
+    required String content,
+    required _SendOptions options,
+  }) async {
+    try {
+      final message = await ref
+          .read(chatApiProvider)
+          .send(
+            accessToken: accessToken,
+            roomCode: roomCode,
+            content: content,
+            silent: options.silent,
+            spoiler: options.spoiler,
+            mentions: options.mentions,
+          );
+      if (!mounted || _room.id != roomCode) {
+        return;
+      }
+      final sentAt = message.sentAt ?? DateTime.now();
+      _replaceMessage(
+        pendingKey,
+        _messageFromDto(message, currentUserId: currentUserId),
+      );
+      ref
+          .read(chatRoomsProvider.notifier)
+          .messagePosted(
+            roomCode,
+            content,
+            sentAt,
+            fallbackRoom: _room,
+            spoiler: options.spoiler,
+          );
+    } on Object catch (error) {
+      if (!mounted || _room.id != roomCode) {
+        return;
+      }
+      _removeMessage(pendingKey);
+      showAvaToast(context, authErrorMessage(error));
+    }
   }
 
   Future<bool> _resolveDraftRoom({required String accessToken}) async {
@@ -1318,6 +1369,24 @@ class _ChatRoomPanelState extends ConsumerState<ChatRoomPanel> {
     if (!inserted) {
       nextMessages.add(replacement);
     }
+    setState(() {
+      _messages = nextMessages;
+      _messageIds
+        ..clear()
+        ..addAll(nextMessages.map(_messageKey));
+    });
+    _cacheCurrentMessages();
+    _refreshSearchMatches(keepIndex: true);
+  }
+
+  void _removeMessage(String key) {
+    if (!_messageIds.contains(key)) {
+      return;
+    }
+    final nextMessages = [
+      for (final message in _messages)
+        if (_messageKey(message) != key) message,
+    ];
     setState(() {
       _messages = nextMessages;
       _messageIds
@@ -2507,6 +2576,9 @@ class _ChatRoomPanelState extends ConsumerState<ChatRoomPanel> {
     }
     final companyProfiles = ref.watch(userProfilesProvider).value ?? const [];
     final mentionMembers = _mentionMembersFor(companyProfiles);
+    final keyboardBottomInset = widget.mobileLayout
+        ? MediaQuery.viewInsetsOf(context).bottom
+        : 0.0;
     final panel = KeyedSubtree(
       key: widget.mobileLayout ? null : ValueKey('chat-panel-${_room.id}'),
       child: Stack(
@@ -2570,6 +2642,7 @@ class _ChatRoomPanelState extends ConsumerState<ChatRoomPanel> {
                           typingLabel: _typingLabel,
                           hasMoreOlderMessages: _hasMoreOlderMessages,
                           loadingOlderMessages: _isLoadingOlderMessages,
+                          bottomViewportInset: keyboardBottomInset,
                           onLoadOlderMessages: _loadOlderMessages,
                           onMessageContextMenu: _showMessageContextMenu,
                           onOpenImages: _openImageViewer,
@@ -5410,6 +5483,7 @@ class _ChatMessagesView extends StatefulWidget {
     required this.typingLabel,
     required this.hasMoreOlderMessages,
     required this.loadingOlderMessages,
+    required this.bottomViewportInset,
     required this.onLoadOlderMessages,
     required this.onMessageContextMenu,
     required this.onOpenImages,
@@ -5423,6 +5497,7 @@ class _ChatMessagesView extends StatefulWidget {
   final String? typingLabel;
   final bool hasMoreOlderMessages;
   final bool loadingOlderMessages;
+  final double bottomViewportInset;
   final VoidCallback onLoadOlderMessages;
   final void Function(ChatMessage message, Offset position)
   onMessageContextMenu;
@@ -5442,6 +5517,7 @@ class _ChatMessagesViewState extends State<_ChatMessagesView> {
   List<ChatMessage>? _timelineMessages;
   List<_ChatTimelineEntry> _timelineEntriesCache = const [];
   int _roomScrollResetGeneration = 0;
+  int _keyboardInsetScrollGeneration = 0;
   DateTime? _ignoreOlderLoadsUntil;
 
   @override
@@ -5473,6 +5549,11 @@ class _ChatMessagesViewState extends State<_ChatMessagesView> {
     if (prependedOlderMessages) {
       _preserveScrollOffsetAfterPrepend();
       return;
+    }
+    final keyboardInsetIncreased =
+        widget.bottomViewportInset > oldWidget.bottomViewportInset + 0.5;
+    if (keyboardInsetIncreased) {
+      _scheduleKeyboardInsetScrollToBottom();
     }
     final shouldAutoScroll =
         oldWidget.messages.isEmpty ||
@@ -5534,6 +5615,24 @@ class _ChatMessagesViewState extends State<_ChatMessagesView> {
     }
 
     jumpAfterFrame(1);
+  }
+
+  void _scheduleKeyboardInsetScrollToBottom() {
+    final generation = ++_keyboardInsetScrollGeneration;
+
+    void scrollAfterFrame(int remainingFrames) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted || generation != _keyboardInsetScrollGeneration) {
+          return;
+        }
+        _scrollControllerToBottom(instant: remainingFrames > 0);
+        if (remainingFrames > 0) {
+          scrollAfterFrame(remainingFrames - 1);
+        }
+      });
+    }
+
+    scrollAfterFrame(2);
   }
 
   void _jumpToCurrentBottom() {
@@ -5688,7 +5787,7 @@ class _ChatMessagesViewState extends State<_ChatMessagesView> {
         key: const ValueKey('chat-messages-list'),
         controller: _controller,
         primary: false,
-        scrollCacheExtent: const ScrollCacheExtent.pixels(1600),
+        cacheExtent: 1600,
         keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
         padding: const EdgeInsets.fromLTRB(18, 12, 18, 14),
         itemCount: entries.isEmpty
@@ -11403,6 +11502,10 @@ class _MessageComposerState extends State<_MessageComposer> {
         _mentionQuery = null;
         _previewStickerId = null;
       });
+    } on Object catch (error) {
+      if (mounted) {
+        showAvaToast(context, authErrorMessage(error));
+      }
     } finally {
       if (mounted) {
         setState(() {

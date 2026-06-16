@@ -20,8 +20,9 @@ if ($ExistingListener) {
 
 $ExistingProcess = Get-CimInstance Win32_Process -Filter "Name = 'llama-server.exe'" -ErrorAction SilentlyContinue |
     Where-Object {
-        $_.CommandLine -like "*Qwen_Qwen3.5-27B-Q4_K_M.gguf*" -or
-        ($_.CommandLine -like "*--port*" -and $_.CommandLine -like "*8088*")
+        $commandLine = [string]$_.CommandLine
+        $commandLine -like "*Qwen_Qwen3.5-27B-Q4_K_M.gguf*" -or
+        $commandLine -match '(^|\s)--port(?:\s+|=)["'']?8088["'']?(\s|$)'
     } |
     Select-Object -First 1
 if ($ExistingProcess) {

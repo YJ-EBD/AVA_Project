@@ -2718,7 +2718,10 @@ class _FolderManageDialog extends ConsumerWidget {
             physics: const NeverScrollableScrollPhysics(),
             buildDefaultDragHandles: false,
             itemCount: entries.length,
-            onReorderItem: (oldIndex, newIndex) {
+            onReorder: (oldIndex, newIndex) {
+              if (oldIndex < newIndex) {
+                newIndex -= 1;
+              }
               final next = [...entries];
               final moved = next.removeAt(oldIndex);
               next.insert(newIndex, moved);
