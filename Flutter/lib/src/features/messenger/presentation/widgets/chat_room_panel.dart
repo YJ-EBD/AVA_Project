@@ -488,6 +488,10 @@ class _ChatRoomPanelState extends ConsumerState<ChatRoomPanel> {
   static const int _compactInitialMessagePageSize = 40;
   static const int _largeRoomInitialMessagePageSize = 96;
   static const Duration _cachedRemoteSyncDelay = Duration(milliseconds: 1200);
+  static const Duration _eventRemoteSyncDelay = Duration(milliseconds: 80);
+  static const Duration _sendFailureRemoteSyncDelay = Duration(
+    milliseconds: 300,
+  );
 
   late ChatRoom _room;
   late List<ChatMessage> _messages;
@@ -498,6 +502,8 @@ class _ChatRoomPanelState extends ConsumerState<ChatRoomPanel> {
   StreamSubscription<ChatReadStateDto>? _readStateSubscription;
   StreamSubscription<ChatTypingEventDto>? _typingSubscription;
   ChatRealtimeClient? _realtimeClient;
+  String? _realtimeRoomId;
+  String? _realtimeAccessToken;
   Timer? _cachedRemoteSyncTimer;
   final Map<String, _TypingParticipant> _typingParticipants = {};
   final Map<String, Timer> _typingExpiryTimers = {};
@@ -537,8 +543,16 @@ class _ChatRoomPanelState extends ConsumerState<ChatRoomPanel> {
   void didUpdateWidget(covariant ChatRoomPanel oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.room.id == widget.room.id) {
+      final shouldSyncMessages = _shouldSyncMessagesAfterRoomUpdate(
+        oldWidget.room,
+        widget.room,
+      );
       _room = widget.room;
       _noticeMessage = _noticeFromRoom(_room);
+      _ensureRealtimeForCurrentRoom();
+      if (shouldSyncMessages) {
+        _scheduleRemoteSync(_room.id, _eventRemoteSyncDelay);
+      }
       return;
     }
     _cancelCachedRemoteSync();
@@ -598,6 +612,7 @@ class _ChatRoomPanelState extends ConsumerState<ChatRoomPanel> {
     if (!mounted) {
       return;
     }
+    _ensureRealtimeForCurrentRoom();
     final focusedMessageId = ref.read(focusedChatMessageIdProvider);
     if (_messages.isNotEmpty &&
         (focusedMessageId == null || focusedMessageId.isEmpty)) {
@@ -687,8 +702,12 @@ class _ChatRoomPanelState extends ConsumerState<ChatRoomPanel> {
   }
 
   void _scheduleCachedRemoteSync(String roomId) {
+    _scheduleRemoteSync(roomId, _cachedRemoteSyncDelay);
+  }
+
+  void _scheduleRemoteSync(String roomId, Duration delay) {
     _cancelCachedRemoteSync();
-    _cachedRemoteSyncTimer = Timer(_cachedRemoteSyncDelay, () {
+    _cachedRemoteSyncTimer = Timer(delay, () {
       _cachedRemoteSyncTimer = null;
       if (!mounted || _room.id != roomId) {
         return;
@@ -700,6 +719,31 @@ class _ChatRoomPanelState extends ConsumerState<ChatRoomPanel> {
   void _cancelCachedRemoteSync() {
     _cachedRemoteSyncTimer?.cancel();
     _cachedRemoteSyncTimer = null;
+  }
+
+  bool _shouldSyncMessagesAfterRoomUpdate(ChatRoom previous, ChatRoom next) {
+    if (previous.id != next.id || next.isDraft) {
+      return false;
+    }
+    final previousActivity = previous.lastActivityAt;
+    final nextActivity = next.lastActivityAt;
+    if (previousActivity == null && nextActivity != null) {
+      return true;
+    }
+    if (previousActivity != null &&
+        nextActivity != null &&
+        nextActivity.isAfter(previousActivity)) {
+      return true;
+    }
+    return previous.preview != next.preview || previous.time != next.time;
+  }
+
+  void _ensureRealtimeForCurrentRoom() {
+    final session = ref.read(authControllerProvider).value?.session;
+    if (session == null || session.accessToken.isEmpty || _room.isDraft) {
+      return;
+    }
+    _startRealtime(session.accessToken, session.user.id);
   }
 
   Future<void> _loadRemoteMessages() async {
@@ -914,6 +958,10 @@ class _ChatRoomPanelState extends ConsumerState<ChatRoomPanel> {
       byKey[_messageKey(message)] = message;
     }
     for (final message in remoteMessages) {
+      final pendingKey = _matchingPendingKeyForRemote(message, byKey);
+      if (pendingKey != null) {
+        byKey.remove(pendingKey);
+      }
       byKey[_messageKey(message)] = message;
     }
     final merged = byKey.values.toList()
@@ -932,6 +980,54 @@ class _ChatRoomPanelState extends ConsumerState<ChatRoomPanel> {
         return 0;
       });
     return merged;
+  }
+
+  String? _matchingPendingKeyForRemote(
+    ChatMessage remote,
+    Map<String, ChatMessage> candidates,
+  ) {
+    final remoteId = remote.id;
+    if (remoteId == null ||
+        remoteId.isEmpty ||
+        remoteId.startsWith('pending-')) {
+      return null;
+    }
+    for (final entry in candidates.entries) {
+      final candidate = entry.value;
+      if (_isPendingMessage(candidate) &&
+          _pendingMessageMatchesRemote(candidate, remote)) {
+        return entry.key;
+      }
+    }
+    return null;
+  }
+
+  bool _isPendingMessage(ChatMessage message) {
+    return message.id?.startsWith('pending-') == true;
+  }
+
+  bool _pendingMessageMatchesRemote(ChatMessage pending, ChatMessage remote) {
+    if (pending.isMine != remote.isMine || pending.text != remote.text) {
+      return false;
+    }
+    final pendingSenderId = pending.senderId?.trim();
+    final remoteSenderId = remote.senderId?.trim();
+    if (pendingSenderId != null &&
+        pendingSenderId.isNotEmpty &&
+        remoteSenderId != null &&
+        remoteSenderId.isNotEmpty &&
+        pendingSenderId != remoteSenderId) {
+      return false;
+    }
+    final pendingAt = pending.sentAt;
+    final remoteAt = remote.sentAt;
+    if (pendingAt != null && remoteAt != null) {
+      final deltaSeconds = pendingAt.difference(remoteAt).inSeconds.abs();
+      if (deltaSeconds > 300) {
+        return false;
+      }
+    }
+    return true;
   }
 
   List<ChatMessage> _filterLocallyHiddenMessages(List<ChatMessage> messages) {
@@ -1111,11 +1207,12 @@ class _ChatRoomPanelState extends ConsumerState<ChatRoomPanel> {
             fallbackRoom: _room,
             spoiler: options.spoiler,
           );
+      _scheduleRemoteSync(targetRoomCode, _eventRemoteSyncDelay);
     } on Object catch (error) {
       if (!mounted) {
         return;
       }
-      _removeMessage(pendingKey);
+      _scheduleRemoteSync(roomCode, _sendFailureRemoteSyncDelay);
       showAvaToast(context, authErrorMessage(error));
     }
   }
@@ -1167,13 +1264,24 @@ class _ChatRoomPanelState extends ConsumerState<ChatRoomPanel> {
   }
 
   void _startRealtime(String accessToken, String currentUserId) {
+    final websocketUrl = ref.read(appConfigProvider).websocketUrl;
+    if (websocketUrl.trim().isEmpty) {
+      return;
+    }
+    if (_realtimeClient != null &&
+        _realtimeRoomId == _room.id &&
+        _realtimeAccessToken == accessToken) {
+      return;
+    }
     _stopRealtime();
     final client = ChatRealtimeClient(
-      websocketUrl: ref.read(appConfigProvider).websocketUrl,
+      websocketUrl: websocketUrl,
       accessToken: accessToken,
       roomCode: _room.id,
     );
     _realtimeClient = client;
+    _realtimeRoomId = _room.id;
+    _realtimeAccessToken = accessToken;
     _realtimeSubscription = client.messages.listen((message) {
       if (!mounted || message.roomCode != _room.id) {
         return;
@@ -1217,6 +1325,8 @@ class _ChatRoomPanelState extends ConsumerState<ChatRoomPanel> {
     _typingSubscription = null;
     _realtimeClient?.dispose();
     _realtimeClient = null;
+    _realtimeRoomId = null;
+    _realtimeAccessToken = null;
   }
 
   Future<void> _markRoomRead(String accessToken) async {
@@ -1417,24 +1527,6 @@ class _ChatRoomPanelState extends ConsumerState<ChatRoomPanel> {
     if (!inserted) {
       nextMessages.add(replacement);
     }
-    setState(() {
-      _messages = nextMessages;
-      _messageIds
-        ..clear()
-        ..addAll(nextMessages.map(_messageKey));
-    });
-    _cacheCurrentMessages();
-    _refreshSearchMatches(keepIndex: true);
-  }
-
-  void _removeMessage(String key) {
-    if (!_messageIds.contains(key)) {
-      return;
-    }
-    final nextMessages = [
-      for (final message in _messages)
-        if (_messageKey(message) != key) message,
-    ];
     setState(() {
       _messages = nextMessages;
       _messageIds

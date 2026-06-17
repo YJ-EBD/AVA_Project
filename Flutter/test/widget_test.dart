@@ -631,6 +631,170 @@ void main() {
   );
 
   testWidgets(
+    'pending sent chat stays visible when confirmation request fails',
+    (WidgetTester tester) async {
+      SharedPreferences.setMockInitialValues({});
+      tester.view.devicePixelRatio = 1;
+      tester.view.physicalSize = const Size(900, 720);
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+
+      final sendCompleter = Completer<ChatMessageDto>();
+      final chatApi = _FakeDirectChatApi(sendCompleter: sendCompleter);
+      final container = _directChatTestContainer(chatApi);
+      addTearDown(container.dispose);
+
+      const room = ChatRoom(
+        id: 'direct-failing-room',
+        title: 'Direct Failing',
+        preview: '',
+        time: '',
+        participantCount: 2,
+        members: [
+          PersonProfile(
+            id: 'other-user',
+            name: 'Other User',
+            color: Color(0xFF7AA06A),
+            email: 'other@ava.local',
+          ),
+        ],
+      );
+
+      await tester.pumpWidget(
+        UncontrolledProviderScope(
+          container: container,
+          child: const MaterialApp(
+            home: Scaffold(
+              body: ChatRoomPanel(room: room, onClose: _noop),
+            ),
+          ),
+        ),
+      );
+      await tester.pump(const Duration(milliseconds: 100));
+
+      await tester.enterText(find.byType(TextField), 'Do not disappear');
+      await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+      await tester.pump();
+
+      expect(find.text('Do not disappear'), findsOneWidget);
+
+      sendCompleter.completeError(Exception('transient network failure'));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 350));
+
+      expect(find.text('Do not disappear'), findsOneWidget);
+
+      await tester.pumpWidget(const SizedBox.shrink());
+      await tester.pump(const Duration(milliseconds: 1200));
+    },
+  );
+
+  testWidgets(
+    'open chat syncs missing message when room activity updates first',
+    (WidgetTester tester) async {
+      SharedPreferences.setMockInitialValues({});
+      tester.view.devicePixelRatio = 1;
+      tester.view.physicalSize = const Size(900, 720);
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+
+      final chatApi = _FakeDirectChatApi();
+      final container = _directChatTestContainer(chatApi);
+      addTearDown(container.dispose);
+
+      const other = PersonProfile(
+        id: 'other-user',
+        name: 'Other User',
+        color: Color(0xFF7AA06A),
+        email: 'other@ava.local',
+      );
+      final initialRoom = ChatRoom(
+        id: 'direct-open-sync-room',
+        title: 'Open Sync',
+        preview: 'Earlier message',
+        time: '12:00',
+        lastActivityAt: DateTime(2026, 6, 17, 12),
+        participantCount: 2,
+        members: const [other],
+      );
+      final cachedMessage = ChatMessage(
+        id: 'cached-message',
+        senderId: other.id,
+        sender: other,
+        text: 'Earlier message',
+        time: '12:00',
+        isMine: false,
+        sentAt: DateTime(2026, 6, 17, 12),
+      );
+      container.read(chatMessageMemoryCacheProvider.notifier).put(
+        initialRoom.id,
+        [cachedMessage],
+        persist: false,
+      );
+
+      late void Function(ChatRoom room) updateRoom;
+      var currentRoom = initialRoom;
+
+      await tester.pumpWidget(
+        UncontrolledProviderScope(
+          container: container,
+          child: MaterialApp(
+            home: Scaffold(
+              body: StatefulBuilder(
+                builder: (context, setState) {
+                  updateRoom = (room) => setState(() => currentRoom = room);
+                  return ChatRoomPanel(room: currentRoom, onClose: _noop);
+                },
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.pump(const Duration(milliseconds: 100));
+
+      expect(find.text('Earlier message'), findsOneWidget);
+      expect(find.text('Delivered while open'), findsNothing);
+
+      chatApi.messageResponses = [
+        ChatMessageDto(
+          id: 'delivered-message',
+          roomCode: initialRoom.id,
+          senderId: other.id!,
+          senderName: other.name,
+          senderNickname: '',
+          senderAvatarColor: '#7AA06A',
+          senderAvatarImageUrl: '',
+          content: 'Delivered while open',
+          sentAt: DateTime(2026, 6, 17, 12, 1),
+          unreadCount: 0,
+          systemMessage: false,
+          silent: false,
+          spoiler: false,
+          deletedForEveryone: false,
+          attachment: null,
+          mentions: const [],
+        ),
+      ];
+      updateRoom(
+        initialRoom.copyWith(
+          preview: 'Delivered while open',
+          time: '12:01',
+          lastActivityAt: DateTime(2026, 6, 17, 12, 1),
+        ),
+      );
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 120));
+      await tester.pump();
+
+      expect(chatApi.messageCalls, 1);
+      expect(find.text('Delivered while open'), findsOneWidget);
+
+      await tester.pumpWidget(const SizedBox.shrink());
+      await tester.pump(const Duration(milliseconds: 1200));
+    },
+  );
+
+  testWidgets(
     'mobile chat keeps the composer and last message above keyboard',
     (WidgetTester tester) async {
       SharedPreferences.setMockInitialValues({});
@@ -1603,11 +1767,17 @@ class _LoggedOutAuthController extends AuthController {
 }
 
 class _FakeDirectChatApi extends ChatApi {
-  _FakeDirectChatApi({this.sendCompleter, this.sentUnreadCount = 0})
-    : super(Dio(), null);
+  _FakeDirectChatApi({
+    this.sendCompleter,
+    this.sentUnreadCount = 0,
+    List<ChatMessageDto>? messageResponses,
+  }) : messageResponses = messageResponses ?? <ChatMessageDto>[],
+       super(Dio(), null);
 
   int directRoomCalls = 0;
   int sendCalls = 0;
+  int messageCalls = 0;
+  List<ChatMessageDto> messageResponses;
   final Completer<ChatMessageDto>? sendCompleter;
   final int sentUnreadCount;
 
@@ -1655,7 +1825,8 @@ class _FakeDirectChatApi extends ChatApi {
     required String roomCode,
     int limit = 80,
   }) async {
-    return const [];
+    messageCalls += 1;
+    return List<ChatMessageDto>.of(messageResponses);
   }
 
   @override
