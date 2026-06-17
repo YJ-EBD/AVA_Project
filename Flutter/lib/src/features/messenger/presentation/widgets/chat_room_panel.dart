@@ -2738,6 +2738,13 @@ class _ChatRoomPanelState extends ConsumerState<ChatRoomPanel> {
                       ?.user
                       .id,
                 ),
+                if (widget.mobileLayout)
+                  AnimatedContainer(
+                    key: const ValueKey('mobile-chat-keyboard-spacer'),
+                    duration: const Duration(milliseconds: 220),
+                    curve: Curves.easeOutCubic,
+                    height: keyboardBottomInset,
+                  ),
               ],
             ),
           ),
@@ -5685,7 +5692,7 @@ class _ChatMessagesViewState extends State<_ChatMessagesView> {
       });
     }
 
-    scrollAfterFrame(2);
+    scrollAfterFrame(12);
   }
 
   void _jumpToCurrentBottom() {

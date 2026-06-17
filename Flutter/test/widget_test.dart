@@ -630,6 +630,99 @@ void main() {
     },
   );
 
+  testWidgets(
+    'mobile chat keeps the composer and last message above keyboard',
+    (WidgetTester tester) async {
+      SharedPreferences.setMockInitialValues({});
+      const surfaceSize = Size(390, 760);
+      const keyboardHeight = 300.0;
+      tester.view.devicePixelRatio = 1;
+      tester.view.physicalSize = surfaceSize;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+
+      final chatApi = _FakeDirectChatApi();
+      final container = _directChatTestContainer(chatApi);
+      addTearDown(container.dispose);
+
+      const room = ChatRoom(
+        id: 'mobile-keyboard-room',
+        title: 'Mobile Keyboard',
+        preview: '',
+        time: '',
+        participantCount: 2,
+        members: [
+          PersonProfile(
+            id: 'other-user',
+            name: 'Other User',
+            color: Color(0xFF7AA06A),
+            email: 'other@ava.local',
+          ),
+        ],
+      );
+      container.read(chatMessageMemoryCacheProvider.notifier).put(room.id, [
+        for (var index = 0; index < 22; index++)
+          ChatMessage(
+            id: 'mobile-keyboard-message-$index',
+            senderId: index.isEven ? 'current-user' : 'other-user',
+            sender: index.isEven
+                ? const PersonProfile(
+                    id: 'current-user',
+                    name: 'Current User',
+                    color: Color(0xFF4663CF),
+                    email: 'current@ava.local',
+                  )
+                : room.members.first,
+            text: index == 21
+                ? 'Keyboard visible last message'
+                : 'Keyboard message $index',
+            time: '12:${index.toString().padLeft(2, '0')}',
+            isMine: index.isEven,
+            sentAt: DateTime(2026, 6, 17, 12, index),
+          ),
+      ], persist: false);
+
+      await tester.pumpWidget(
+        UncontrolledProviderScope(
+          container: container,
+          child: const MaterialApp(
+            home: MediaQuery(
+              data: MediaQueryData(
+                size: surfaceSize,
+                viewInsets: EdgeInsets.only(bottom: keyboardHeight),
+                padding: EdgeInsets.zero,
+              ),
+              child: Scaffold(
+                resizeToAvoidBottomInset: false,
+                body: ChatRoomPanel(
+                  room: room,
+                  onClose: _noop,
+                  mobileLayout: true,
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      final keyboardTop = surfaceSize.height - keyboardHeight;
+      final composer = find.byKey(const ValueKey('mobile-composer-root'));
+      expect(composer, findsOneWidget);
+      expect(tester.getBottomLeft(composer).dy, lessThanOrEqualTo(keyboardTop));
+
+      final lastMessage = find.text('Keyboard visible last message');
+      expect(lastMessage, findsOneWidget);
+      expect(
+        tester.getBottomLeft(lastMessage).dy,
+        lessThanOrEqualTo(tester.getTopLeft(composer).dy),
+      );
+
+      await tester.pumpWidget(const SizedBox.shrink());
+      await tester.pump(const Duration(milliseconds: 300));
+    },
+  );
+
   testWidgets('shows messenger shell and opens chat panel', (
     WidgetTester tester,
   ) async {

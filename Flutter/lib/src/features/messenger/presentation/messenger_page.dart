@@ -3606,6 +3606,7 @@ class _MessengerPageState extends ConsumerState<MessengerPage>
         (activeTab == MessengerTab.more && _isAdminMoreSession(session));
 
     return Scaffold(
+      resizeToAvoidBottomInset: !(rootMobileLayout && visibleRoom != null),
       backgroundColor: const Color(0xFFF5F5F5),
       body: Stack(
         children: [
