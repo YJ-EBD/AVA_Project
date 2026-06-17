@@ -1,9 +1,12 @@
 package com.ava.backend.chat.controller;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.ArgumentMatchers.same;
+import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -13,6 +16,7 @@ import java.util.UUID;
 
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
+import org.mockito.InOrder;
 import org.springframework.messaging.simp.SimpMessagingTemplate;
 
 import com.ava.backend.auth.security.AuthPrincipal;
@@ -25,8 +29,8 @@ import com.ava.backend.chat.dto.ChatRoomResponse;
 import com.ava.backend.chat.entity.ChatRoomType;
 import com.ava.backend.chat.service.ChatService;
 import com.ava.backend.push.service.MobilePushService;
-import com.ava.backend.user.entity.UserRole;
 import com.ava.backend.user.dto.UserProfileResponse;
+import com.ava.backend.user.entity.UserRole;
 
 class ChatWebSocketControllerTest {
 
@@ -107,22 +111,101 @@ class ChatWebSocketControllerTest {
 
 		controller.send(roomCode, request, principal, null);
 
-		ArgumentCaptor<ChatRealtimeEvent> senderEvent = ArgumentCaptor.forClass(ChatRealtimeEvent.class);
-		ArgumentCaptor<ChatRealtimeEvent> receiverEvent = ArgumentCaptor.forClass(ChatRealtimeEvent.class);
-		verify(messagingTemplate).convertAndSendToUser(
+		InOrder order = inOrder(messagingTemplate, chatService, mobilePushService);
+		order.verify(messagingTemplate).convertAndSend("/topic/rooms/" + roomCode, response);
+		order.verify(chatService).room(roomCode);
+		order.verify(messagingTemplate).convertAndSendToUser(
 			eq("sender@example.test"),
 			eq("/queue/chat-events"),
-			senderEvent.capture()
+			any(ChatRealtimeEvent.class)
 		);
-		verify(messagingTemplate).convertAndSendToUser(
+		order.verify(messagingTemplate).convertAndSendToUser(
 			eq("receiver@example.test"),
 			eq("/queue/chat-events"),
-			receiverEvent.capture()
+			any(ChatRealtimeEvent.class)
 		);
-		assertThat(senderEvent.getValue().room().unreadCount()).isZero();
-		assertThat(senderEvent.getValue().room().mentioned()).isFalse();
-		assertThat(receiverEvent.getValue().room().unreadCount()).isEqualTo(1);
-		assertThat(receiverEvent.getValue().room().mentioned()).isTrue();
+		order.verify(mobilePushService).sendChatMessage(roomCode, response);
+		order.verify(chatService).roomForMember(roomCode, senderId);
+
+		ArgumentCaptor<ChatRealtimeEvent> senderEvents = ArgumentCaptor.forClass(ChatRealtimeEvent.class);
+		ArgumentCaptor<ChatRealtimeEvent> receiverEvents = ArgumentCaptor.forClass(ChatRealtimeEvent.class);
+		verify(messagingTemplate, times(2)).convertAndSendToUser(
+			eq("sender@example.test"),
+			eq("/queue/chat-events"),
+			senderEvents.capture()
+		);
+		verify(messagingTemplate, times(2)).convertAndSendToUser(
+			eq("receiver@example.test"),
+			eq("/queue/chat-events"),
+			receiverEvents.capture()
+		);
+		assertThat(senderEvents.getAllValues()).extracting(ChatRealtimeEvent::type)
+			.containsExactly("message", "room");
+		assertThat(receiverEvents.getAllValues()).extracting(ChatRealtimeEvent::type)
+			.containsExactly("message", "room");
+		assertThat(senderEvents.getAllValues().get(1).room().unreadCount()).isZero();
+		assertThat(senderEvents.getAllValues().get(1).room().mentioned()).isFalse();
+		assertThat(receiverEvents.getAllValues().get(1).room().unreadCount()).isEqualTo(1);
+		assertThat(receiverEvents.getAllValues().get(1).room().mentioned()).isTrue();
+		assertThat(receiverEvents.getAllValues().get(0).message()).isSameAs(response);
+		assertThat(receiverEvents.getAllValues().get(1).message()).isNull();
+	}
+
+	@Test
+	void websocketSendPublishesTenThousandRealtimeEventsWithoutDroppingPushes() {
+		String roomCode = "room-realtime-stress";
+		UUID senderId = UUID.randomUUID();
+		UUID receiverId = UUID.randomUUID();
+		AuthPrincipal principal = new AuthPrincipal(
+			senderId,
+			"sender@example.test",
+			"Sender",
+			UserRole.USER,
+			"session"
+		);
+		ChatMessageRequest request = new ChatMessageRequest("stress hello", false, false, List.of());
+		ChatMessageResponse response = ChatMessageResponse.local(
+			roomCode,
+			principal.userId(),
+			principal.displayName(),
+			request.content()
+		);
+		ChatRoomResponse baseRoom = room(
+			roomCode,
+			List.of(
+				member(senderId, "sender@example.test", "Sender"),
+				member(receiverId, "receiver@example.test", "Receiver")
+			),
+			0,
+			false
+		);
+		ChatRoomResponse senderRoom = room(roomCode, baseRoom.members(), 0, false);
+		ChatRoomResponse receiverRoom = room(roomCode, baseRoom.members(), 1, false);
+		when(chatService.send(eq(roomCode), same(request), same(principal))).thenReturn(response);
+		when(chatService.room(roomCode)).thenReturn(baseRoom);
+		when(chatService.roomForMember(roomCode, senderId)).thenReturn(senderRoom);
+		when(chatService.roomForMember(roomCode, receiverId)).thenReturn(receiverRoom);
+
+		for (int i = 0; i < 10_000; i++) {
+			controller.send(roomCode, request, principal, null);
+		}
+
+		ArgumentCaptor<ChatRealtimeEvent> receiverEvents = ArgumentCaptor.forClass(ChatRealtimeEvent.class);
+		verify(messagingTemplate, times(10_000)).convertAndSend(eq("/topic/rooms/" + roomCode), same(response));
+		verify(messagingTemplate, times(20_000)).convertAndSendToUser(
+			eq("receiver@example.test"),
+			eq("/queue/chat-events"),
+			receiverEvents.capture()
+		);
+		verify(chatService, times(10_000)).room(roomCode);
+		verify(chatService, times(10_000)).roomForMember(roomCode, receiverId);
+		verify(mobilePushService, times(10_000)).sendChatMessage(roomCode, response);
+
+		assertThat(receiverEvents.getAllValues()).hasSize(20_000);
+		assertThat(receiverEvents.getAllValues().stream().filter(event -> "message".equals(event.type())).count())
+			.isEqualTo(10_000);
+		assertThat(receiverEvents.getAllValues().stream().filter(event -> "room".equals(event.type())).count())
+			.isEqualTo(10_000);
 	}
 
 	private ChatRoomResponse room(String roomCode) {
@@ -168,7 +251,7 @@ class ChatWebSocketControllerTest {
 			"",
 			"",
 			null,
-			"온라인",
+			"general",
 			"#7AA06A",
 			"",
 			"",

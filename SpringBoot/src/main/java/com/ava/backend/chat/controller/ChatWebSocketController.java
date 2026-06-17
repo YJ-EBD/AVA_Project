@@ -60,7 +60,6 @@ public class ChatWebSocketController {
 		ChatMessageResponse response = chatService.send(roomCode, request, authPrincipal);
 		messagingTemplate.convertAndSend("/topic/rooms/" + roomCode, response);
 		publishRoomEvent(roomCode, response);
-		mobilePushService.sendChatMessage(roomCode, response);
 	}
 
 	@MessageMapping("/rooms/{roomCode}/typing")
@@ -90,12 +89,18 @@ public class ChatWebSocketController {
 
 	private void publishRoomEvent(String roomCode, ChatMessageResponse message) {
 		ChatRoomResponse room = chatService.room(roomCode);
+		ChatRealtimeEvent immediateEvent = new ChatRealtimeEvent("message", room, message);
 		for (var member : room.members()) {
-			ChatRoomResponse recipientRoom = member.id() == null
-				? room
-				: chatService.roomForMember(roomCode, member.id());
-			ChatRealtimeEvent event = new ChatRealtimeEvent("message", recipientRoom, message);
-			messagingTemplate.convertAndSendToUser(member.email(), "/queue/chat-events", event);
+			messagingTemplate.convertAndSendToUser(member.email(), "/queue/chat-events", immediateEvent);
+		}
+		mobilePushService.sendChatMessage(roomCode, message);
+		for (var member : room.members()) {
+			if (member.id() == null) {
+				continue;
+			}
+			ChatRoomResponse recipientRoom = chatService.roomForMember(roomCode, member.id());
+			ChatRealtimeEvent stateEvent = new ChatRealtimeEvent("room", recipientRoom, null);
+			messagingTemplate.convertAndSendToUser(member.email(), "/queue/chat-events", stateEvent);
 		}
 	}
 

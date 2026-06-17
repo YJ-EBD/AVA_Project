@@ -54,6 +54,10 @@ public class WebSocketConfig implements WebSocketMessageBrokerConfigurer {
 
 	@Override
 	public void configureClientInboundChannel(ChannelRegistration registration) {
+		registration.taskExecutor()
+			.corePoolSize(4)
+			.maxPoolSize(16)
+			.queueCapacity(2000);
 		registration.interceptors(new ChannelInterceptor() {
 			@Override
 			public Message<?> preSend(Message<?> message, MessageChannel channel) {
@@ -79,6 +83,14 @@ public class WebSocketConfig implements WebSocketMessageBrokerConfigurer {
 				return message;
 			}
 		});
+	}
+
+	@Override
+	public void configureClientOutboundChannel(ChannelRegistration registration) {
+		registration.taskExecutor()
+			.corePoolSize(4)
+			.maxPoolSize(32)
+			.queueCapacity(5000);
 	}
 
 	private static List<String> parseAllowedOrigins(String value) {

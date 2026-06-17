@@ -42,6 +42,7 @@ class AvaSelfPushForegroundService : Service() {
     private var socket: WebSocket? = null
     private var reconnectDelayMs = 1_500L
     private var heartbeatRunning = false
+    private var subscribed = false
 
     private var apiBaseUrl = ""
     private var websocketUrl = ""
@@ -94,6 +95,7 @@ class AvaSelfPushForegroundService : Service() {
     override fun onDestroy() {
         isRunning = false
         heartbeatRunning = false
+        subscribed = false
         mainHandler.removeCallbacksAndMessages(null)
         socket?.cancel()
         socket = null
@@ -131,13 +133,10 @@ class AvaSelfPushForegroundService : Service() {
                 lastConnectedAtMillis = System.currentTimeMillis()
                 Log.i(TAG, "websocket opened")
                 reconnectDelayMs = 1_500L
+                subscribed = false
                 webSocket.send(
                     "CONNECT\naccept-version:1.2\nheart-beat:15000,15000\nAuthorization:Bearer $accessToken\n\n\u0000"
                 )
-                webSocket.send(
-                    "SUBSCRIBE\nid:ava-self-push-0\ndestination:/user/queue/mobile-push\nack:auto\n\n\u0000"
-                )
-                startHeartbeat()
             }
 
             override fun onMessage(webSocket: WebSocket, text: String) {
@@ -148,6 +147,7 @@ class AvaSelfPushForegroundService : Service() {
                 Log.i(TAG, "websocket closed code=$code reason=$reason")
                 socket = null
                 heartbeatRunning = false
+                subscribed = false
                 scheduleReconnect()
             }
 
@@ -155,6 +155,7 @@ class AvaSelfPushForegroundService : Service() {
                 Log.w(TAG, "websocket failed code=${response?.code}", t)
                 socket = null
                 heartbeatRunning = false
+                subscribed = false
                 if (response?.code == 401 || response?.code == 403) {
                     refreshAccessToken()
                 }
@@ -182,6 +183,7 @@ class AvaSelfPushForegroundService : Service() {
     private fun scheduleReconnect() {
         mainHandler.removeCallbacksAndMessages(null)
         heartbeatRunning = false
+        subscribed = false
         val delay = reconnectDelayMs
         reconnectDelayMs = min(reconnectDelayMs * 2, 30_000L)
         mainHandler.postDelayed({
@@ -218,6 +220,10 @@ class AvaSelfPushForegroundService : Service() {
         val frames = text.split('\u0000')
         for (frame in frames) {
             val trimmed = frame.replace("\r\n", "\n").trim()
+            if (trimmed.startsWith("CONNECTED")) {
+                subscribeToPushQueue()
+                continue
+            }
             if (!trimmed.startsWith("MESSAGE")) {
                 continue
             }
@@ -231,6 +237,19 @@ class AvaSelfPushForegroundService : Service() {
             }
             showPush(JSONObject(body))
         }
+    }
+
+    private fun subscribeToPushQueue() {
+        if (subscribed) {
+            return
+        }
+        val webSocket = socket ?: return
+        if (!webSocket.send("SUBSCRIBE\nid:ava-self-push-0\ndestination:/user/queue/mobile-push\nack:auto\n\n\u0000")) {
+            return
+        }
+        subscribed = true
+        startHeartbeat()
+        Log.i(TAG, "mobile push queue subscribed")
     }
 
     private fun showPush(event: JSONObject) {
@@ -349,6 +368,7 @@ class AvaSelfPushForegroundService : Service() {
         socket?.close(1000, "stopped")
         socket = null
         heartbeatRunning = false
+        subscribed = false
         mainHandler.removeCallbacksAndMessages(null)
         getSharedPreferences(STATE_PREFS, Context.MODE_PRIVATE).edit().clear().apply()
         releaseWakeLock()

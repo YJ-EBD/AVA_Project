@@ -1922,15 +1922,20 @@ public class AvaAiWorkspaceService {
 	private void publishRoomEvent(ChatRoomResponse room, ChatMessageResponse message) {
 		ChatRoomResponse latestRoom = chatService.room(room.code());
 		messagingTemplate.convertAndSend("/topic/rooms/" + latestRoom.code(), message);
+		ChatRealtimeEvent immediateEvent = new ChatRealtimeEvent("message", latestRoom, message);
 		for (UserProfileResponse member : latestRoom.members()) {
-			ChatRoomResponse recipientRoom = member.id() == null
-				? latestRoom
-				: chatService.roomForMember(latestRoom.code(), member.id());
-			ChatRealtimeEvent event = new ChatRealtimeEvent("message", recipientRoom, message);
-			messagingTemplate.convertAndSendToUser(member.email(), "/queue/chat-events", event);
+			messagingTemplate.convertAndSendToUser(member.email(), "/queue/chat-events", immediateEvent);
 		}
 		if (mobilePushService != null) {
 			mobilePushService.sendChatMessage(latestRoom.code(), message);
+		}
+		for (UserProfileResponse member : latestRoom.members()) {
+			if (member.id() == null) {
+				continue;
+			}
+			ChatRoomResponse recipientRoom = chatService.roomForMember(latestRoom.code(), member.id());
+			ChatRealtimeEvent stateEvent = new ChatRealtimeEvent("room", recipientRoom, null);
+			messagingTemplate.convertAndSendToUser(member.email(), "/queue/chat-events", stateEvent);
 		}
 	}
 

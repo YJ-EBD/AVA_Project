@@ -155,8 +155,7 @@ public class ChatController {
 		assertRegularChatRoomCode(roomCode);
 		ChatMessageResponse response = chatService.send(roomCode, request, principal);
 		messagingTemplate.convertAndSend("/topic/rooms/" + roomCode, response);
-		publishRoomEvent(roomCode, response);
-		mobilePushService.sendChatMessage(roomCode, response);
+		publishRoomEvent(roomCode, response, true);
 		return response;
 	}
 
@@ -173,8 +172,7 @@ public class ChatController {
 		assertRegularChatRoomCode(roomCode);
 		ChatMessageResponse response = chatService.sendAttachment(roomCode, file, groupId, principal);
 		messagingTemplate.convertAndSend("/topic/rooms/" + roomCode, response);
-		publishRoomEvent(roomCode, response);
-		mobilePushService.sendChatMessage(roomCode, response);
+		publishRoomEvent(roomCode, response, true);
 		return response;
 	}
 
@@ -269,16 +267,33 @@ public class ChatController {
 
 	private void publishRoomEvent(String roomCode, ChatMessageResponse message) {
 		ChatRoomResponse room = chatService.room(roomCode);
-		publishRoomEvent(room, message);
+		publishRoomEvent(room, message, false);
+	}
+
+	private void publishRoomEvent(String roomCode, ChatMessageResponse message, boolean notifyMobile) {
+		ChatRoomResponse room = chatService.room(roomCode);
+		publishRoomEvent(room, message, notifyMobile);
 	}
 
 	private void publishRoomEvent(ChatRoomResponse room, ChatMessageResponse message) {
+		publishRoomEvent(room, message, false);
+	}
+
+	private void publishRoomEvent(ChatRoomResponse room, ChatMessageResponse message, boolean notifyMobile) {
+		ChatRealtimeEvent immediateEvent = new ChatRealtimeEvent("message", room, message);
 		for (var member : room.members()) {
-			ChatRoomResponse recipientRoom = member.id() == null
-				? room
-				: chatService.roomForMember(room.code(), member.id());
-			ChatRealtimeEvent event = new ChatRealtimeEvent("message", recipientRoom, message);
-			messagingTemplate.convertAndSendToUser(member.email(), "/queue/chat-events", event);
+			messagingTemplate.convertAndSendToUser(member.email(), "/queue/chat-events", immediateEvent);
+		}
+		if (notifyMobile) {
+			mobilePushService.sendChatMessage(room.code(), message);
+		}
+		for (var member : room.members()) {
+			if (member.id() == null) {
+				continue;
+			}
+			ChatRoomResponse recipientRoom = chatService.roomForMember(room.code(), member.id());
+			ChatRealtimeEvent stateEvent = new ChatRealtimeEvent("room", recipientRoom, null);
+			messagingTemplate.convertAndSendToUser(member.email(), "/queue/chat-events", stateEvent);
 		}
 	}
 
