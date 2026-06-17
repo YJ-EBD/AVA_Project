@@ -28,7 +28,7 @@ AVA is an internal desktop messenger, AZOOM collaboration space, and AVA AI clie
 
 - Do not use Docker for AVA development or verification.
 - AZOOM text chat channels are removed; keep AZOOM focused on voice, Notiva AI, and meeting transcripts.
-- User-visible changes require a Flutter version bump and matching shipped-platform update packages.
+- Only changes that require a new distributed client should bump the Flutter version and ship update packages; server-only compatible fixes should be deployed on the backend without forcing an app update.
 - All release packages must use public backend URL `http://112.166.136.198:8080` and WebSocket URL `ws://112.166.136.198:8080/ws`.
 - Mac, Windows/Android, and server machines collaborate through GitHub `main`; see `DEVELOPMENT_RULES.md` before release work.
 
