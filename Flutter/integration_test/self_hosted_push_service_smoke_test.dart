@@ -58,7 +58,7 @@ void main() {
     final sender = await dio.post<Map<String, dynamic>>(
       '/api/auth/login',
       data: {
-        'email': 'ava.invite.test01@abba-s.local',
+        'email': 'ava.demo.qa.01@abba-s.local',
         'password': 'Ava1234!',
         'rememberMe': true,
         'autoLogin': true,

@@ -21,6 +21,10 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
+import java.util.concurrent.LinkedBlockingQueue;
+import java.util.concurrent.RejectedExecutionException;
+import java.util.concurrent.ThreadPoolExecutor;
+import java.util.concurrent.TimeUnit;
 
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.core.io.Resource;
@@ -75,6 +79,8 @@ import com.ava.backend.user.repository.UserAccountRepository;
 import com.ava.backend.user.repository.UserProfileRepository;
 import com.ava.backend.user.service.ChatFolderSettingsService;
 
+import jakarta.annotation.PreDestroy;
+
 @Service
 public class ChatService {
 
@@ -96,6 +102,20 @@ public class ChatService {
 	private final Path backupDirectory;
 	private final Path attachmentDirectory;
 	private final boolean mongoEnabled;
+	private final ThreadPoolExecutor mongoArchiveExecutor = new ThreadPoolExecutor(
+		1,
+		1,
+		0L,
+		TimeUnit.MILLISECONDS,
+		new LinkedBlockingQueue<>(100),
+		runnable -> {
+			Thread thread = new Thread(runnable, "chat-mongo-archive");
+			thread.setDaemon(true);
+			return thread;
+		},
+		new ThreadPoolExecutor.DiscardPolicy()
+	);
+	private volatile Instant mongoArchiveSuspendedUntil = Instant.EPOCH;
 
 	public ChatService(
 		ChatRoomDao chatRoomDao,
@@ -135,6 +155,11 @@ public class ChatService {
 		this.backupDirectory = Path.of(backupDirectory);
 		this.attachmentDirectory = Path.of(attachmentDirectory);
 		this.mongoEnabled = mongoEnabled;
+	}
+
+	@PreDestroy
+	void shutdownMongoArchiveExecutor() {
+		mongoArchiveExecutor.shutdownNow();
 	}
 
 	@Transactional(readOnly = true)
@@ -1799,10 +1824,40 @@ public class ChatService {
 		boolean spoiler,
 		List<ChatMentionResponse> mentions
 	) {
+		if (isMongoArchiveSuspended()) {
+			return;
+		}
+		try {
+			mongoArchiveExecutor.execute(() -> archiveToMongoNow(
+				roomCode,
+				principal.userId(),
+				senderName,
+				content,
+				silent,
+				spoiler,
+				mentions
+			));
+		} catch (RejectedExecutionException ignored) {
+			// Mongo is an optional archive. PostgreSQL remains authoritative for realtime chat.
+		}
+	}
+
+	private void archiveToMongoNow(
+		String roomCode,
+		UUID senderId,
+		String senderName,
+		String content,
+		boolean silent,
+		boolean spoiler,
+		List<ChatMentionResponse> mentions
+	) {
+		if (isMongoArchiveSuspended()) {
+			return;
+		}
 		try {
 			messageRepository.save(new ChatMessageDocument(
 				roomCode,
-				principal.userId(),
+				senderId,
 				senderName,
 				content,
 				silent,
@@ -1810,9 +1865,14 @@ public class ChatService {
 				mentions.stream().map(ChatMentionResponse::userId).toList(),
 				mentions.stream().map(ChatMentionResponse::displayName).toList()
 			));
-		} catch (RuntimeException ignored) {
-			// PostgreSQL/H2 remains the canonical local store, so messages are never local-only.
+			mongoArchiveSuspendedUntil = Instant.EPOCH;
+		} catch (RuntimeException exception) {
+			mongoArchiveSuspendedUntil = Instant.now().plusSeconds(60);
 		}
+	}
+
+	private boolean isMongoArchiveSuspended() {
+		return Instant.now().isBefore(mongoArchiveSuspendedUntil);
 	}
 
 	private String displayNameFor(UUID accountId, String fallback) {

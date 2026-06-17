@@ -690,6 +690,143 @@ void main() {
   );
 
   testWidgets(
+    'remote confirmation keeps sent chat visible when REST confirmation later fails',
+    (WidgetTester tester) async {
+      SharedPreferences.setMockInitialValues({});
+      tester.view.devicePixelRatio = 1;
+      tester.view.physicalSize = const Size(900, 720);
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+
+      final sendCompleter = Completer<ChatMessageDto>();
+      final chatApi = _FakeDirectChatApi(sendCompleter: sendCompleter);
+      final container = _directChatTestContainer(chatApi);
+      addTearDown(container.dispose);
+
+      final room = ChatRoom(
+        id: 'direct-server-confirmed-room',
+        title: 'Server Confirmed',
+        preview: '',
+        time: '',
+        lastActivityAt: DateTime(2026, 6, 17, 12),
+        participantCount: 2,
+        members: const [
+          PersonProfile(
+            id: 'other-user',
+            name: 'Other User',
+            color: Color(0xFF7AA06A),
+            email: 'other@ava.local',
+          ),
+        ],
+      );
+
+      await tester.pumpWidget(
+        UncontrolledProviderScope(
+          container: container,
+          child: MaterialApp(
+            home: Scaffold(body: ChatRoomPanel(room: room, onClose: _noop)),
+          ),
+        ),
+      );
+      await tester.pump(const Duration(milliseconds: 100));
+
+      await tester.enterText(find.byType(TextField), 'Server already got it');
+      await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+      await tester.pump();
+
+      expect(find.text('Server already got it'), findsOneWidget);
+
+      chatApi.messageResponses = [
+        chatApi.confirmedMessage(
+          roomCode: room.id,
+          content: 'Server already got it',
+          unreadCount: 1,
+          sentAt: DateTime.now(),
+        ),
+      ];
+      await tester.pumpWidget(
+        UncontrolledProviderScope(
+          container: container,
+          child: MaterialApp(
+            home: Scaffold(
+              body: ChatRoomPanel(
+                room: room.copyWith(
+                  preview: 'Server already got it',
+                  lastActivityAt: DateTime(2026, 6, 17, 12, 0, 1),
+                ),
+                onClose: _noop,
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.pump(const Duration(milliseconds: 120));
+      await tester.pump();
+
+      expect(find.text('Server already got it'), findsOneWidget);
+      expect(chatApi.messageCalls, greaterThanOrEqualTo(1));
+
+      sendCompleter.completeError(Exception('late REST timeout'));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 350));
+
+      expect(find.text('Server already got it'), findsOneWidget);
+      expect(find.byKey(const ValueKey('message-unread-count-1')), findsOneWidget);
+
+      await tester.pumpWidget(const SizedBox.shrink());
+      await tester.pump(const Duration(milliseconds: 1200));
+    },
+  );
+
+  test(
+    'matches rapid duplicate pending messages to the nearest remote confirmation',
+    () {
+      final sender = PersonProfile(
+        id: 'current-user',
+        name: 'Current User',
+        color: const Color(0xFF4663CF),
+        email: 'current@ava.local',
+      );
+      final firstAt = DateTime(2026, 6, 17, 12, 0, 0, 100);
+      final secondAt = DateTime(2026, 6, 17, 12, 0, 0, 900);
+      final candidates = {
+        'pending-first': ChatMessage(
+          id: 'pending-first',
+          senderId: 'current-user',
+          sender: sender,
+          text: 'same body',
+          time: '12:00',
+          isMine: true,
+          sentAt: firstAt,
+        ),
+        'pending-second': ChatMessage(
+          id: 'pending-second',
+          senderId: 'current-user',
+          sender: sender,
+          text: 'same body',
+          time: '12:00',
+          isMine: true,
+          sentAt: secondAt,
+        ),
+      };
+      final remote = ChatMessage(
+        id: 'server-second',
+        senderId: 'current-user',
+        sender: sender,
+        text: 'same body',
+        time: '12:00',
+        isMine: true,
+        sentAt: DateTime(2026, 6, 17, 12, 0, 0, 880),
+      );
+
+      expect(
+        matchingPendingChatMessageKeyForRemote(remote, candidates),
+        'pending-second',
+      );
+    },
+  );
+
+  testWidgets(
     'open chat syncs missing message when room activity updates first',
     (WidgetTester tester) async {
       SharedPreferences.setMockInitialValues({});
@@ -1860,6 +1997,7 @@ class _FakeDirectChatApi extends ChatApi {
     bool silent = false,
     bool spoiler = false,
     List<ChatMentionDto> mentions = const [],
+    DateTime? sentAt,
   }) {
     return ChatMessageDto(
       id: 'sent-message-$sendCalls',
@@ -1870,7 +2008,7 @@ class _FakeDirectChatApi extends ChatApi {
       senderAvatarColor: '#4663CF',
       senderAvatarImageUrl: '',
       content: content,
-      sentAt: DateTime(2026, 6, 17, 12, sendCalls),
+      sentAt: sentAt ?? DateTime(2026, 6, 17, 12, sendCalls),
       unreadCount: unreadCount,
       systemMessage: false,
       silent: silent,

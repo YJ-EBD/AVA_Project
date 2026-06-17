@@ -11,7 +11,7 @@
     password: ${AVA_POSTGRES_PASSWORD:ava_password}
   data:
     mongodb:
-      uri: ${AVA_MONGODB_URI:mongodb://ava:ava_password@localhost:27017/ava?authSource=admin}
+      uri: ${AVA_MONGODB_URI:mongodb://ava:ava_password@localhost:27017/ava?authSource=admin&serverSelectionTimeoutMS=500&connectTimeoutMS=500&socketTimeoutMS=1000}
     redis:
       host: ${AVA_REDIS_HOST:localhost}
       port: ${AVA_REDIS_PORT:6379}

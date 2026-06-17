@@ -467,6 +467,66 @@ String chatMessageCacheKey(ChatMessage message) {
   return '${message.senderId ?? message.sender.name}-${message.sentAt?.toIso8601String() ?? message.time}-${message.text}';
 }
 
+String? matchingPendingChatMessageKeyForRemote(
+  ChatMessage remote,
+  Map<String, ChatMessage> candidates,
+) {
+  final remoteId = remote.id;
+  if (remoteId == null ||
+      remoteId.isEmpty ||
+      remoteId.startsWith('pending-')) {
+    return null;
+  }
+
+  String? bestKey;
+  int? bestDeltaMicros;
+  for (final entry in candidates.entries) {
+    final candidate = entry.value;
+    if (!_isPendingChatMessage(candidate) ||
+        !_pendingChatMessageMatchesRemote(candidate, remote)) {
+      continue;
+    }
+    final pendingAt = candidate.sentAt;
+    final remoteAt = remote.sentAt;
+    final deltaMicros = pendingAt == null || remoteAt == null
+        ? 0
+        : pendingAt.difference(remoteAt).inMicroseconds.abs();
+    if (bestDeltaMicros == null || deltaMicros < bestDeltaMicros) {
+      bestDeltaMicros = deltaMicros;
+      bestKey = entry.key;
+    }
+  }
+  return bestKey;
+}
+
+bool _isPendingChatMessage(ChatMessage message) {
+  return message.id?.startsWith('pending-') == true;
+}
+
+bool _pendingChatMessageMatchesRemote(ChatMessage pending, ChatMessage remote) {
+  if (pending.isMine != remote.isMine || pending.text != remote.text) {
+    return false;
+  }
+  final pendingSenderId = pending.senderId?.trim();
+  final remoteSenderId = remote.senderId?.trim();
+  if (pendingSenderId != null &&
+      pendingSenderId.isNotEmpty &&
+      remoteSenderId != null &&
+      remoteSenderId.isNotEmpty &&
+      pendingSenderId != remoteSenderId) {
+    return false;
+  }
+  final pendingAt = pending.sentAt;
+  final remoteAt = remote.sentAt;
+  if (pendingAt != null && remoteAt != null) {
+    final deltaSeconds = pendingAt.difference(remoteAt).inSeconds.abs();
+    if (deltaSeconds > 300) {
+      return false;
+    }
+  }
+  return true;
+}
+
 class ChatRoomPanel extends ConsumerStatefulWidget {
   const ChatRoomPanel({
     required this.room,
@@ -986,48 +1046,7 @@ class _ChatRoomPanelState extends ConsumerState<ChatRoomPanel> {
     ChatMessage remote,
     Map<String, ChatMessage> candidates,
   ) {
-    final remoteId = remote.id;
-    if (remoteId == null ||
-        remoteId.isEmpty ||
-        remoteId.startsWith('pending-')) {
-      return null;
-    }
-    for (final entry in candidates.entries) {
-      final candidate = entry.value;
-      if (_isPendingMessage(candidate) &&
-          _pendingMessageMatchesRemote(candidate, remote)) {
-        return entry.key;
-      }
-    }
-    return null;
-  }
-
-  bool _isPendingMessage(ChatMessage message) {
-    return message.id?.startsWith('pending-') == true;
-  }
-
-  bool _pendingMessageMatchesRemote(ChatMessage pending, ChatMessage remote) {
-    if (pending.isMine != remote.isMine || pending.text != remote.text) {
-      return false;
-    }
-    final pendingSenderId = pending.senderId?.trim();
-    final remoteSenderId = remote.senderId?.trim();
-    if (pendingSenderId != null &&
-        pendingSenderId.isNotEmpty &&
-        remoteSenderId != null &&
-        remoteSenderId.isNotEmpty &&
-        pendingSenderId != remoteSenderId) {
-      return false;
-    }
-    final pendingAt = pending.sentAt;
-    final remoteAt = remote.sentAt;
-    if (pendingAt != null && remoteAt != null) {
-      final deltaSeconds = pendingAt.difference(remoteAt).inSeconds.abs();
-      if (deltaSeconds > 300) {
-        return false;
-      }
-    }
-    return true;
+    return matchingPendingChatMessageKeyForRemote(remote, candidates);
   }
 
   List<ChatMessage> _filterLocallyHiddenMessages(List<ChatMessage> messages) {
@@ -1286,7 +1305,9 @@ class _ChatRoomPanelState extends ConsumerState<ChatRoomPanel> {
       if (!mounted || message.roomCode != _room.id) {
         return;
       }
-      _appendMessage(_messageFromDto(message, currentUserId: currentUserId));
+      _appendOrReplacePendingMessage(
+        _messageFromDto(message, currentUserId: currentUserId),
+      );
       if (message.senderId != currentUserId) {
         _markRoomRead(accessToken);
       }
@@ -1498,6 +1519,24 @@ class _ChatRoomPanelState extends ConsumerState<ChatRoomPanel> {
     });
     _cacheCurrentMessages();
     _refreshSearchMatches(keepIndex: true);
+  }
+
+  void _appendOrReplacePendingMessage(ChatMessage message) {
+    final pendingKey = matchingPendingChatMessageKeyForRemote(message, {
+      for (final existing in _messages) _messageKey(existing): existing,
+    });
+    if (pendingKey == null) {
+      _appendMessage(message);
+      return;
+    }
+
+    final pendingUnreadCount = _messageByKey(pendingKey)?.unreadCount ?? 0;
+    _replaceMessage(
+      pendingKey,
+      pendingUnreadCount > message.unreadCount
+          ? message.copyWith(unreadCount: pendingUnreadCount)
+          : message,
+    );
   }
 
   ChatMessage? _messageByKey(String key) {
