@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io' show Platform;
 import 'dart:ui';
 
@@ -14,6 +15,7 @@ import 'package:ava_flutter/src/features/messenger/data/chat_api.dart';
 import 'package:ava_flutter/src/features/messenger/data/mock_messenger_data.dart';
 import 'package:ava_flutter/src/features/messenger/domain/messenger_models.dart';
 import 'package:ava_flutter/src/features/messenger/presentation/messenger_page.dart';
+import 'package:ava_flutter/src/features/messenger/presentation/widgets/chat_room_panel.dart';
 import 'package:ava_flutter/src/features/messenger/presentation/widgets/more_panel.dart';
 import 'package:ava_flutter/src/platform/ava_platform.dart'
     show debugAvaTargetPlatformOverride;
@@ -23,10 +25,13 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 Finder _findAvaStockCodeSplash() {
   return find.byKey(const ValueKey('ava-stock-code-splash'));
 }
+
+void _noop() {}
 
 void _setMobileTestSurface(WidgetTester tester, Size size) {
   debugAvaTargetPlatformOverride = TargetPlatform.android;
@@ -548,6 +553,82 @@ void main() {
     container.read(selectedChatRoomProvider.notifier).close();
     await tester.pump(const Duration(milliseconds: 300));
   });
+
+  testWidgets(
+    'sent chat appears immediately with optimistic unread count while API is pending',
+    (WidgetTester tester) async {
+      SharedPreferences.setMockInitialValues({});
+      tester.view.devicePixelRatio = 1;
+      tester.view.physicalSize = const Size(900, 720);
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+
+      final sendCompleter = Completer<ChatMessageDto>();
+      final chatApi = _FakeDirectChatApi(
+        sendCompleter: sendCompleter,
+        sentUnreadCount: 2,
+      );
+      final container = _directChatTestContainer(chatApi);
+      addTearDown(container.dispose);
+
+      const room = ChatRoom(
+        id: 'direct-existing-room',
+        title: 'Direct Existing',
+        preview: '',
+        time: '',
+        participantCount: 3,
+        members: [
+          PersonProfile(
+            id: 'other-user-a',
+            name: 'Other A',
+            color: Color(0xFF7AA06A),
+            email: 'other-a@ava.local',
+          ),
+          PersonProfile(
+            id: 'other-user-b',
+            name: 'Other B',
+            color: Color(0xFFA6C6EE),
+            email: 'other-b@ava.local',
+          ),
+        ],
+      );
+
+      await tester.pumpWidget(
+        UncontrolledProviderScope(
+          container: container,
+          child: const MaterialApp(
+            home: Scaffold(
+              body: ChatRoomPanel(room: room, onClose: _noop),
+            ),
+          ),
+        ),
+      );
+      await tester.pump(const Duration(milliseconds: 100));
+
+      await tester.enterText(find.byType(TextField), 'Immediate pending chat');
+      await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+      await tester.pump();
+
+      expect(chatApi.sendCalls, 1);
+      expect(sendCompleter.isCompleted, isFalse);
+      expect(find.text('Immediate pending chat'), findsOneWidget);
+      expect(
+        find.byKey(const ValueKey('message-unread-count-2')),
+        findsOneWidget,
+      );
+
+      sendCompleter.complete(
+        chatApi.confirmedMessage(
+          roomCode: room.id,
+          content: 'Immediate pending chat',
+          unreadCount: 2,
+        ),
+      );
+      await tester.pump();
+      await tester.pumpWidget(const SizedBox.shrink());
+      await tester.pump(const Duration(milliseconds: 300));
+    },
+  );
 
   testWidgets('shows messenger shell and opens chat panel', (
     WidgetTester tester,
@@ -1338,6 +1419,15 @@ ProviderContainer _directChatTestContainer(_FakeDirectChatApi chatApi) {
       chatRoomsProvider.overrideWith(TestChatRooms.new),
       friendGroupsProvider.overrideWithValue(userGroups),
       updatedUserProfilesProvider.overrideWithValue(updatedUsers),
+      currentUserProfileProvider.overrideWithValue(
+        const PersonProfile(
+          id: 'current-user',
+          name: 'Current User',
+          color: Color(0xFF4663CF),
+          email: 'current@ava.local',
+          companyName: 'ABBA-S',
+        ),
+      ),
       authControllerProvider.overrideWith(_DirectChatAuthController.new),
       chatApiProvider.overrideWithValue(chatApi),
       appConfigProvider.overrideWithValue(
@@ -1420,9 +1510,13 @@ class _LoggedOutAuthController extends AuthController {
 }
 
 class _FakeDirectChatApi extends ChatApi {
-  _FakeDirectChatApi() : super(Dio(), null);
+  _FakeDirectChatApi({this.sendCompleter, this.sentUnreadCount = 0})
+    : super(Dio(), null);
 
   int directRoomCalls = 0;
+  int sendCalls = 0;
+  final Completer<ChatMessageDto>? sendCompleter;
+  final int sentUnreadCount;
 
   @override
   Future<ChatRoomDto> startDirectRoom({
@@ -1469,6 +1563,58 @@ class _FakeDirectChatApi extends ChatApi {
     int limit = 80,
   }) async {
     return const [];
+  }
+
+  @override
+  Future<ChatMessageDto> send({
+    required String accessToken,
+    required String roomCode,
+    required String content,
+    bool silent = false,
+    bool spoiler = false,
+    List<ChatMentionDto> mentions = const [],
+  }) async {
+    sendCalls += 1;
+    final completer = sendCompleter;
+    if (completer != null) {
+      return completer.future;
+    }
+    return confirmedMessage(
+      roomCode: roomCode,
+      content: content,
+      unreadCount: sentUnreadCount,
+      silent: silent,
+      spoiler: spoiler,
+      mentions: mentions,
+    );
+  }
+
+  ChatMessageDto confirmedMessage({
+    required String roomCode,
+    required String content,
+    int unreadCount = 0,
+    bool silent = false,
+    bool spoiler = false,
+    List<ChatMentionDto> mentions = const [],
+  }) {
+    return ChatMessageDto(
+      id: 'sent-message-$sendCalls',
+      roomCode: roomCode,
+      senderId: 'current-user',
+      senderName: 'Current User',
+      senderNickname: '',
+      senderAvatarColor: '#4663CF',
+      senderAvatarImageUrl: '',
+      content: content,
+      sentAt: DateTime(2026, 6, 17, 12, sendCalls),
+      unreadCount: unreadCount,
+      systemMessage: false,
+      silent: silent,
+      spoiler: spoiler,
+      deletedForEveryone: false,
+      attachment: null,
+      mentions: mentions,
+    );
   }
 
   @override

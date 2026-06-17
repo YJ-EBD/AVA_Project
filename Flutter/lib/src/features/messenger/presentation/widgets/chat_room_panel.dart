@@ -7,7 +7,6 @@ import 'dart:ui' as ui;
 import 'package:desktop_drop/desktop_drop.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter/rendering.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter/services.dart';
 import 'package:image_picker/image_picker.dart';
@@ -975,32 +974,12 @@ class _ChatRoomPanelState extends ConsumerState<ChatRoomPanel> {
       return;
     }
 
-    final canSendRemote = await _resolveDraftRoom(
-      accessToken: session.accessToken,
-    );
-    if (!canSendRemote) {
-      final sentAt = DateTime.now();
-      _appendLocalMessage(
-        trimmed,
-        sentAt,
-        silent: options.silent,
-        spoiler: options.spoiler,
-      );
-      ref
-          .read(chatRoomsProvider.notifier)
-          .messagePosted(
-            _room.id,
-            trimmed,
-            sentAt,
-            fallbackRoom: _room,
-            spoiler: options.spoiler,
-          );
-      return;
-    }
-
     final sentAt = DateTime.now();
     final pendingId =
         'pending-${_room.id}-${sentAt.microsecondsSinceEpoch}-${trimmed.hashCode}';
+    final pendingUnreadCount = _pendingUnreadCount(
+      currentUserId: session.user.id,
+    );
     _appendMessage(
       ChatMessage(
         id: pendingId,
@@ -1010,6 +989,7 @@ class _ChatRoomPanelState extends ConsumerState<ChatRoomPanel> {
         time: formatChatClockTime(sentAt),
         isMine: true,
         sentAt: sentAt,
+        unreadCount: pendingUnreadCount,
         isSilent: options.silent,
         isSpoiler: options.spoiler,
         mentions: [
@@ -1043,6 +1023,31 @@ class _ChatRoomPanelState extends ConsumerState<ChatRoomPanel> {
     );
   }
 
+  int _pendingUnreadCount({required String currentUserId}) {
+    if (_room.isSelfChat) {
+      return 0;
+    }
+    final participantCount = _room.participantCount;
+    if (participantCount != null && participantCount > 0) {
+      return math.max(0, participantCount - 1);
+    }
+    if (_room.isDirectChat) {
+      return 1;
+    }
+    var currentUserIncluded = false;
+    var memberCount = 0;
+    for (final member in _room.members) {
+      final memberId = member.id?.trim();
+      if (memberId != null &&
+          memberId.isNotEmpty &&
+          memberId == currentUserId) {
+        currentUserIncluded = true;
+      }
+      memberCount++;
+    }
+    return math.max(0, memberCount - (currentUserIncluded ? 1 : 0));
+  }
+
   Future<void> _confirmSentMessage({
     required String pendingKey,
     required String roomCode,
@@ -1052,35 +1057,62 @@ class _ChatRoomPanelState extends ConsumerState<ChatRoomPanel> {
     required _SendOptions options,
   }) async {
     try {
+      var targetRoomCode = roomCode;
+      if (_room.isDraft) {
+        final canSendRemote = await _resolveDraftRoom(
+          accessToken: accessToken,
+          loadMessages: false,
+        );
+        if (!canSendRemote || !mounted) {
+          throw StateError('Unable to prepare chat room.');
+        }
+        targetRoomCode = _room.id;
+        ref
+            .read(chatRoomsProvider.notifier)
+            .messagePosted(
+              targetRoomCode,
+              content,
+              DateTime.now(),
+              fallbackRoom: _room,
+              spoiler: options.spoiler,
+            );
+      }
       final message = await ref
           .read(chatApiProvider)
           .send(
             accessToken: accessToken,
-            roomCode: roomCode,
+            roomCode: targetRoomCode,
             content: content,
             silent: options.silent,
             spoiler: options.spoiler,
             mentions: options.mentions,
           );
-      if (!mounted || _room.id != roomCode) {
+      if (!mounted || _room.id != targetRoomCode) {
         return;
       }
       final sentAt = message.sentAt ?? DateTime.now();
+      final pendingUnreadCount = _messageByKey(pendingKey)?.unreadCount ?? 0;
+      final confirmedMessage = _messageFromDto(
+        message,
+        currentUserId: currentUserId,
+      );
       _replaceMessage(
         pendingKey,
-        _messageFromDto(message, currentUserId: currentUserId),
+        pendingUnreadCount > confirmedMessage.unreadCount
+            ? confirmedMessage.copyWith(unreadCount: pendingUnreadCount)
+            : confirmedMessage,
       );
       ref
           .read(chatRoomsProvider.notifier)
           .messagePosted(
-            roomCode,
+            targetRoomCode,
             content,
             sentAt,
             fallbackRoom: _room,
             spoiler: options.spoiler,
           );
     } on Object catch (error) {
-      if (!mounted || _room.id != roomCode) {
+      if (!mounted) {
         return;
       }
       _removeMessage(pendingKey);
@@ -1088,7 +1120,10 @@ class _ChatRoomPanelState extends ConsumerState<ChatRoomPanel> {
     }
   }
 
-  Future<bool> _resolveDraftRoom({required String accessToken}) async {
+  Future<bool> _resolveDraftRoom({
+    required String accessToken,
+    bool loadMessages = true,
+  }) async {
     if (!_room.isDraft) {
       return true;
     }
@@ -1122,7 +1157,9 @@ class _ChatRoomPanelState extends ConsumerState<ChatRoomPanel> {
       });
       ref.read(chatRoomsProvider.notifier).upsert(resolvedRoom);
       ref.read(selectedChatRoomProvider.notifier).open(resolvedRoom);
-      await _loadRemoteMessages();
+      if (loadMessages) {
+        await _loadRemoteMessages();
+      }
       return true;
     } on Object {
       return false;
@@ -1330,6 +1367,7 @@ class _ChatRoomPanelState extends ConsumerState<ChatRoomPanel> {
           message.deletedForEveryone ||
           existing == null ||
           existing.text != message.text ||
+          existing.unreadCount != message.unreadCount ||
           existing.deletedForEveryone != message.deletedForEveryone ||
           existing.attachment?.id != attachment?.id ||
           (attachment != null &&
@@ -1350,6 +1388,15 @@ class _ChatRoomPanelState extends ConsumerState<ChatRoomPanel> {
     });
     _cacheCurrentMessages();
     _refreshSearchMatches(keepIndex: true);
+  }
+
+  ChatMessage? _messageByKey(String key) {
+    for (final message in _messages) {
+      if (_messageKey(message) == key) {
+        return message;
+      }
+    }
+    return null;
   }
 
   void _replaceMessage(String oldKey, ChatMessage replacement) {
@@ -5556,7 +5603,12 @@ class _ChatMessagesViewState extends State<_ChatMessagesView> {
     if (keyboardInsetIncreased) {
       _scheduleKeyboardInsetScrollToBottom();
     }
+    final appendedOwnMessage = _didAppendOwnMessage(
+      oldWidget.messages,
+      widget.messages,
+    );
     final shouldAutoScroll =
+        appendedOwnMessage ||
         oldWidget.messages.isEmpty ||
         _isNearBottom() ||
         oldWidget.typingLabel != widget.typingLabel ||
@@ -5659,6 +5711,24 @@ class _ChatMessagesViewState extends State<_ChatMessagesView> {
     return newMessages.any(
       (message) => chatMessageCacheKey(message) == oldFirstKey,
     );
+  }
+
+  bool _didAppendOwnMessage(
+    List<ChatMessage> oldMessages,
+    List<ChatMessage> newMessages,
+  ) {
+    if (newMessages.length <= oldMessages.length || newMessages.isEmpty) {
+      return false;
+    }
+    final lastMessage = newMessages.last;
+    if (!lastMessage.isMine) {
+      return false;
+    }
+    if (oldMessages.isEmpty) {
+      return true;
+    }
+    return chatMessageCacheKey(oldMessages.last) !=
+        chatMessageCacheKey(lastMessage);
   }
 
   bool _isNearBottom() {
@@ -5788,7 +5858,7 @@ class _ChatMessagesViewState extends State<_ChatMessagesView> {
         key: const ValueKey('chat-messages-list'),
         controller: _controller,
         primary: false,
-        scrollCacheExtent: const ScrollCacheExtent.pixels(1600),
+        cacheExtent: 1600,
         keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
         padding: const EdgeInsets.fromLTRB(18, 12, 18, 14),
         itemCount: entries.isEmpty
@@ -9109,6 +9179,7 @@ class _MessageMeta extends StatelessWidget {
         if (unreadCount > 0)
           Text(
             '$unreadCount',
+            key: ValueKey('message-unread-count-$unreadCount'),
             style: const TextStyle(
               color: Color(0xFFFFF263),
               fontSize: 10,
