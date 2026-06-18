@@ -106,10 +106,10 @@ ava:
       required: ${AVA_APP_MACOS_REQUIRED:false}
       release-notes: "${AVA_APP_MACOS_RELEASE_NOTES:Fix chat send retention and realtime message sync}"
     ios:
-      latest-version: ${AVA_APP_IOS_LATEST_VERSION:0.1.306}
-      file-name: ${AVA_APP_IOS_FILE_NAME:ava-ios-${AVA_APP_IOS_LATEST_VERSION:0.1.306}.ipa}
+      latest-version: ${AVA_APP_IOS_LATEST_VERSION:0.1.307}
+      file-name: ${AVA_APP_IOS_FILE_NAME:ava-ios-${AVA_APP_IOS_LATEST_VERSION:0.1.307}.ipa}
       required: ${AVA_APP_IOS_REQUIRED:false}
-      release-notes: "${AVA_APP_IOS_RELEASE_NOTES:Fix chat send retention and realtime message sync}"
+      release-notes: "${AVA_APP_IOS_RELEASE_NOTES:Update iOS TestFlight build to 0.1.307}"
   calendar:
     reminders:
       enabled: ${AVA_CALENDAR_REMINDERS_ENABLED:true}
