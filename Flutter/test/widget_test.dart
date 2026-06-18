@@ -724,7 +724,9 @@ void main() {
         UncontrolledProviderScope(
           container: container,
           child: MaterialApp(
-            home: Scaffold(body: ChatRoomPanel(room: room, onClose: _noop)),
+            home: Scaffold(
+              body: ChatRoomPanel(room: room, onClose: _noop),
+            ),
           ),
         ),
       );
@@ -771,7 +773,10 @@ void main() {
       await tester.pump(const Duration(milliseconds: 350));
 
       expect(find.text('Server already got it'), findsOneWidget);
-      expect(find.byKey(const ValueKey('message-unread-count-1')), findsOneWidget);
+      expect(
+        find.byKey(const ValueKey('message-unread-count-1')),
+        findsOneWidget,
+      );
 
       await tester.pumpWidget(const SizedBox.shrink());
       await tester.pump(const Duration(milliseconds: 1200));
@@ -925,6 +930,115 @@ void main() {
 
       expect(chatApi.messageCalls, 1);
       expect(find.text('Delivered while open'), findsOneWidget);
+
+      await tester.pumpWidget(const SizedBox.shrink());
+      await tester.pump(const Duration(milliseconds: 1200));
+    },
+  );
+
+  testWidgets(
+    'open chat shows inbox-cached realtime message without waiting for REST',
+    (WidgetTester tester) async {
+      SharedPreferences.setMockInitialValues({});
+      tester.view.devicePixelRatio = 1;
+      tester.view.physicalSize = const Size(900, 720);
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+
+      final chatApi = _FakeDirectChatApi();
+      final container = _directChatTestContainer(chatApi);
+      addTearDown(container.dispose);
+
+      const other = PersonProfile(
+        id: 'other-user',
+        name: 'Other User',
+        color: Color(0xFF7AA06A),
+        email: 'other@ava.local',
+      );
+      final initialRoom = ChatRoom(
+        id: 'direct-inbox-cache-room',
+        title: 'Inbox Cache',
+        preview: 'Earlier message',
+        time: '12:00',
+        lastActivityAt: DateTime(2026, 6, 17, 12),
+        participantCount: 2,
+        members: const [other],
+      );
+      container
+          .read(chatMessageMemoryCacheProvider.notifier)
+          .put(initialRoom.id, [
+            ChatMessage(
+              id: 'inbox-cache-earlier',
+              senderId: other.id,
+              sender: other,
+              text: 'Earlier message',
+              time: '12:00',
+              isMine: false,
+              sentAt: DateTime(2026, 6, 17, 12),
+            ),
+          ], persist: false);
+
+      late void Function(ChatRoom room) updateRoom;
+      var currentRoom = initialRoom;
+
+      await tester.pumpWidget(
+        UncontrolledProviderScope(
+          container: container,
+          child: MaterialApp(
+            home: Scaffold(
+              body: StatefulBuilder(
+                builder: (context, setState) {
+                  updateRoom = (room) => setState(() => currentRoom = room);
+                  return ChatRoomPanel(room: currentRoom, onClose: _noop);
+                },
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.pump(const Duration(milliseconds: 100));
+
+      final realtimeMessage = ChatMessageDto(
+        id: 'inbox-cache-realtime',
+        roomCode: initialRoom.id,
+        senderId: other.id!,
+        senderName: other.name,
+        senderNickname: '',
+        senderAvatarColor: '#7AA06A',
+        senderAvatarImageUrl: '',
+        content: 'Realtime from inbox cache',
+        sentAt: DateTime(2026, 6, 17, 12, 1),
+        unreadCount: 1,
+        systemMessage: false,
+        silent: false,
+        spoiler: false,
+        deletedForEveryone: false,
+        attachment: null,
+        mentions: const [],
+      );
+      container
+          .read(chatMessageMemoryCacheProvider.notifier)
+          .upsertMessage(
+            initialRoom.id,
+            chatMessageFromDto(
+              realtimeMessage,
+              room: initialRoom,
+              currentUserId: 'current-user',
+              currentUserProfile: container.read(currentUserProfileProvider),
+            ),
+            persist: false,
+          );
+      updateRoom(
+        initialRoom.copyWith(
+          preview: 'Realtime from inbox cache',
+          time: '12:01',
+          lastActivityAt: DateTime(2026, 6, 17, 12, 1),
+        ),
+      );
+      await tester.pump();
+
+      expect(find.text('Realtime from inbox cache'), findsOneWidget);
+      expect(chatApi.messageCalls, 0);
 
       await tester.pumpWidget(const SizedBox.shrink());
       await tester.pump(const Duration(milliseconds: 1200));

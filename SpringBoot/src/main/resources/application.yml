@@ -32,12 +32,13 @@
           starttls:
             enable: ${NAVER_SMTP_STARTTLS_ENABLE:false}
   jpa:
+    show-sql: ${AVA_JPA_SHOW_SQL:false}
     hibernate:
       ddl-auto: update
     open-in-view: false
     properties:
       hibernate:
-        format_sql: true
+        format_sql: ${AVA_JPA_FORMAT_SQL:false}
   flyway:
     enabled: ${AVA_FLYWAY_ENABLED:true}
     baseline-on-migrate: ${AVA_FLYWAY_BASELINE_ON_MIGRATE:true}
@@ -46,6 +47,20 @@
 server:
   address: ${AVA_BACKEND_HOST:0.0.0.0}
   port: ${AVA_BACKEND_PORT:8080}
+
+logging:
+  level:
+    root: ${AVA_LOG_LEVEL:INFO}
+    org.springframework: ${AVA_SPRING_LOG_LEVEL:INFO}
+    org.springframework.boot: ${AVA_SPRING_LOG_LEVEL:INFO}
+    org.springframework.web: ${AVA_SPRING_WEB_LOG_LEVEL:INFO}
+    org.springframework.security: ${AVA_SPRING_SECURITY_LOG_LEVEL:INFO}
+    org.springframework.messaging: ${AVA_SPRING_MESSAGING_LOG_LEVEL:INFO}
+    org.springframework.web.SimpLogging: ${AVA_STOMP_LOG_LEVEL:WARN}
+    org.apache: ${AVA_APACHE_LOG_LEVEL:INFO}
+    org.hibernate.SQL: ${AVA_HIBERNATE_SQL_LOG_LEVEL:OFF}
+    org.hibernate.orm.jdbc.bind: ${AVA_HIBERNATE_BIND_LOG_LEVEL:OFF}
+    org.hibernate.engine.jdbc.spi.SqlStatementLogger: ${AVA_HIBERNATE_SQL_LOG_LEVEL:OFF}
 
 ava:
   runtime:

@@ -209,7 +209,7 @@ public class MobilePushService {
 		Map<String, String> data
 	) {
 		for (UserAccount account : new LinkedHashSet<>(recipients)) {
-			MobilePushEventEntity event = eventRepository.save(new MobilePushEventEntity(
+			MobilePushEventEntity event = new MobilePushEventEntity(
 				account.getId(),
 				limit(type, 60),
 				limit(title, 160),
@@ -222,9 +222,10 @@ public class MobilePushService {
 				limitNullable(sourceType, 80),
 				limitNullable(sourceId, 160),
 				writeData(data)
-			));
+			);
 			MobilePushEventResponse response = toResponse(event);
 			messagingTemplate.convertAndSendToUser(account.getEmail(), "/queue/mobile-push", response);
+			eventRepository.save(event);
 		}
 	}
 

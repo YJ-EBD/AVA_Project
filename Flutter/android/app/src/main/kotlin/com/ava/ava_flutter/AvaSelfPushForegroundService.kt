@@ -40,7 +40,7 @@ class AvaSelfPushForegroundService : Service() {
         .build()
 
     private var socket: WebSocket? = null
-    private var reconnectDelayMs = 1_500L
+    private var reconnectDelayMs = 700L
     private var heartbeatRunning = false
     private var subscribed = false
 
@@ -132,7 +132,7 @@ class AvaSelfPushForegroundService : Service() {
             override fun onOpen(webSocket: WebSocket, response: Response) {
                 lastConnectedAtMillis = System.currentTimeMillis()
                 Log.i(TAG, "websocket opened")
-                reconnectDelayMs = 1_500L
+                reconnectDelayMs = 700L
                 subscribed = false
                 webSocket.send(
                     "CONNECT\naccept-version:1.2\nheart-beat:15000,15000\nAuthorization:Bearer $accessToken\n\n\u0000"

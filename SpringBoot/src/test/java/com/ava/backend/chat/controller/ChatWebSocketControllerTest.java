@@ -45,7 +45,8 @@ class ChatWebSocketControllerTest {
 		messagingTemplate,
 		tokenService,
 		loginSessionService,
-		mobilePushService
+		mobilePushService,
+		Runnable::run
 	);
 
 	@Test

@@ -199,6 +199,14 @@ class ChatMessageMemoryCache extends Notifier<Map<String, List<ChatMessage>>> {
     }
   }
 
+  void upsertMessage(
+    String roomId,
+    ChatMessage message, {
+    bool persist = true,
+  }) {
+    put(roomId, [message], persist: persist);
+  }
+
   void _schedulePersist() {
     final key = _storageKey;
     if (key == null || state.isEmpty) {
@@ -460,6 +468,92 @@ ChatAttachment? _attachmentFromCacheJson(Map<String, dynamic> json) {
   );
 }
 
+ChatMessage chatMessageFromDto(
+  ChatMessageDto message, {
+  required ChatRoom room,
+  required String currentUserId,
+  required PersonProfile currentUserProfile,
+}) {
+  final isMine = message.senderId == currentUserId;
+  return ChatMessage(
+    id: message.id,
+    senderId: message.senderId,
+    sender: isMine
+        ? currentUserProfile
+        : chatSenderProfileFromDto(message, room: room),
+    text: message.content,
+    time: formatChatClockTime(message.sentAt),
+    isMine: isMine,
+    sentAt: message.sentAt,
+    unreadCount: message.unreadCount,
+    isSystem: message.systemMessage,
+    isSilent: message.silent,
+    isSpoiler: message.spoiler,
+    deletedForEveryone: message.deletedForEveryone,
+    attachment: message.deletedForEveryone
+        ? null
+        : chatAttachmentFromDto(message.attachment),
+    mentions: [
+      for (final mention in message.mentions)
+        ChatMention(userId: mention.userId, displayName: mention.displayName),
+    ],
+  );
+}
+
+PersonProfile chatSenderProfileFromDto(
+  ChatMessageDto message, {
+  required ChatRoom room,
+}) {
+  for (final member in room.members) {
+    if ((member.id != null && member.id == message.senderId) ||
+        member.name == message.senderName) {
+      return member;
+    }
+  }
+
+  final avatarColor = message.senderAvatarColor.isEmpty
+      ? _avatarColorForSender(message.senderId)
+      : avatarColorFromHex(message.senderAvatarColor);
+  return PersonProfile(
+    id: message.senderId.isEmpty ? null : message.senderId,
+    name: message.senderName.isEmpty ? room.title : message.senderName,
+    nickname: message.senderNickname.isEmpty ? null : message.senderNickname,
+    color: avatarColor,
+    imageUrl: message.senderAvatarImageUrl.isEmpty
+        ? null
+        : message.senderAvatarImageUrl,
+  );
+}
+
+ChatAttachment? chatAttachmentFromDto(ChatAttachmentDto? attachment) {
+  if (attachment == null || attachment.id.isEmpty) {
+    return null;
+  }
+  return ChatAttachment(
+    id: attachment.id,
+    fileName: attachment.fileName,
+    contentType: attachment.contentType,
+    size: attachment.size,
+    downloadUrl: attachment.downloadUrl,
+    groupId: attachment.groupId,
+  );
+}
+
+Color _avatarColorForSender(String senderId) {
+  const colors = [
+    Color(0xFF8FC7D5),
+    Color(0xFFA6C6EE),
+    Color(0xFFDDE8A5),
+    Color(0xFF9FB2D9),
+    Color(0xFF7DB3D7),
+    Color(0xFFE2B28D),
+    Color(0xFFB6A4E8),
+    Color(0xFF92D5E2),
+  ];
+  final index = senderId.codeUnits.fold<int>(0, (sum, value) => sum + value);
+  return colors[index % colors.length];
+}
+
 String chatMessageCacheKey(ChatMessage message) {
   if (message.id != null && message.id!.isNotEmpty) {
     return message.id!;
@@ -472,9 +566,7 @@ String? matchingPendingChatMessageKeyForRemote(
   Map<String, ChatMessage> candidates,
 ) {
   final remoteId = remote.id;
-  if (remoteId == null ||
-      remoteId.isEmpty ||
-      remoteId.startsWith('pending-')) {
+  if (remoteId == null || remoteId.isEmpty || remoteId.startsWith('pending-')) {
     return null;
   }
 
@@ -547,7 +639,7 @@ class _ChatRoomPanelState extends ConsumerState<ChatRoomPanel> {
   static const int _messagePageSize = 80;
   static const int _compactInitialMessagePageSize = 40;
   static const int _largeRoomInitialMessagePageSize = 96;
-  static const Duration _cachedRemoteSyncDelay = Duration(milliseconds: 1200);
+  static const Duration _cachedRemoteSyncDelay = Duration(milliseconds: 250);
   static const Duration _eventRemoteSyncDelay = Duration(milliseconds: 80);
   static const Duration _sendFailureRemoteSyncDelay = Duration(
     milliseconds: 300,
@@ -611,6 +703,7 @@ class _ChatRoomPanelState extends ConsumerState<ChatRoomPanel> {
       _noticeMessage = _noticeFromRoom(_room);
       _ensureRealtimeForCurrentRoom();
       if (shouldSyncMessages) {
+        _mergeCachedMessagesForCurrentRoom();
         _scheduleRemoteSync(_room.id, _eventRemoteSyncDelay);
       }
       return;
@@ -673,6 +766,7 @@ class _ChatRoomPanelState extends ConsumerState<ChatRoomPanel> {
       return;
     }
     _ensureRealtimeForCurrentRoom();
+    _mergeCachedMessagesForCurrentRoom();
     final focusedMessageId = ref.read(focusedChatMessageIdProvider);
     if (_messages.isNotEmpty &&
         (focusedMessageId == null || focusedMessageId.isEmpty)) {
@@ -1005,6 +1099,37 @@ class _ChatRoomPanelState extends ConsumerState<ChatRoomPanel> {
       _hasMoreOlderMessages = true;
     });
     _cacheCurrentMessages();
+    _refreshSearchMatches(keepIndex: true);
+    return true;
+  }
+
+  bool _mergeCachedMessagesForCurrentRoom() {
+    final cachedMessages = ref
+        .read(chatMessageMemoryCacheProvider.notifier)
+        .messagesFor(_room.id);
+    if (cachedMessages.isEmpty) {
+      return false;
+    }
+    final currentKeys = _messages.map(_messageKey).toSet();
+    final hasNewVisibleMessage = cachedMessages.any((message) {
+      final key = _messageKey(message);
+      return !_locallyHiddenMessageIds.contains(key) &&
+          !currentKeys.contains(key);
+    });
+    if (!hasNewVisibleMessage) {
+      return false;
+    }
+    final merged = _filterLocallyHiddenMessages(
+      _mergeRemoteMessages(cachedMessages),
+    );
+    setState(() {
+      _messages = _latestMessagePage(_room, merged);
+      _rememberMessageIds(_messages);
+      _isLoadingMessages = false;
+      _hasMoreOlderMessages =
+          merged.length > _messages.length ||
+          _messages.length >= _messagePageSize;
+    });
     _refreshSearchMatches(keepIndex: true);
     return true;
   }
@@ -1628,41 +1753,11 @@ class _ChatRoomPanelState extends ConsumerState<ChatRoomPanel> {
     ChatMessageDto message, {
     required String currentUserId,
   }) {
-    final isMine = message.senderId == currentUserId;
-    return ChatMessage(
-      id: message.id,
-      senderId: message.senderId,
-      sender: isMine ? _currentUserProfile : _senderProfile(message),
-      text: message.content,
-      time: formatChatClockTime(message.sentAt),
-      isMine: isMine,
-      sentAt: message.sentAt,
-      unreadCount: message.unreadCount,
-      isSystem: message.systemMessage,
-      isSilent: message.silent,
-      isSpoiler: message.spoiler,
-      deletedForEveryone: message.deletedForEveryone,
-      attachment: message.deletedForEveryone
-          ? null
-          : _attachmentFromDto(message.attachment),
-      mentions: [
-        for (final mention in message.mentions)
-          ChatMention(userId: mention.userId, displayName: mention.displayName),
-      ],
-    );
-  }
-
-  ChatAttachment? _attachmentFromDto(ChatAttachmentDto? attachment) {
-    if (attachment == null || attachment.id.isEmpty) {
-      return null;
-    }
-    return ChatAttachment(
-      id: attachment.id,
-      fileName: attachment.fileName,
-      contentType: attachment.contentType,
-      size: attachment.size,
-      downloadUrl: attachment.downloadUrl,
-      groupId: attachment.groupId,
+    return chatMessageFromDto(
+      message,
+      room: _room,
+      currentUserId: currentUserId,
+      currentUserProfile: _currentUserProfile,
     );
   }
 
@@ -2141,20 +2236,6 @@ class _ChatRoomPanelState extends ConsumerState<ChatRoomPanel> {
     return PersonProfile(
       name: notice.senderName,
       color: _avatarColorFor(notice.senderId ?? notice.senderName),
-    );
-  }
-
-  PersonProfile _senderProfile(ChatMessageDto message) {
-    for (final member in _room.members) {
-      if ((member.id != null && member.id == message.senderId) ||
-          member.name == message.senderName) {
-        return member;
-      }
-    }
-
-    return PersonProfile(
-      name: message.senderName.isEmpty ? _room.title : message.senderName,
-      color: _avatarColorFor(message.senderId),
     );
   }
 

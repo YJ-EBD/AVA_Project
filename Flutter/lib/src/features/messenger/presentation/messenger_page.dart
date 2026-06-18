@@ -48,7 +48,7 @@ const String _presenceOnline = '\uC628\uB77C\uC778';
 const String _presenceBackground = '\uBC31\uADF8\uB77C\uC6B4\uB4DC';
 const String _presenceOffline = '\uC624\uD504\uB77C\uC778';
 const Duration _presenceHeartbeatInterval = Duration(seconds: 20);
-const Duration _inboxReconcileInterval = Duration(seconds: 5);
+const Duration _inboxReconcileInterval = Duration(seconds: 1);
 const int _silentChatWarmupRoomLimit = 16;
 const int _silentChatWarmupMessageLimit = 160;
 const String _appSetupCompletedPrefix = 'ava.app_setup.completed.v3';
@@ -3294,6 +3294,9 @@ class _MessengerPageState extends ConsumerState<MessengerPage>
       _scheduleMentionNotificationRefresh(session);
     }
     final preview = chatMessageListPreview(message);
+    if (message != null) {
+      _cacheInboxMessage(room: room, message: message, session: session);
+    }
 
     ref
         .read(chatRoomsProvider.notifier)
@@ -3340,6 +3343,24 @@ class _MessengerPageState extends ConsumerState<MessengerPage>
         body: body,
       ),
     );
+  }
+
+  void _cacheInboxMessage({
+    required ChatRoom room,
+    required ChatMessageDto message,
+    required AuthSession session,
+  }) {
+    ref
+        .read(chatMessageMemoryCacheProvider.notifier)
+        .upsertMessage(
+          room.id,
+          chatMessageFromDto(
+            message,
+            room: room,
+            currentUserId: session.user.id,
+            currentUserProfile: ref.read(currentUserProfileProvider),
+          ),
+        );
   }
 
   String _mentionNotificationBody(

@@ -95,15 +95,12 @@ Future<void> main(List<String> args) async {
     samples[content] = sample;
 
     final restWatch = Stopwatch()..start();
-    final response = await dio.post<Map<String, dynamic>>(
-      '/api/chat/rooms/$roomCode/messages',
-      data: {
-        'content': content,
-        'silent': false,
-        'spoiler': false,
-        'mentions': const [],
-      },
-      options: Options(headers: _authHeaders(sender.accessToken)),
+    await _refreshIfNeeded(dio, sender);
+    final response = await _postChatMessage(
+      dio,
+      sender,
+      roomCode: roomCode,
+      content: content,
     );
     restWatch.stop();
     sample.restMs = restWatch.elapsedMicroseconds / 1000;
@@ -185,13 +182,88 @@ Future<_Account> _login(
   );
   final payload = response.data ?? const {};
   final user = (payload['user'] as Map?)?.cast<String, dynamic>() ?? const {};
+  final expiresInSeconds =
+      (payload['expiresInSeconds'] as num?)?.toInt() ?? 1800;
   return _Account(
     label: label,
     id: user['id'] as String? ?? '',
     email: email,
     name: user['displayName'] as String? ?? label,
     accessToken: payload['accessToken'] as String? ?? '',
+    refreshToken: payload['refreshToken'] as String? ?? '',
+    accessTokenExpiresAt: DateTime.now().add(
+      Duration(seconds: expiresInSeconds),
+    ),
   );
+}
+
+Future<Response<Map<String, dynamic>>> _postChatMessage(
+  Dio dio,
+  _Account sender, {
+  required String roomCode,
+  required String content,
+}) async {
+  try {
+    return await dio.post<Map<String, dynamic>>(
+      '/api/chat/rooms/$roomCode/messages',
+      data: {
+        'content': content,
+        'silent': false,
+        'spoiler': false,
+        'mentions': const [],
+      },
+      options: Options(headers: _authHeaders(sender.accessToken)),
+    );
+  } on DioException catch (error) {
+    final statusCode = error.response?.statusCode;
+    if (statusCode != 401 && statusCode != 403) {
+      rethrow;
+    }
+    await _refreshAccount(dio, sender);
+    return dio.post<Map<String, dynamic>>(
+      '/api/chat/rooms/$roomCode/messages',
+      data: {
+        'content': content,
+        'silent': false,
+        'spoiler': false,
+        'mentions': const [],
+      },
+      options: Options(headers: _authHeaders(sender.accessToken)),
+    );
+  }
+}
+
+Future<void> _refreshIfNeeded(Dio dio, _Account account) async {
+  if (DateTime.now().isBefore(
+    account.accessTokenExpiresAt.subtract(const Duration(minutes: 2)),
+  )) {
+    return;
+  }
+  await _refreshAccount(dio, account);
+}
+
+Future<void> _refreshAccount(Dio dio, _Account account) async {
+  if (account.refreshToken.isEmpty) {
+    return;
+  }
+  final response = await dio.post<Map<String, dynamic>>(
+    '/api/auth/refresh',
+    data: {'refreshToken': account.refreshToken},
+  );
+  final payload = response.data ?? const {};
+  final accessToken = payload['accessToken'] as String? ?? '';
+  final refreshToken = payload['refreshToken'] as String? ?? '';
+  final expiresInSeconds =
+      (payload['expiresInSeconds'] as num?)?.toInt() ?? 1800;
+  if (accessToken.isNotEmpty) {
+    account.accessToken = accessToken;
+    account.accessTokenExpiresAt = DateTime.now().add(
+      Duration(seconds: expiresInSeconds),
+    );
+  }
+  if (refreshToken.isNotEmpty) {
+    account.refreshToken = refreshToken;
+  }
 }
 
 Future<String> _directRoom(Dio dio, _Account owner, _Account target) async {
@@ -243,19 +315,23 @@ int? _intArg(List<String> args, String name) {
 }
 
 class _Account {
-  const _Account({
+  _Account({
     required this.label,
     required this.id,
     required this.email,
     required this.name,
     required this.accessToken,
+    required this.refreshToken,
+    required this.accessTokenExpiresAt,
   });
 
   final String label;
   final String id;
   final String email;
   final String name;
-  final String accessToken;
+  String accessToken;
+  String refreshToken;
+  DateTime accessTokenExpiresAt;
 }
 
 class _RealtimeProbe {
@@ -285,8 +361,8 @@ class _RealtimeProbe {
         url: websocketUrl,
         stompConnectHeaders: headers,
         webSocketConnectHeaders: headers,
-        reconnectDelay: const Duration(seconds: 3),
-        connectionTimeout: const Duration(seconds: 8),
+        reconnectDelay: const Duration(milliseconds: 700),
+        connectionTimeout: const Duration(seconds: 4),
         onConnect: (_) {
           _subscribe('/topic/rooms/$roomCode', 'room-topic');
           _subscribe('/user/queue/chat-events', 'chat-event');

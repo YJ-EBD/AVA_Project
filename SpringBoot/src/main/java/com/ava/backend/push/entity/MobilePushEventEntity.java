@@ -85,6 +85,7 @@ public class MobilePushEventEntity {
 		this.sourceType = sourceType;
 		this.sourceId = sourceId;
 		this.dataJson = dataJson;
+		this.createdAt = Instant.now();
 	}
 
 	@PrePersist

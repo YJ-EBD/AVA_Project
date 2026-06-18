@@ -203,8 +203,8 @@ class MobilePushController {
         url: _ref.read(appConfigProvider).websocketUrl,
         stompConnectHeaders: headers,
         webSocketConnectHeaders: headers,
-        reconnectDelay: const Duration(seconds: 3),
-        connectionTimeout: const Duration(seconds: 8),
+        reconnectDelay: const Duration(milliseconds: 700),
+        connectionTimeout: const Duration(seconds: 4),
         onConnect: (_) {
           _unsubscribe = _client?.subscribe(
             destination: '/user/queue/mobile-push',

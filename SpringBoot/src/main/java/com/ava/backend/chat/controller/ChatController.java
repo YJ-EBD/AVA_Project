@@ -2,7 +2,11 @@ package com.ava.backend.chat.controller;
 
 import java.util.List;
 import java.util.UUID;
+import java.util.concurrent.Executor;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.core.io.Resource;
 import org.springframework.http.ContentDisposition;
 import org.springframework.http.HttpHeaders;
@@ -44,21 +48,26 @@ import jakarta.validation.Valid;
 @RequestMapping("/api/chat")
 public class ChatController {
 
+	private static final Logger log = LoggerFactory.getLogger(ChatController.class);
+
 	private final ChatService chatService;
 	private final ChatLinkPreviewService linkPreviewService;
 	private final SimpMessagingTemplate messagingTemplate;
 	private final MobilePushService mobilePushService;
+	private final Executor chatRealtimeEventExecutor;
 
 	public ChatController(
 		ChatService chatService,
 		ChatLinkPreviewService linkPreviewService,
 		SimpMessagingTemplate messagingTemplate,
-		MobilePushService mobilePushService
+		MobilePushService mobilePushService,
+		@Qualifier("chatRealtimeEventExecutor") Executor chatRealtimeEventExecutor
 	) {
 		this.chatService = chatService;
 		this.linkPreviewService = linkPreviewService;
 		this.messagingTemplate = messagingTemplate;
 		this.mobilePushService = mobilePushService;
+		this.chatRealtimeEventExecutor = chatRealtimeEventExecutor;
 	}
 
 	@GetMapping("/rooms")
@@ -287,13 +296,21 @@ public class ChatController {
 		if (notifyMobile) {
 			mobilePushService.sendChatMessage(room.code(), message);
 		}
-		for (var member : room.members()) {
-			if (member.id() == null) {
-				continue;
+		chatRealtimeEventExecutor.execute(() -> publishRecipientRoomStateEvents(room));
+	}
+
+	private void publishRecipientRoomStateEvents(ChatRoomResponse room) {
+		try {
+			for (var member : room.members()) {
+				if (member.id() == null) {
+					continue;
+				}
+				ChatRoomResponse recipientRoom = chatService.roomForMember(room.code(), member.id());
+				ChatRealtimeEvent stateEvent = new ChatRealtimeEvent("room", recipientRoom, null);
+				messagingTemplate.convertAndSendToUser(member.email(), "/queue/chat-events", stateEvent);
 			}
-			ChatRoomResponse recipientRoom = chatService.roomForMember(room.code(), member.id());
-			ChatRealtimeEvent stateEvent = new ChatRealtimeEvent("room", recipientRoom, null);
-			messagingTemplate.convertAndSendToUser(member.email(), "/queue/chat-events", stateEvent);
+		} catch (Exception exception) {
+			log.warn("Failed to publish chat room state event for room {}: {}", room.code(), exception.getMessage());
 		}
 	}
 

@@ -62,8 +62,8 @@ class ChatRealtimeClient {
         url: websocketUrl,
         stompConnectHeaders: headers,
         webSocketConnectHeaders: headers,
-        reconnectDelay: const Duration(seconds: 3),
-        connectionTimeout: const Duration(seconds: 8),
+        reconnectDelay: const Duration(milliseconds: 700),
+        connectionTimeout: const Duration(seconds: 4),
         onConnect: (_) {
           _subscribe(
             '/topic/rooms/$roomCode',
@@ -198,8 +198,8 @@ class ChatInboxRealtimeClient {
         url: websocketUrl,
         stompConnectHeaders: headers,
         webSocketConnectHeaders: headers,
-        reconnectDelay: const Duration(seconds: 3),
-        connectionTimeout: const Duration(seconds: 8),
+        reconnectDelay: const Duration(milliseconds: 700),
+        connectionTimeout: const Duration(seconds: 4),
         onConnect: (_) {
           _unsubscribe = _client?.subscribe(
             destination: '/user/queue/chat-events',
