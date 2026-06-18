@@ -2,11 +2,7 @@ package com.ava.backend.chat.controller;
 
 import java.util.List;
 import java.util.UUID;
-import java.util.concurrent.Executor;
 
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.core.io.Resource;
 import org.springframework.http.ContentDisposition;
 import org.springframework.http.HttpHeaders;
@@ -32,7 +28,6 @@ import com.ava.backend.chat.dto.ChatLinkPreviewResponse;
 import com.ava.backend.chat.dto.ChatNoticeRequest;
 import com.ava.backend.chat.dto.ChatPinRequest;
 import com.ava.backend.chat.dto.ChatReadStateResponse;
-import com.ava.backend.chat.dto.ChatRealtimeEvent;
 import com.ava.backend.chat.dto.ChatRoomLeaveResponse;
 import com.ava.backend.chat.dto.ChatRoomResponse;
 import com.ava.backend.chat.dto.ChatTalkDrawerItemResponse;
@@ -40,7 +35,7 @@ import com.ava.backend.chat.dto.DirectChatRoomRequest;
 import com.ava.backend.chat.dto.GroupChatRoomRequest;
 import com.ava.backend.chat.service.ChatService;
 import com.ava.backend.chat.service.ChatLinkPreviewService;
-import com.ava.backend.push.service.MobilePushService;
+import com.ava.backend.chat.service.ChatRealtimePublisher;
 
 import jakarta.validation.Valid;
 
@@ -48,26 +43,21 @@ import jakarta.validation.Valid;
 @RequestMapping("/api/chat")
 public class ChatController {
 
-	private static final Logger log = LoggerFactory.getLogger(ChatController.class);
-
 	private final ChatService chatService;
 	private final ChatLinkPreviewService linkPreviewService;
 	private final SimpMessagingTemplate messagingTemplate;
-	private final MobilePushService mobilePushService;
-	private final Executor chatRealtimeEventExecutor;
+	private final ChatRealtimePublisher realtimePublisher;
 
 	public ChatController(
 		ChatService chatService,
 		ChatLinkPreviewService linkPreviewService,
 		SimpMessagingTemplate messagingTemplate,
-		MobilePushService mobilePushService,
-		@Qualifier("chatRealtimeEventExecutor") Executor chatRealtimeEventExecutor
+		ChatRealtimePublisher realtimePublisher
 	) {
 		this.chatService = chatService;
 		this.linkPreviewService = linkPreviewService;
 		this.messagingTemplate = messagingTemplate;
-		this.mobilePushService = mobilePushService;
-		this.chatRealtimeEventExecutor = chatRealtimeEventExecutor;
+		this.realtimePublisher = realtimePublisher;
 	}
 
 	@GetMapping("/rooms")
@@ -89,7 +79,7 @@ public class ChatController {
 		@AuthenticationPrincipal AuthPrincipal principal
 	) {
 		ChatRoomResponse response = chatService.startDirectRoom(request, principal);
-		publishRoomState(response);
+		realtimePublisher.publishRoomState(response);
 		return response;
 	}
 
@@ -99,14 +89,14 @@ public class ChatController {
 		@AuthenticationPrincipal AuthPrincipal principal
 	) {
 		ChatRoomResponse response = chatService.startGroupRoom(request, principal);
-		publishRoomState(response);
+		realtimePublisher.publishRoomState(response);
 		return response;
 	}
 
 	@PostMapping("/self-room")
 	public ChatRoomResponse selfRoom(@AuthenticationPrincipal AuthPrincipal principal) {
 		ChatRoomResponse response = chatService.startSelfRoom(principal);
-		publishRoomState(response);
+		realtimePublisher.publishRoomState(response);
 		return response;
 	}
 
@@ -118,7 +108,7 @@ public class ChatController {
 	) {
 		assertRegularChatRoomCode(roomCode);
 		ChatRoomResponse response = chatService.inviteMembers(roomCode, request, principal);
-		publishRoomState(response);
+		realtimePublisher.publishRoomState(response);
 		return response;
 	}
 
@@ -164,7 +154,7 @@ public class ChatController {
 		assertRegularChatRoomCode(roomCode);
 		ChatMessageResponse response = chatService.send(roomCode, request, principal);
 		messagingTemplate.convertAndSend("/topic/rooms/" + roomCode, response);
-		publishRoomEvent(roomCode, response, true);
+		realtimePublisher.publishMessage(roomCode, response, true);
 		return response;
 	}
 
@@ -181,7 +171,7 @@ public class ChatController {
 		assertRegularChatRoomCode(roomCode);
 		ChatMessageResponse response = chatService.sendAttachment(roomCode, file, groupId, principal);
 		messagingTemplate.convertAndSend("/topic/rooms/" + roomCode, response);
-		publishRoomEvent(roomCode, response, true);
+		realtimePublisher.publishMessage(roomCode, response, true);
 		return response;
 	}
 
@@ -215,7 +205,7 @@ public class ChatController {
 		assertRegularChatRoomCode(roomCode);
 		ChatMessageResponse response = chatService.deleteMessageForEveryone(roomCode, messageId, principal);
 		messagingTemplate.convertAndSend("/topic/rooms/" + roomCode, response);
-		publishRoomEvent(roomCode, response);
+		realtimePublisher.publishMessage(roomCode, response, false);
 		return response;
 	}
 
@@ -236,7 +226,7 @@ public class ChatController {
 	) {
 		assertRegularChatRoomCode(roomCode);
 		ChatReadStateResponse response = chatService.markRead(roomCode, principal);
-		publishReadState(roomCode, response);
+		realtimePublisher.publishReadState(roomCode, response);
 		return response;
 	}
 
@@ -265,76 +255,13 @@ public class ChatController {
 		assertRegularChatRoomCode(roomCode);
 		ChatRoomLeaveResponse response = chatService.leaveRoom(roomCode, principal);
 		if (response.deleted()) {
-			publishRoomDeleted(response);
+			realtimePublisher.publishRoomDeleted(response);
 			return response;
 		}
 
 		messagingTemplate.convertAndSend("/topic/rooms/" + roomCode, response.message());
-		publishRoomEvent(response.room(), response.message());
+		realtimePublisher.publishMessage(response.room(), response.message(), false);
 		return response;
-	}
-
-	private void publishRoomEvent(String roomCode, ChatMessageResponse message) {
-		ChatRoomResponse room = chatService.room(roomCode);
-		publishRoomEvent(room, message, false);
-	}
-
-	private void publishRoomEvent(String roomCode, ChatMessageResponse message, boolean notifyMobile) {
-		ChatRoomResponse room = chatService.room(roomCode);
-		publishRoomEvent(room, message, notifyMobile);
-	}
-
-	private void publishRoomEvent(ChatRoomResponse room, ChatMessageResponse message) {
-		publishRoomEvent(room, message, false);
-	}
-
-	private void publishRoomEvent(ChatRoomResponse room, ChatMessageResponse message, boolean notifyMobile) {
-		ChatRealtimeEvent immediateEvent = new ChatRealtimeEvent("message", room, message);
-		for (var member : room.members()) {
-			messagingTemplate.convertAndSendToUser(member.email(), "/queue/chat-events", immediateEvent);
-		}
-		if (notifyMobile) {
-			mobilePushService.sendChatMessage(room.code(), message);
-		}
-		chatRealtimeEventExecutor.execute(() -> publishRecipientRoomStateEvents(room));
-	}
-
-	private void publishRecipientRoomStateEvents(ChatRoomResponse room) {
-		try {
-			for (var member : room.members()) {
-				if (member.id() == null) {
-					continue;
-				}
-				ChatRoomResponse recipientRoom = chatService.roomForMember(room.code(), member.id());
-				ChatRealtimeEvent stateEvent = new ChatRealtimeEvent("room", recipientRoom, null);
-				messagingTemplate.convertAndSendToUser(member.email(), "/queue/chat-events", stateEvent);
-			}
-		} catch (Exception exception) {
-			log.warn("Failed to publish chat room state event for room {}: {}", room.code(), exception.getMessage());
-		}
-	}
-
-	private void publishRoomState(ChatRoomResponse room) {
-		for (var member : room.members()) {
-			ChatRoomResponse recipientRoom = member.id() == null
-				? room
-				: chatService.roomForMember(room.code(), member.id());
-			ChatRealtimeEvent event = new ChatRealtimeEvent("room", recipientRoom, null);
-			messagingTemplate.convertAndSendToUser(member.email(), "/queue/chat-events", event);
-		}
-	}
-
-	private void publishRoomDeleted(ChatRoomLeaveResponse response) {
-		ChatRealtimeEvent event = new ChatRealtimeEvent("room-deleted", response.room(), response.message());
-		for (var member : response.room().members()) {
-			if (!member.email().equalsIgnoreCase(response.leaverEmail())) {
-				messagingTemplate.convertAndSendToUser(member.email(), "/queue/chat-events", event);
-			}
-		}
-	}
-
-	private void publishReadState(String roomCode, ChatReadStateResponse readState) {
-		messagingTemplate.convertAndSend("/topic/rooms/" + roomCode + "/read-state", readState);
 	}
 
 	@PutMapping("/rooms/{roomCode}/notice")

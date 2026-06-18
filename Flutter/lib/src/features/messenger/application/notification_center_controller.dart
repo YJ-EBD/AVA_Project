@@ -40,6 +40,7 @@ class NotificationCenterCacheState {
     this.appUnreadCount = 0,
     this.hasLoaded = false,
     this.loading = false,
+    this.lastLoadAttemptAt,
     this.error,
   });
 
@@ -48,6 +49,7 @@ class NotificationCenterCacheState {
   final int appUnreadCount;
   final bool hasLoaded;
   final bool loading;
+  final DateTime? lastLoadAttemptAt;
   final Object? error;
 
   NotificationCenterCacheState copyWith({
@@ -56,6 +58,7 @@ class NotificationCenterCacheState {
     int? appUnreadCount,
     bool? hasLoaded,
     bool? loading,
+    DateTime? lastLoadAttemptAt,
     Object? error,
     bool clearError = false,
   }) {
@@ -65,6 +68,7 @@ class NotificationCenterCacheState {
       appUnreadCount: appUnreadCount ?? this.appUnreadCount,
       hasLoaded: hasLoaded ?? this.hasLoaded,
       loading: loading ?? this.loading,
+      lastLoadAttemptAt: lastLoadAttemptAt ?? this.lastLoadAttemptAt,
       error: clearError ? null : error ?? this.error,
     );
   }
@@ -80,6 +84,7 @@ class NotificationCenterCache extends Notifier<NotificationCenterCacheState> {
     }
     state = state.copyWith(
       loading: !silent && !state.hasLoaded,
+      lastLoadAttemptAt: DateTime.now(),
       clearError: true,
     );
   }
@@ -90,7 +95,7 @@ class NotificationCenterCache extends Notifier<NotificationCenterCacheState> {
     }
     state = state.copyWith(
       notifications: List<ChatMentionNotificationDto>.unmodifiable(
-        notifications,
+        _dedupeMentionNotifications(notifications),
       ),
       hasLoaded: true,
       loading: false,
@@ -130,8 +135,8 @@ class NotificationCenterCache extends Notifier<NotificationCenterCacheState> {
     final next = <ChatMentionNotificationDto>[];
     var inserted = false;
     for (final item in state.notifications) {
-      if (item.id == notification.id) {
-        next.add(notification);
+      if (_sameMentionNotification(item, notification)) {
+        next.add(_preferCanonicalMentionNotification(item, notification));
         inserted = true;
       } else {
         next.add(item);
@@ -162,6 +167,48 @@ class NotificationCenterCache extends Notifier<NotificationCenterCacheState> {
     }
     setAppNotifications(next);
   }
+}
+
+List<ChatMentionNotificationDto> _dedupeMentionNotifications(
+  List<ChatMentionNotificationDto> notifications,
+) {
+  final deduped = <ChatMentionNotificationDto>[];
+  for (final notification in notifications) {
+    final existingIndex = deduped.indexWhere(
+      (item) => _sameMentionNotification(item, notification),
+    );
+    if (existingIndex == -1) {
+      deduped.add(notification);
+      continue;
+    }
+    deduped[existingIndex] = _preferCanonicalMentionNotification(
+      deduped[existingIndex],
+      notification,
+    );
+  }
+  return deduped;
+}
+
+bool _sameMentionNotification(
+  ChatMentionNotificationDto left,
+  ChatMentionNotificationDto right,
+) {
+  if (left.id.isNotEmpty && left.id == right.id) {
+    return true;
+  }
+  return left.messageId.isNotEmpty && left.messageId == right.messageId;
+}
+
+ChatMentionNotificationDto _preferCanonicalMentionNotification(
+  ChatMentionNotificationDto existing,
+  ChatMentionNotificationDto incoming,
+) {
+  final existingSynthetic = existing.id.startsWith('realtime-');
+  final incomingSynthetic = incoming.id.startsWith('realtime-');
+  if (!existingSynthetic && incomingSynthetic) {
+    return existing;
+  }
+  return incoming;
 }
 
 class AzoomVoiceStartNotification {

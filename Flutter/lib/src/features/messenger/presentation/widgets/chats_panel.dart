@@ -811,6 +811,7 @@ class _ChatsPanelState extends ConsumerState<ChatsPanel> {
     final quietRoomIds = ref.watch(quietChatRoomsProvider);
     final sortMode = ref.watch(chatSortModeProvider);
     final allRooms = ref.watch(chatRoomsProvider);
+    final focusedRoomId = ref.watch(focusedChatRoomIdProvider);
     final quietRoomIdSet = quietRoomIds.toSet();
     final quietRooms = [
       for (final room in allRooms)
@@ -851,20 +852,23 @@ class _ChatsPanelState extends ConsumerState<ChatsPanel> {
         folders,
       );
     }
-    final searchQuery = _searchController.text.trim();
-    final searchRooms = _filterRooms(
-      _sortChatRooms(
-        allRooms.where((room) => !quietRoomIdSet.contains(room.id)).toList(),
-        sortMode,
-        folders,
-      ),
-      searchQuery,
-    );
-    final displayedRooms = _isSearching ? searchRooms : rooms;
+    final displayedRooms = _isSearching
+        ? _filterRooms(
+            _sortChatRooms(
+              allRooms
+                  .where((room) => !quietRoomIdSet.contains(room.id))
+                  .toList(),
+              sortMode,
+              folders,
+            ),
+            _searchController.text.trim(),
+          )
+        : rooms;
     final showQuietTile =
         !_isSearching && activeFolderId == null && quietRooms.isNotEmpty;
     final mobileLayout =
         _isMobileRuntimeForChats() && MediaQuery.sizeOf(context).width <= 720;
+    final showChatBanner = mobileLayout;
 
     return Shortcuts(
       shortcuts: <ShortcutActivator, Intent>{
@@ -934,12 +938,14 @@ class _ChatsPanelState extends ConsumerState<ChatsPanel> {
                   child: ListView.builder(
                     padding: const EdgeInsets.only(top: 4, bottom: 16),
                     itemCount:
-                        displayedRooms.length + (showQuietTile ? 1 : 0) + 1,
+                        displayedRooms.length +
+                        (showQuietTile ? 1 : 0) +
+                        (showChatBanner ? 1 : 0),
                     itemBuilder: (context, index) {
-                      if (index == 0) {
+                      if (showChatBanner && index == 0) {
                         return const _RotatingChatBanner();
                       }
-                      final roomIndexBase = index - 1;
+                      final roomIndexBase = showChatBanner ? index - 1 : index;
                       if (showQuietTile && roomIndexBase == 0) {
                         return _QuietChatRoomsTile(
                           rooms: quietRooms,
@@ -957,9 +963,10 @@ class _ChatsPanelState extends ConsumerState<ChatsPanel> {
                       final room =
                           displayedRooms[roomIndexBase -
                               (showQuietTile ? 1 : 0)];
-                      return _ChatRoomTileSelection(
+                      return _ChatRoomTile(
                         key: ValueKey('chat-room-${room.id}'),
                         room: room,
+                        isSelected: focusedRoomId == room.id,
                         mobileLayout: mobileLayout,
                         onTap: () {
                           ref
@@ -4348,6 +4355,14 @@ class _RotatingChatBannerState extends State<_RotatingChatBanner> {
 
   @override
   Widget build(BuildContext context) {
+    final bannerImage = Image.asset(
+      _chatBannerAssets[_index],
+      key: ValueKey(_chatBannerAssets[_index]),
+      fit: BoxFit.cover,
+      alignment: Alignment.center,
+    );
+    final desktopRuntime =
+        Platform.isWindows || Platform.isMacOS || Platform.isLinux;
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 8, 16, 10),
       child: RepaintBoundary(
@@ -4369,39 +4384,37 @@ class _RotatingChatBannerState extends State<_RotatingChatBanner> {
             child: SizedBox(
               height: 76,
               width: double.infinity,
-              child: AnimatedSwitcher(
-                duration: const Duration(milliseconds: 520),
-                switchInCurve: Curves.easeOutCubic,
-                switchOutCurve: Curves.easeInCubic,
-                layoutBuilder: (currentChild, previousChildren) {
-                  return Stack(
-                    fit: StackFit.expand,
-                    children: [...previousChildren, ?currentChild],
-                  );
-                },
-                transitionBuilder: (child, animation) {
-                  final isIncoming =
-                      child.key == ValueKey<String>(_chatBannerAssets[_index]);
-                  final offsetAnimation = Tween<Offset>(
-                    begin: isIncoming
-                        ? const Offset(0, 1)
-                        : const Offset(0, -1),
-                    end: Offset.zero,
-                  ).animate(animation);
-                  return ClipRect(
-                    child: SlideTransition(
-                      position: offsetAnimation,
-                      child: child,
+              child: desktopRuntime
+                  ? bannerImage
+                  : AnimatedSwitcher(
+                      duration: const Duration(milliseconds: 520),
+                      switchInCurve: Curves.easeOutCubic,
+                      switchOutCurve: Curves.easeInCubic,
+                      layoutBuilder: (currentChild, previousChildren) {
+                        return Stack(
+                          fit: StackFit.expand,
+                          children: [...previousChildren, ?currentChild],
+                        );
+                      },
+                      transitionBuilder: (child, animation) {
+                        final isIncoming =
+                            child.key ==
+                            ValueKey<String>(_chatBannerAssets[_index]);
+                        final offsetAnimation = Tween<Offset>(
+                          begin: isIncoming
+                              ? const Offset(0, 1)
+                              : const Offset(0, -1),
+                          end: Offset.zero,
+                        ).animate(animation);
+                        return ClipRect(
+                          child: SlideTransition(
+                            position: offsetAnimation,
+                            child: child,
+                          ),
+                        );
+                      },
+                      child: bannerImage,
                     ),
-                  );
-                },
-                child: Image.asset(
-                  _chatBannerAssets[_index],
-                  key: ValueKey(_chatBannerAssets[_index]),
-                  fit: BoxFit.cover,
-                  alignment: Alignment.center,
-                ),
-              ),
             ),
           ),
         ),
@@ -4410,40 +4423,9 @@ class _RotatingChatBannerState extends State<_RotatingChatBanner> {
   }
 }
 
-class _ChatRoomTileSelection extends ConsumerWidget {
-  const _ChatRoomTileSelection({
-    super.key,
-    required this.room,
-    required this.mobileLayout,
-    required this.onTap,
-    required this.onDoubleTap,
-    required this.onContextMenu,
-  });
-
-  final ChatRoom room;
-  final bool mobileLayout;
-  final VoidCallback onTap;
-  final VoidCallback onDoubleTap;
-  final ValueChanged<Offset> onContextMenu;
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final isSelected = ref.watch(
-      focusedChatRoomIdProvider.select((roomId) => roomId == room.id),
-    );
-    return _ChatRoomTile(
-      room: room,
-      isSelected: isSelected,
-      mobileLayout: mobileLayout,
-      onTap: onTap,
-      onDoubleTap: onDoubleTap,
-      onContextMenu: onContextMenu,
-    );
-  }
-}
-
 class _ChatRoomTile extends StatelessWidget {
   const _ChatRoomTile({
+    super.key,
     required this.room,
     required this.isSelected,
     required this.mobileLayout,

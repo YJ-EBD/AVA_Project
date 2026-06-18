@@ -48,7 +48,7 @@ const String _presenceOnline = '\uC628\uB77C\uC778';
 const String _presenceBackground = '\uBC31\uADF8\uB77C\uC6B4\uB4DC';
 const String _presenceOffline = '\uC624\uD504\uB77C\uC778';
 const Duration _presenceHeartbeatInterval = Duration(seconds: 20);
-const Duration _inboxReconcileInterval = Duration(seconds: 1);
+const Duration _inboxReconcileInterval = Duration(seconds: 15);
 const int _silentChatWarmupRoomLimit = 16;
 const int _silentChatWarmupMessageLimit = 160;
 const String _appSetupCompletedPrefix = 'ava.app_setup.completed.v3';
@@ -3217,7 +3217,7 @@ class _MessengerPageState extends ConsumerState<MessengerPage>
       return;
     }
     _inboxEventReconcileTimer = Timer(
-      const Duration(milliseconds: 300),
+      const Duration(seconds: 2),
       () => unawaited(_reconcileInboxRooms()),
     );
   }
@@ -3290,6 +3290,12 @@ class _MessengerPageState extends ConsumerState<MessengerPage>
       room = room.copyWith(hasUnreadMention: true);
     }
     if (mentionsMe && !isMine) {
+      _cacheRealtimeMentionNotification(
+        roomDto: event.room,
+        room: room,
+        message: message!,
+        session: session,
+      );
       ref.read(notificationCenterRevisionProvider.notifier).bump();
       _scheduleMentionNotificationRefresh(session);
     }
@@ -3308,7 +3314,9 @@ class _MessengerPageState extends ConsumerState<MessengerPage>
     if (isOpen) {
       ref.read(selectedChatRoomProvider.notifier).replaceIfOpen(room);
     }
-    _scheduleInboxEventReconcile();
+    if (message == null) {
+      _scheduleInboxEventReconcile();
+    }
     final displayedRoom = ref
         .read(chatRoomsProvider)
         .firstWhere((item) => item.id == room.id, orElse: () => room);
@@ -3359,6 +3367,50 @@ class _MessengerPageState extends ConsumerState<MessengerPage>
             room: room,
             currentUserId: session.user.id,
             currentUserProfile: ref.read(currentUserProfileProvider),
+          ),
+        );
+  }
+
+  void _cacheRealtimeMentionNotification({
+    required ChatRoomDto roomDto,
+    required ChatRoom room,
+    required ChatMessageDto message,
+    required AuthSession session,
+  }) {
+    final messageId = message.id.trim();
+    if (messageId.isEmpty) {
+      return;
+    }
+    ChatMentionDto? mention;
+    for (final item in message.mentions) {
+      if (item.userId == session.user.id) {
+        mention = item;
+        break;
+      }
+    }
+    ref
+        .read(notificationCenterCacheProvider.notifier)
+        .upsert(
+          ChatMentionNotificationDto(
+            id: 'realtime-$messageId-${session.user.id}',
+            roomCode: room.id,
+            roomTitle: room.title,
+            participantCount:
+                room.participantCount ?? math.max(room.members.length, 1),
+            roomMembers: roomDto.members,
+            messageId: messageId,
+            senderId: message.senderId,
+            senderName: message.senderName,
+            senderNickname: message.senderNickname,
+            senderAvatarColor: message.senderAvatarColor,
+            senderAvatarImageUrl: message.senderAvatarImageUrl,
+            mentionDisplayName: mention?.displayName.isNotEmpty == true
+                ? mention!.displayName
+                : session.user.displayName,
+            content: message.content,
+            sentAt: message.sentAt,
+            checkedAt: null,
+            checked: false,
           ),
         );
   }

@@ -1,6 +1,7 @@
 package com.ava.backend.push.service;
 
 import java.time.Instant;
+import java.util.ArrayList;
 import java.util.Collection;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
@@ -208,6 +209,7 @@ public class MobilePushService {
 		String sourceId,
 		Map<String, String> data
 	) {
+		List<MobilePushEventEntity> events = new ArrayList<>();
 		for (UserAccount account : new LinkedHashSet<>(recipients)) {
 			MobilePushEventEntity event = new MobilePushEventEntity(
 				account.getId(),
@@ -225,7 +227,10 @@ public class MobilePushService {
 			);
 			MobilePushEventResponse response = toResponse(event);
 			messagingTemplate.convertAndSendToUser(account.getEmail(), "/queue/mobile-push", response);
-			eventRepository.save(event);
+			events.add(event);
+		}
+		if (!events.isEmpty()) {
+			eventRepository.saveAll(events);
 		}
 	}
 

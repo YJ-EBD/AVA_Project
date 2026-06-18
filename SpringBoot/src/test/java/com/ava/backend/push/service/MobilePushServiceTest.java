@@ -22,7 +22,6 @@ import com.ava.backend.chat.entity.ChatRoomType;
 import com.ava.backend.chat.repository.ChatRoomMemberRepository;
 import com.ava.backend.chat.repository.ChatRoomRepository;
 import com.ava.backend.push.dto.MobilePushEventResponse;
-import com.ava.backend.push.entity.MobilePushEventEntity;
 import com.ava.backend.push.repository.MobilePushEventRepository;
 import com.ava.backend.user.entity.UserAccount;
 import com.ava.backend.user.entity.UserRole;
@@ -62,7 +61,7 @@ class MobilePushServiceTest {
 			new ChatRoomMemberEntity(room, receiver)
 		));
 		when(roomRepository.findByCode(roomCode)).thenReturn(Optional.of(room));
-		when(eventRepository.save(any(MobilePushEventEntity.class))).thenAnswer(invocation -> invocation.getArgument(0));
+		when(eventRepository.saveAll(any())).thenAnswer(invocation -> invocation.getArgument(0));
 
 		service.sendChatMessage(roomCode, message);
 
@@ -72,7 +71,7 @@ class MobilePushServiceTest {
 			eq("/queue/mobile-push"),
 			any(MobilePushEventResponse.class)
 		);
-		order.verify(eventRepository).save(any(MobilePushEventEntity.class));
+		order.verify(eventRepository).saveAll(any());
 
 		ArgumentCaptor<MobilePushEventResponse> eventCaptor =
 			ArgumentCaptor.forClass(MobilePushEventResponse.class);

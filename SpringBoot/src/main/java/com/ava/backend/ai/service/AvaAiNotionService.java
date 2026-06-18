@@ -99,7 +99,14 @@ public class AvaAiNotionService {
 	private record NotionDateRange(LocalDate startDate, LocalDate endDate) {
 	}
 
-	private record FoundDate(int position, LocalDate date) {
+	private record FoundDate(int position, String yearText, String monthText, String dayText) {
+		boolean explicitYear() {
+			return yearText != null && !yearText.isBlank();
+		}
+
+		LocalDate toDate(LocalDate baseDate, boolean rollPastDate) {
+			return relativeYearDate(yearText, monthText, dayText, baseDate, rollPastDate);
+		}
 	}
 
 	private record NotionMutationPlan(
@@ -1647,23 +1654,43 @@ public class AvaAiNotionService {
 		List<FoundDate> found = new ArrayList<>();
 		Matcher korean = Pattern.compile("(?:(\\d{4})년\\s*)?(\\d{1,2})\\s*월\\s*(\\d{1,2})\\s*일?").matcher(command);
 		while (korean.find()) {
-			found.add(new FoundDate(korean.start(), relativeYearDate(korean.group(1), korean.group(2), korean.group(3), today)));
+			found.add(new FoundDate(korean.start(), korean.group(1), korean.group(2), korean.group(3)));
 		}
 		Matcher separated = Pattern.compile("(?<!\\d)(?:(\\d{4})\\s*[-/.]\\s*)?(\\d{1,2})\\s*[-/.]\\s*(\\d{1,2})(?!\\d)").matcher(command);
 		while (separated.find()) {
-			found.add(new FoundDate(separated.start(), relativeYearDate(separated.group(1), separated.group(2), separated.group(3), today)));
+			found.add(new FoundDate(separated.start(), separated.group(1), separated.group(2), separated.group(3)));
 		}
-		return found.stream()
+		List<FoundDate> ordered = found.stream()
 			.sorted(Comparator.comparingInt(FoundDate::position))
-			.map(FoundDate::date)
-			.distinct()
 			.toList();
+		boolean currentYearRange = ordered.size() > 1 && ordered.stream().noneMatch(FoundDate::explicitYear);
+		List<LocalDate> dates = new ArrayList<>();
+		for (FoundDate item : ordered) {
+			LocalDate date = item.toDate(today, !currentYearRange);
+			if (currentYearRange && !dates.isEmpty() && date.isBefore(dates.getLast())) {
+				date = date.plusYears(1);
+			}
+			if (!dates.contains(date)) {
+				dates.add(date);
+			}
+		}
+		return dates;
 	}
 
 	private LocalDate relativeYearDate(String yearText, String monthText, String dayText, LocalDate baseDate) {
+		return relativeYearDate(yearText, monthText, dayText, baseDate, true);
+	}
+
+	private static LocalDate relativeYearDate(
+		String yearText,
+		String monthText,
+		String dayText,
+		LocalDate baseDate,
+		boolean rollPastDate
+	) {
 		int year = yearText == null || yearText.isBlank() ? baseDate.getYear() : Integer.parseInt(yearText);
 		LocalDate date = LocalDate.of(year, Integer.parseInt(monthText), Integer.parseInt(dayText));
-		if ((yearText == null || yearText.isBlank()) && date.isBefore(baseDate.minusDays(1))) {
+		if (rollPastDate && (yearText == null || yearText.isBlank()) && date.isBefore(baseDate.minusDays(1))) {
 			return date.plusYears(1);
 		}
 		return date;

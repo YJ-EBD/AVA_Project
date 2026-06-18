@@ -11,6 +11,7 @@ import 'package:ava_flutter/src/features/auth/presentation/login_page.dart';
 import 'package:ava_flutter/src/features/ava_stock/presentation/ava_stock_page.dart';
 import 'package:ava_flutter/src/features/azoom/presentation/azoom_page.dart';
 import 'package:ava_flutter/src/features/home/presentation/home_page.dart';
+import 'package:ava_flutter/src/features/messenger/application/notification_center_controller.dart';
 import 'package:ava_flutter/src/features/messenger/data/chat_api.dart';
 import 'package:ava_flutter/src/features/messenger/data/mock_messenger_data.dart';
 import 'package:ava_flutter/src/features/messenger/domain/messenger_models.dart';
@@ -91,6 +92,63 @@ void main() {
     expect(updated.unreadCount, 7);
     expect(updated.hasUnreadMention, isTrue);
   });
+
+  test(
+    'dedupes realtime mention notification when server notification arrives',
+    () {
+      final container = _messengerTestContainer();
+      addTearDown(container.dispose);
+
+      final notifier = container.read(notificationCenterCacheProvider.notifier);
+      final sentAt = DateTime(2026, 6, 18, 9);
+      final realtime = ChatMentionNotificationDto(
+        id: 'realtime-message-1-current-user',
+        roomCode: 'room-1',
+        roomTitle: 'Realtime Room',
+        participantCount: 3,
+        roomMembers: const [],
+        messageId: 'message-1',
+        senderId: 'sender',
+        senderName: 'Sender',
+        senderNickname: '',
+        senderAvatarColor: '#7AA06A',
+        senderAvatarImageUrl: '',
+        mentionDisplayName: 'Current User',
+        content: '@Current User now',
+        sentAt: sentAt,
+        checkedAt: null,
+        checked: false,
+      );
+      final server = ChatMentionNotificationDto(
+        id: 'server-notification-1',
+        roomCode: 'room-1',
+        roomTitle: 'Realtime Room',
+        participantCount: 3,
+        roomMembers: const [],
+        messageId: 'message-1',
+        senderId: 'sender',
+        senderName: 'Sender',
+        senderNickname: '',
+        senderAvatarColor: '#7AA06A',
+        senderAvatarImageUrl: '',
+        mentionDisplayName: 'Current User',
+        content: '@Current User now',
+        sentAt: sentAt,
+        checkedAt: null,
+        checked: false,
+      );
+
+      notifier.upsert(realtime);
+      notifier.setNotifications([server, realtime]);
+
+      final notifications = container
+          .read(notificationCenterCacheProvider)
+          .notifications;
+      expect(notifications, hasLength(1));
+      expect(notifications.single.id, 'server-notification-1');
+      expect(notifications.single.messageId, 'message-1');
+    },
+  );
 
   test('puts current user unspecified department first', () async {
     final container = ProviderContainer(
@@ -1038,6 +1096,10 @@ void main() {
       await tester.pump();
 
       expect(find.text('Realtime from inbox cache'), findsOneWidget);
+      expect(
+        find.byKey(const ValueKey('message-unread-count-1')),
+        findsOneWidget,
+      );
       expect(chatApi.messageCalls, 0);
 
       await tester.pumpWidget(const SizedBox.shrink());

@@ -637,13 +637,14 @@ class ChatRoomPanel extends ConsumerStatefulWidget {
 
 class _ChatRoomPanelState extends ConsumerState<ChatRoomPanel> {
   static const int _messagePageSize = 80;
-  static const int _compactInitialMessagePageSize = 40;
-  static const int _largeRoomInitialMessagePageSize = 96;
+  static const int _compactInitialMessagePageSize = 24;
+  static const int _largeRoomInitialMessagePageSize = 80;
   static const Duration _cachedRemoteSyncDelay = Duration(milliseconds: 250);
   static const Duration _eventRemoteSyncDelay = Duration(milliseconds: 80);
   static const Duration _sendFailureRemoteSyncDelay = Duration(
     milliseconds: 300,
   );
+  static final Map<String, Set<String>> _hiddenMessageIdsMemoryCache = {};
 
   late ChatRoom _room;
   late List<ChatMessage> _messages;
@@ -782,12 +783,22 @@ class _ChatRoomPanelState extends ConsumerState<ChatRoomPanel> {
       _locallyHiddenMessageIds.clear();
       return;
     }
+    final cached = _hiddenMessageIdsMemoryCache[key];
+    if (cached != null) {
+      _locallyHiddenMessageIds
+        ..clear()
+        ..addAll(cached);
+      return;
+    }
     try {
       final prefs = await SharedPreferences.getInstance();
       final values = prefs.getStringList(key) ?? const <String>[];
       _locallyHiddenMessageIds
         ..clear()
         ..addAll(values.where((value) => value.trim().isNotEmpty));
+      _hiddenMessageIdsMemoryCache[key] = Set<String>.unmodifiable(
+        _locallyHiddenMessageIds,
+      );
     } on Object {
       _locallyHiddenMessageIds.clear();
     }
@@ -2593,6 +2604,9 @@ class _ChatRoomPanelState extends ConsumerState<ChatRoomPanel> {
     if (storageKey == null) {
       return;
     }
+    _hiddenMessageIdsMemoryCache[storageKey] = Set<String>.unmodifiable(
+      _locallyHiddenMessageIds,
+    );
     try {
       final prefs = await SharedPreferences.getInstance();
       await prefs.setStringList(
@@ -2960,13 +2974,14 @@ class _ChatRoomPanelState extends ConsumerState<ChatRoomPanel> {
               ],
             ),
           ),
-          Positioned.fill(
-            child: _FileDropOverlay(
-              visible: _isFileDragActive || _isFileDropUploading,
-              uploading: _isFileDropUploading,
-              enabled: _canSendMessages,
+          if (_isFileDragActive || _isFileDropUploading)
+            Positioned.fill(
+              child: _FileDropOverlay(
+                visible: true,
+                uploading: _isFileDropUploading,
+                enabled: _canSendMessages,
+              ),
             ),
-          ),
           if (_sidePanelMode != null)
             Positioned.fill(
               child: _ChatSidePanelHost(
@@ -11404,6 +11419,8 @@ class _MessageComposer extends StatefulWidget {
 }
 
 class _MessageComposerState extends State<_MessageComposer> {
+  static final Map<String, List<String>> _recentStickerMemoryCache = {};
+
   final TextEditingController _controller = TextEditingController();
   final FocusNode _textFocusNode = FocusNode();
   Timer? _typingStopTimer;
@@ -11464,8 +11481,16 @@ class _MessageComposerState extends State<_MessageComposer> {
   }
 
   Future<void> _loadRecentStickerIds() async {
+    final storageKey = _recentStickerStorageKey;
+    final cached = _recentStickerMemoryCache[storageKey];
+    if (cached != null) {
+      _recentStickerIds
+        ..clear()
+        ..addAll(cached);
+      return;
+    }
     final prefs = await SharedPreferences.getInstance();
-    final saved = prefs.getStringList(_recentStickerStorageKey) ?? const [];
+    final saved = prefs.getStringList(storageKey) ?? const [];
     final normalized = saved
         .map(_normalizeStickerId)
         .whereType<String>()
@@ -11473,7 +11498,10 @@ class _MessageComposerState extends State<_MessageComposer> {
         .toSet()
         .take(16)
         .toList();
-    if (!mounted) {
+    _recentStickerMemoryCache[storageKey] = List<String>.unmodifiable(
+      normalized,
+    );
+    if (!mounted || storageKey != _recentStickerStorageKey) {
       return;
     }
     setState(() {
@@ -11484,8 +11512,11 @@ class _MessageComposerState extends State<_MessageComposer> {
   }
 
   Future<void> _saveRecentStickerIds() async {
+    final storageKey = _recentStickerStorageKey;
+    final snapshot = List<String>.unmodifiable(_recentStickerIds);
+    _recentStickerMemoryCache[storageKey] = snapshot;
     final prefs = await SharedPreferences.getInstance();
-    await prefs.setStringList(_recentStickerStorageKey, _recentStickerIds);
+    await prefs.setStringList(storageKey, snapshot);
   }
 
   String? _normalizeStickerId(String stickerId) {

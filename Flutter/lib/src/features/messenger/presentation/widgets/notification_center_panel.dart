@@ -28,6 +28,8 @@ class NotificationCenterPanel extends ConsumerStatefulWidget {
 
 class _NotificationCenterPanelState
     extends ConsumerState<NotificationCenterPanel> {
+  static const Duration _autoLoadRetryThrottle = Duration(seconds: 15);
+
   final GlobalKey _editButtonKey = GlobalKey();
   _NotificationFilter _filter = _NotificationFilter.all;
   _NotificationSortMode _sortMode = _NotificationSortMode.latest;
@@ -37,7 +39,7 @@ class _NotificationCenterPanelState
   void initState() {
     super.initState();
     final cache = ref.read(notificationCenterCacheProvider);
-    if (!cache.hasLoaded && !cache.loading) {
+    if (_shouldAutoLoad(cache)) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (!mounted) {
           return;
@@ -45,6 +47,17 @@ class _NotificationCenterPanelState
         unawaited(_load(silent: false));
       });
     }
+  }
+
+  bool _shouldAutoLoad(NotificationCenterCacheState cache) {
+    if (cache.hasLoaded || cache.loading) {
+      return false;
+    }
+    final lastAttemptAt = cache.lastLoadAttemptAt;
+    if (lastAttemptAt == null) {
+      return true;
+    }
+    return DateTime.now().difference(lastAttemptAt) >= _autoLoadRetryThrottle;
   }
 
   Future<void> _load({bool silent = false}) async {
@@ -63,13 +76,25 @@ class _NotificationCenterPanelState
         .read(notificationCenterCacheProvider.notifier)
         .beginLoading(silent: silent);
 
+    Object? loadError;
+    final api = ref.read(chatApiProvider);
     try {
-      final api = ref.read(chatApiProvider);
       final notifications = await api.mentionNotifications(
         accessToken: session.accessToken,
         status: 'all',
         limit: 120,
       );
+      if (!mounted) {
+        return;
+      }
+      ref
+          .read(notificationCenterCacheProvider.notifier)
+          .setNotifications(notifications);
+    } on Object catch (error) {
+      loadError ??= error;
+    }
+
+    try {
       final appNotifications = await ref
           .read(notificationApiProvider)
           .list(accessToken: session.accessToken);
@@ -78,18 +103,16 @@ class _NotificationCenterPanelState
       }
       ref
           .read(notificationCenterCacheProvider.notifier)
-          .setNotifications(notifications);
-      ref
-          .read(notificationCenterCacheProvider.notifier)
           .setAppNotifications(
             appNotifications.items,
             unreadCount: appNotifications.unreadCount,
           );
     } on Object catch (error) {
-      if (!mounted) {
-        return;
-      }
-      ref.read(notificationCenterCacheProvider.notifier).setError(error);
+      loadError ??= error;
+    }
+
+    if (loadError != null && mounted) {
+      ref.read(notificationCenterCacheProvider.notifier).setError(loadError);
     }
   }
 

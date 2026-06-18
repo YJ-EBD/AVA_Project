@@ -27,6 +27,7 @@ import com.ava.backend.chat.dto.ChatMessageResponse;
 import com.ava.backend.chat.dto.ChatRealtimeEvent;
 import com.ava.backend.chat.dto.ChatRoomResponse;
 import com.ava.backend.chat.entity.ChatRoomType;
+import com.ava.backend.chat.service.ChatRealtimePublisher;
 import com.ava.backend.chat.service.ChatService;
 import com.ava.backend.push.service.MobilePushService;
 import com.ava.backend.user.dto.UserProfileResponse;
@@ -39,14 +40,19 @@ class ChatWebSocketControllerTest {
 	private final TokenService tokenService = mock(TokenService.class);
 	private final LoginSessionService loginSessionService = mock(LoginSessionService.class);
 	private final MobilePushService mobilePushService = mock(MobilePushService.class);
+	private final ChatRealtimePublisher realtimePublisher = new ChatRealtimePublisher(
+		chatService,
+		messagingTemplate,
+		mobilePushService,
+		Runnable::run
+	);
 
 	private final ChatWebSocketController controller = new ChatWebSocketController(
 		chatService,
 		messagingTemplate,
 		tokenService,
 		loginSessionService,
-		mobilePushService,
-		Runnable::run
+		realtimePublisher
 	);
 
 	@Test
