@@ -5,6 +5,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.ApplicationRunner;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -43,14 +44,15 @@ public class DemoDataSeeder {
 		NamedParameterJdbcTemplate jdbcTemplate,
 		ChatMessageRepository mongoMessageRepository,
 		CompanyScopeService companyScopeService,
-		CompanyAllStaffChatService allStaffChatService
+		CompanyAllStaffChatService allStaffChatService,
+		@Value("${AVA_ADMIN_ACCOUNT_PASSWORD:Ava1234!}") String adminAccountPassword
 	) {
 		return args -> {
 			ensureUserAccountRoleConstraint(jdbcTemplate);
 			ensureAvaAiConversationScopeConstraint(jdbcTemplate);
 			removeDemoData(jdbcTemplate, mongoMessageRepository);
 			normalizeCompanies(profileRepository, companyScopeService);
-			ensurePrivilegedAccounts(accountRepository, profileRepository, passwordEncoder);
+			ensurePrivilegedAccounts(accountRepository, profileRepository, passwordEncoder, adminAccountPassword);
 			ensureAbbaDepartmentDemoUsers(accountRepository, profileRepository, passwordEncoder);
 			allStaffChatService.ensureKnownCompanyRoomsAndMemberships();
 		};
@@ -234,16 +236,21 @@ public class DemoDataSeeder {
 	private void ensurePrivilegedAccounts(
 		UserAccountRepository accountRepository,
 		UserProfileRepository profileRepository,
-		PasswordEncoder passwordEncoder
+		PasswordEncoder passwordEncoder,
+		String adminAccountPassword
 	) {
+		String resolvedAdminPassword =
+			adminAccountPassword == null || adminAccountPassword.isBlank()
+				? SYSTEM_ACCOUNT_PASSWORD
+				: adminAccountPassword;
 		UserAccount adminAccount = accountRepository.findByEmailIgnoreCase(ADMIN_EMAIL)
 			.orElseGet(() -> new UserAccount(
 				ADMIN_EMAIL,
-				passwordEncoder.encode(SYSTEM_ACCOUNT_PASSWORD),
+				passwordEncoder.encode(resolvedAdminPassword),
 				"박주한",
 				UserRole.ADMIN
 			));
-		adminAccount.setPasswordHash(passwordEncoder.encode(SYSTEM_ACCOUNT_PASSWORD));
+		adminAccount.setPasswordHash(passwordEncoder.encode(resolvedAdminPassword));
 		adminAccount.setDisplayName("박주한");
 		adminAccount.setRole(UserRole.ADMIN);
 		adminAccount.setEnabled(true);
