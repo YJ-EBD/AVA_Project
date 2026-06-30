@@ -43,6 +43,8 @@ function jsonFrameBody(payload) {
 class StompHub {
   constructor() {
     this.clients = new Set();
+    this.destinationSubscribers = new Map();
+    this.clientsByEmail = new Map();
     this.chatService = null;
   }
 
@@ -63,8 +65,19 @@ class StompHub {
     };
     this.clients.add(client);
     socket.on('message', (data) => this.handleMessage(client, data));
-    socket.on('close', () => this.clients.delete(client));
-    socket.on('error', () => this.clients.delete(client));
+    socket.on('close', () => this.removeClient(client));
+    socket.on('error', () => this.removeClient(client));
+  }
+
+  removeClient(client) {
+    if (!this.clients.has(client)) {
+      return;
+    }
+    for (const subscriptionId of Array.from(client.subscriptions.keys())) {
+      this.removeSubscription(client, subscriptionId);
+    }
+    this.unindexClientEmail(client);
+    this.clients.delete(client);
   }
 
   async handleMessage(client, data) {
@@ -116,7 +129,7 @@ class StompHub {
     if (authorization.startsWith('Bearer ')) {
       const claims = parseToken(authorization.slice(7));
       if (claims && claims.type === 'access' && await isCurrentSession(claims.userId, claims.sessionId)) {
-        client.principal = principalFromClaims(claims);
+        this.setPrincipal(client, principalFromClaims(claims));
       }
     }
     client.socket.send(frame('CONNECTED', {
@@ -131,14 +144,81 @@ class StompHub {
     if (!destination) {
       return;
     }
-    client.subscriptions.set(id, destination);
+    this.addSubscription(client, id, destination);
   }
 
   unsubscribe(client, headers) {
     const id = headers.id || headers.subscription;
     if (id) {
-      client.subscriptions.delete(id);
+      this.removeSubscription(client, id);
     }
+  }
+
+  addSubscription(client, id, destination) {
+    this.removeSubscription(client, id);
+    client.subscriptions.set(id, destination);
+    let clientsForDestination = this.destinationSubscribers.get(destination);
+    if (!clientsForDestination) {
+      clientsForDestination = new Map();
+      this.destinationSubscribers.set(destination, clientsForDestination);
+    }
+    let subscriptionIds = clientsForDestination.get(client);
+    if (!subscriptionIds) {
+      subscriptionIds = new Set();
+      clientsForDestination.set(client, subscriptionIds);
+    }
+    subscriptionIds.add(id);
+  }
+
+  removeSubscription(client, id) {
+    const destination = client.subscriptions.get(id);
+    if (!destination) {
+      return;
+    }
+    client.subscriptions.delete(id);
+    const clientsForDestination = this.destinationSubscribers.get(destination);
+    const subscriptionIds = clientsForDestination && clientsForDestination.get(client);
+    if (!subscriptionIds) {
+      return;
+    }
+    subscriptionIds.delete(id);
+    if (subscriptionIds.size === 0) {
+      clientsForDestination.delete(client);
+    }
+    if (clientsForDestination.size === 0) {
+      this.destinationSubscribers.delete(destination);
+    }
+  }
+
+  setPrincipal(client, principal) {
+    this.unindexClientEmail(client);
+    client.principal = principal;
+    const email = principal && principal.email ? String(principal.email).toLowerCase() : '';
+    if (!email) {
+      client.indexedEmail = null;
+      return;
+    }
+    let clientsForEmail = this.clientsByEmail.get(email);
+    if (!clientsForEmail) {
+      clientsForEmail = new Set();
+      this.clientsByEmail.set(email, clientsForEmail);
+    }
+    clientsForEmail.add(client);
+    client.indexedEmail = email;
+  }
+
+  unindexClientEmail(client) {
+    if (!client.indexedEmail) {
+      return;
+    }
+    const clientsForEmail = this.clientsByEmail.get(client.indexedEmail);
+    if (clientsForEmail) {
+      clientsForEmail.delete(client);
+      if (clientsForEmail.size === 0) {
+        this.clientsByEmail.delete(client.indexedEmail);
+      }
+    }
+    client.indexedEmail = null;
   }
 
   async send(client, headers, body) {
@@ -151,7 +231,7 @@ class StompHub {
       const claims = parseToken(authorization.slice(7));
       if (claims && claims.type === 'access' && await isCurrentSession(claims.userId, claims.sessionId)) {
         principal = principalFromClaims(claims);
-        client.principal = principal;
+        this.setPrincipal(client, principal);
       }
     }
     if (!principal) {
@@ -173,15 +253,20 @@ class StompHub {
 
   publish(destination, payload) {
     const body = jsonFrameBody(payload);
-    for (const client of this.clients) {
-      for (const [subscriptionId, subscribedDestination] of client.subscriptions.entries()) {
-        if (subscribedDestination === destination && client.socket.readyState === 1) {
-          client.socket.send(frame('MESSAGE', {
-            subscription: subscriptionId,
-            destination,
-            'content-type': 'application/json'
-          }, body));
-        }
+    const subscribers = this.destinationSubscribers.get(destination);
+    if (!subscribers) {
+      return;
+    }
+    for (const [client, subscriptionIds] of subscribers.entries()) {
+      if (client.socket.readyState !== 1) {
+        continue;
+      }
+      for (const subscriptionId of subscriptionIds) {
+        client.socket.send(frame('MESSAGE', {
+          subscription: subscriptionId,
+          destination,
+          'content-type': 'application/json'
+        }, body));
       }
     }
   }
@@ -196,17 +281,24 @@ class StompHub {
       destinationSuffix
     ]);
     const body = jsonFrameBody(payload);
-    for (const client of this.clients) {
-      if (!client.principal || String(client.principal.email).toLowerCase() !== normalizedEmail) {
+    const clients = this.clientsByEmail.get(normalizedEmail);
+    if (!clients) {
+      return;
+    }
+    for (const client of clients) {
+      if (client.socket.readyState !== 1) {
         continue;
       }
-      for (const [subscriptionId, subscribedDestination] of client.subscriptions.entries()) {
-        if (candidates.has(subscribedDestination) && client.socket.readyState === 1) {
-          client.socket.send(frame('MESSAGE', {
-            subscription: subscriptionId,
-            destination: subscribedDestination,
-            'content-type': 'application/json'
-          }, body));
+      for (const subscribedDestination of candidates) {
+        const subscriptionIds = this.destinationSubscribers.get(subscribedDestination)?.get(client);
+        if (subscriptionIds) {
+          for (const subscriptionId of subscriptionIds) {
+            client.socket.send(frame('MESSAGE', {
+              subscription: subscriptionId,
+              destination: subscribedDestination,
+              'content-type': 'application/json'
+            }, body));
+          }
         }
       }
     }

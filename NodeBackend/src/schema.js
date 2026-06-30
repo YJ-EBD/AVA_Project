@@ -411,9 +411,13 @@ async function ensureCoreSchema() {
     CREATE INDEX IF NOT EXISTS idx_sessions_account_active ON sessions(account_id, expires_at, invalidated_at);
     CREATE INDEX IF NOT EXISTS idx_auth_email_verification_email_created ON auth_email_verification_codes(email, created_at);
     CREATE INDEX IF NOT EXISTS idx_chat_message_records_room_sent_at ON chat_message_records(room_code, sent_at);
+    CREATE INDEX IF NOT EXISTS idx_chat_message_records_room_sender_sent ON chat_message_records(room_code, sender_id, sent_at);
+    CREATE INDEX IF NOT EXISTS idx_chat_room_members_account_room ON chat_room_members(account_id, room_id);
+    CREATE INDEX IF NOT EXISTS idx_chat_room_members_room_joined ON chat_room_members(room_id, joined_at);
     CREATE INDEX IF NOT EXISTS idx_chat_read_receipts_room ON chat_message_read_receipts(room_code);
     CREATE INDEX IF NOT EXISTS idx_chat_read_receipts_account ON chat_message_read_receipts(account_id);
     CREATE INDEX IF NOT EXISTS idx_chat_mentions_account_checked_created ON chat_mention_notifications(mentioned_account_id, checked_at, created_at);
+    CREATE INDEX IF NOT EXISTS idx_chat_mentions_room_account_checked ON chat_mention_notifications(room_code, mentioned_account_id, checked_at);
     CREATE INDEX IF NOT EXISTS idx_notifications_account_created ON notifications(account_id, created_at);
     CREATE INDEX IF NOT EXISTS idx_notifications_account_read ON notifications(account_id, read_at);
     CREATE INDEX IF NOT EXISTS idx_calendar_events_start ON calendar_events(start_at, end_at);

@@ -65,6 +65,7 @@ class ChatRealtimeClient {
         reconnectDelay: const Duration(milliseconds: 700),
         connectionTimeout: const Duration(seconds: 4),
         onConnect: (_) {
+          _clearSubscriptions();
           _subscribe(
             '/topic/rooms/$roomCode',
             (json) => _addMessage(ChatMessageDto.fromJson(json)),
@@ -110,6 +111,14 @@ class ChatRealtimeClient {
     }
   }
 
+  void _clearSubscriptions() {
+    final subscriptions = List<StompUnsubscribe>.from(_unsubscribes);
+    _unsubscribes.clear();
+    for (final unsubscribe in subscriptions) {
+      unsubscribe();
+    }
+  }
+
   bool send(
     String content, {
     bool silent = false,
@@ -149,10 +158,7 @@ class ChatRealtimeClient {
   }
 
   void dispose() {
-    for (final unsubscribe in _unsubscribes) {
-      unsubscribe();
-    }
-    _unsubscribes.clear();
+    _clearSubscriptions();
     _client?.deactivate();
     _client = null;
     _messages.close();
@@ -201,6 +207,8 @@ class ChatInboxRealtimeClient {
         reconnectDelay: const Duration(milliseconds: 700),
         connectionTimeout: const Duration(seconds: 4),
         onConnect: (_) {
+          _unsubscribe?.call();
+          _unsubscribe = null;
           _unsubscribe = _client?.subscribe(
             destination: '/user/queue/chat-events',
             callback: (frame) {
@@ -272,12 +280,13 @@ class ChatTypingEventDto {
   });
 
   factory ChatTypingEventDto.fromJson(Map<String, dynamic> json) {
+    final sentAtValue = json['sentAt'] ?? json['at'];
     return ChatTypingEventDto(
       roomCode: json['roomCode'] as String? ?? '',
       userId: json['userId'] as String? ?? '',
       displayName: json['displayName'] as String? ?? '',
       typing: json['typing'] as bool? ?? false,
-      sentAt: DateTime.tryParse(json['sentAt'] as String? ?? ''),
+      sentAt: DateTime.tryParse(sentAtValue is String ? sentAtValue : ''),
     );
   }
 

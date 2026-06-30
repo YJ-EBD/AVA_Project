@@ -117,10 +117,19 @@ class ChatService {
       `,
       [principal.userId, companyName, principal.role]
     );
-    const responses = [];
-    for (const room of result.rows) {
-      responses.push(await this.roomResponse(room, principal, pinnedOrder));
-    }
+    const roomCodes = result.rows.map((room) => room.code);
+    const [membersByRoom, unreadCounts, mentionedRooms] = await Promise.all([
+      this.membersByRoomCodes(roomCodes),
+      this.unreadRoomCounts(roomCodes, principal.userId),
+      this.unreadMentionedRooms(roomCodes, principal.userId)
+    ]);
+    const responses = result.rows.map((room) => this.buildRoomResponse(
+      room,
+      membersByRoom.get(room.code) || [],
+      pinnedOrder,
+      unreadCounts.get(room.code) || 0,
+      mentionedRooms.has(room.code)
+    ));
     return responses.sort((left, right) => {
       if (left.pinned !== right.pinned) {
         return left.pinned ? -1 : 1;
@@ -129,6 +138,28 @@ class ChatService {
       const rightTime = new Date(right.pinnedAt || right.lastMessageAt || 0).getTime();
       return rightTime - leftTime;
     });
+  }
+
+  buildRoomResponse(room, members, pinnedOrder, unreadCount, mentioned) {
+    const order = pinnedOrder || new Map();
+    const pinned = order.has(room.code) || Boolean(room.pinned_default);
+    const pinnedAt = order.get(room.code) || room.pinned_at || null;
+    return {
+      code: room.code,
+      title: room.title,
+      type: room.type,
+      participantCount: members.length,
+      pinned,
+      pinnedAt: pinned ? pinnedAt : null,
+      lastMessage: room.last_message || '',
+      lastMessageAt: room.last_message_at,
+      lastMessageSpoiler: Boolean(room.last_message_spoiler),
+      avatarImageUrl: room.avatar_image_url || null,
+      notice: noticeResponse(room),
+      members,
+      unreadCount: Number(unreadCount || 0),
+      mentioned: Boolean(mentioned)
+    };
   }
 
   async pinnedRoomOrder(accountId) {
@@ -141,6 +172,27 @@ class ChatService {
     const order = new Map();
     ids.forEach((id, index) => order.set(id, new Date(now - index).toISOString()));
     return order;
+  }
+
+  async pinnedRoomOrders(accountIds) {
+    const uniqueIds = Array.from(new Set((accountIds || []).filter(Boolean)));
+    const orders = new Map(uniqueIds.map((id) => [id, new Map()]));
+    if (uniqueIds.length === 0) {
+      return orders;
+    }
+    const result = await query(
+      'SELECT account_id, pinned_room_ids_json FROM user_chat_folder_settings WHERE account_id = ANY($1::uuid[])',
+      [uniqueIds]
+    );
+    const now = Date.now();
+    for (const row of result.rows) {
+      const order = new Map();
+      parseJsonList(row.pinned_room_ids_json).forEach((id, index) => {
+        order.set(id, new Date(now - index).toISOString());
+      });
+      orders.set(row.account_id, order);
+    }
+    return orders;
   }
 
   async members(roomCode) {
@@ -162,6 +214,38 @@ class ChatService {
       [roomCode]
     );
     return result.rows.map((row) => toProfileResponse(row));
+  }
+
+  async membersByRoomCodes(roomCodes) {
+    const uniqueCodes = Array.from(new Set((roomCodes || []).filter(Boolean)));
+    const grouped = new Map(uniqueCodes.map((code) => [code, []]));
+    if (uniqueCodes.length === 0) {
+      return grouped;
+    }
+    const result = await query(
+      `
+        SELECT
+          r.code AS room_code,
+          a.id, a.email, a.display_name, a.role,
+          p.department, p.company_name, p.position, p.nickname, p.phone_number,
+          p.contact_email, p.gender, p.birth_date, p.status, p.presence_updated_at,
+          p.avatar_color, p.status_message, p.avatar_image_url,
+          p.profile_background_color, p.profile_background_image_url
+        FROM chat_room_members m
+        JOIN chat_rooms r ON r.id = m.room_id
+        JOIN user_accounts a ON a.id = m.account_id
+        LEFT JOIN user_profiles p ON p.account_id = a.id
+        WHERE r.code = ANY($1::text[])
+        ORDER BY r.code ASC, m.joined_at ASC
+      `,
+      [uniqueCodes]
+    );
+    for (const row of result.rows) {
+      const members = grouped.get(row.room_code) || [];
+      members.push(toProfileResponse(row));
+      grouped.set(row.room_code, members);
+    }
+    return grouped;
   }
 
   async findRoom(roomCode) {
@@ -187,29 +271,16 @@ class ChatService {
     });
   }
 
-  async roomResponse(room, principal, pinnedOrder = null) {
-    const members = await this.members(room.code);
-    const order = pinnedOrder || await this.pinnedRoomOrder(principal.userId);
-    const unreadCount = await this.unreadRoomCount(room.code, principal.userId);
-    const mentioned = await this.unreadMentioned(room.code, principal.userId);
-    const pinned = order.has(room.code) || Boolean(room.pinned_default);
-    const pinnedAt = order.get(room.code) || room.pinned_at || null;
-    return {
-      code: room.code,
-      title: room.title,
-      type: room.type,
-      participantCount: members.length,
-      pinned,
-      pinnedAt: pinned ? pinnedAt : null,
-      lastMessage: room.last_message || '',
-      lastMessageAt: room.last_message_at,
-      lastMessageSpoiler: Boolean(room.last_message_spoiler),
-      avatarImageUrl: room.avatar_image_url || null,
-      notice: noticeResponse(room),
-      members,
-      unreadCount,
-      mentioned
-    };
+  async roomResponse(room, principal, pinnedOrder = null, precomputed = {}) {
+    const members = precomputed.members || await this.members(room.code);
+    const order = pinnedOrder || precomputed.pinnedOrder || await this.pinnedRoomOrder(principal.userId);
+    const unreadCount = precomputed.unreadCount != null
+      ? precomputed.unreadCount
+      : await this.unreadRoomCount(room.code, principal.userId);
+    const mentioned = precomputed.mentioned != null
+      ? precomputed.mentioned
+      : await this.unreadMentioned(room.code, principal.userId);
+    return this.buildRoomResponse(room, members, order, unreadCount, mentioned);
   }
 
   async unreadRoomCount(roomCode, accountId) {
@@ -232,6 +303,60 @@ class ChatService {
     return result.rows[0] ? Number(result.rows[0].count) : 0;
   }
 
+  async unreadRoomCounts(roomCodes, accountId) {
+    const uniqueCodes = Array.from(new Set((roomCodes || []).filter(Boolean)));
+    const counts = new Map(uniqueCodes.map((code) => [code, 0]));
+    if (uniqueCodes.length === 0) {
+      return counts;
+    }
+    const result = await query(
+      `
+        SELECT msg.room_code, COUNT(*)::int AS count
+        FROM chat_message_records msg
+        JOIN chat_rooms r ON r.code = msg.room_code
+        LEFT JOIN chat_room_members m ON m.room_id = r.id AND m.account_id = $2
+        LEFT JOIN chat_message_read_receipts rr ON rr.message_id = msg.id AND rr.account_id = $2
+        WHERE msg.room_code = ANY($1::text[])
+          AND msg.sender_id <> $2
+          AND (m.joined_at IS NULL OR msg.sent_at >= m.joined_at)
+          AND rr.message_id IS NULL
+        GROUP BY msg.room_code
+      `,
+      [uniqueCodes, accountId]
+    );
+    for (const row of result.rows) {
+      counts.set(row.room_code, Number(row.count || 0));
+    }
+    return counts;
+  }
+
+  async unreadRoomCountsForAccounts(roomCode, accountIds) {
+    const uniqueIds = Array.from(new Set((accountIds || []).filter(Boolean)));
+    const counts = new Map(uniqueIds.map((id) => [id, 0]));
+    if (uniqueIds.length === 0) {
+      return counts;
+    }
+    const result = await query(
+      `
+        SELECT m.account_id, COUNT(msg.id) FILTER (WHERE rr.message_id IS NULL)::int AS count
+        FROM chat_room_members m
+        JOIN chat_rooms r ON r.id = m.room_id
+        LEFT JOIN chat_message_records msg
+          ON msg.room_code = r.code
+         AND msg.sender_id <> m.account_id
+         AND msg.sent_at >= m.joined_at
+        LEFT JOIN chat_message_read_receipts rr ON rr.message_id = msg.id AND rr.account_id = m.account_id
+        WHERE r.code = $1 AND m.account_id = ANY($2::uuid[])
+        GROUP BY m.account_id
+      `,
+      [roomCode, uniqueIds]
+    );
+    for (const row of result.rows) {
+      counts.set(row.account_id, Number(row.count || 0));
+    }
+    return counts;
+  }
+
   async unreadMentioned(roomCode, accountId) {
     const result = await query(
       `
@@ -242,6 +367,65 @@ class ChatService {
       [roomCode, accountId]
     );
     return result.rows[0] && Number(result.rows[0].count) > 0;
+  }
+
+  async unreadMentionedRooms(roomCodes, accountId) {
+    const uniqueCodes = Array.from(new Set((roomCodes || []).filter(Boolean)));
+    if (uniqueCodes.length === 0) {
+      return new Set();
+    }
+    const result = await query(
+      `
+        SELECT room_code
+        FROM chat_mention_notifications
+        WHERE room_code = ANY($1::text[])
+          AND mentioned_account_id = $2
+          AND checked_at IS NULL
+        GROUP BY room_code
+      `,
+      [uniqueCodes, accountId]
+    );
+    return new Set(result.rows.map((row) => row.room_code));
+  }
+
+  async unreadMentionedAccounts(roomCode, accountIds) {
+    const uniqueIds = Array.from(new Set((accountIds || []).filter(Boolean)));
+    if (uniqueIds.length === 0) {
+      return new Set();
+    }
+    const result = await query(
+      `
+        SELECT mentioned_account_id
+        FROM chat_mention_notifications
+        WHERE room_code = $1
+          AND mentioned_account_id = ANY($2::uuid[])
+          AND checked_at IS NULL
+        GROUP BY mentioned_account_id
+      `,
+      [roomCode, uniqueIds]
+    );
+    return new Set(result.rows.map((row) => row.mentioned_account_id));
+  }
+
+  async roomResponsesForMembers(room, members = null) {
+    const roomMembers = members || await this.members(room.code);
+    const accountIds = roomMembers.map((member) => member.id);
+    const [pinnedOrders, unreadCounts, mentionedAccounts] = await Promise.all([
+      this.pinnedRoomOrders(accountIds),
+      this.unreadRoomCountsForAccounts(room.code, accountIds),
+      this.unreadMentionedAccounts(room.code, accountIds)
+    ]);
+    const responses = new Map();
+    for (const member of roomMembers) {
+      responses.set(member.id, this.buildRoomResponse(
+        room,
+        roomMembers,
+        pinnedOrders.get(member.id) || new Map(),
+        unreadCounts.get(member.id) || 0,
+        mentionedAccounts.has(member.id)
+      ));
+    }
+    return responses;
   }
 
   async assertMember(roomCode, principal) {
@@ -438,7 +622,7 @@ class ChatService {
       [roomCode, limitCount, membership && membership.joined_at ? membership.joined_at : null]
     );
     const rows = result.rows.reverse();
-    return Promise.all(rows.map(async (row) => messageResponse(row, await this.messageUnreadCount(row.id, roomCode))));
+    return this.messagesWithUnread(rows, roomCode);
   }
 
   async messagesBefore(roomCode, messageId, principal, limitValue = 80) {
@@ -461,7 +645,7 @@ class ChatService {
       [roomCode, boundary.rows[0].sent_at, limitCount]
     );
     const rows = result.rows.reverse();
-    return Promise.all(rows.map(async (row) => messageResponse(row, await this.messageUnreadCount(row.id, roomCode))));
+    return this.messagesWithUnread(rows, roomCode);
   }
 
   async messagesAround(roomCode, messageId, principal, before = 40, after = 40) {
@@ -501,7 +685,7 @@ class ChatService {
       `,
       [roomCode, target.rows[0].sent_at, beforeCount, afterCount, messageId]
     );
-    return Promise.all(result.rows.map(async (row) => messageResponse(row, await this.messageUnreadCount(row.id, roomCode))));
+    return this.messagesWithUnread(result.rows, roomCode);
   }
 
   async messageUnreadCount(messageId, roomCode) {
@@ -518,6 +702,36 @@ class ChatService {
       [messageId, roomCode]
     );
     return result.rows[0] ? Number(result.rows[0].count) : 0;
+  }
+
+  async messageUnreadCounts(messageIds, roomCode) {
+    const uniqueIds = Array.from(new Set((messageIds || []).filter(Boolean).map(String)));
+    const counts = new Map(uniqueIds.map((id) => [id, 0]));
+    if (uniqueIds.length === 0) {
+      return counts;
+    }
+    const result = await query(
+      `
+        SELECT msg.id::text AS id, GREATEST(COUNT(m.account_id) - COUNT(rr.account_id), 0)::int AS count
+        FROM chat_message_records msg
+        JOIN chat_rooms r ON r.code = msg.room_code
+        JOIN chat_room_members m ON m.room_id = r.id AND m.joined_at <= msg.sent_at
+        LEFT JOIN chat_message_read_receipts rr ON rr.message_id = msg.id AND rr.account_id = m.account_id
+        WHERE msg.room_code = $1
+          AND msg.id = ANY($2::uuid[])
+        GROUP BY msg.id
+      `,
+      [roomCode, uniqueIds]
+    );
+    for (const row of result.rows) {
+      counts.set(row.id, Number(row.count || 0));
+    }
+    return counts;
+  }
+
+  async messagesWithUnread(rows, roomCode) {
+    const counts = await this.messageUnreadCounts(rows.map((row) => row.id), roomCode);
+    return rows.map((row) => messageResponse(row, counts.get(String(row.id)) || 0));
   }
 
   async resolveMentions(roomCode, requestMentions, content) {
@@ -666,13 +880,19 @@ class ChatService {
 
   async publishMessage(roomCode, message, notifyMobile) {
     this.realtimeHub.publish(`/topic/rooms/${roomCode}`, message);
-    const room = await this.findRoom(roomCode);
+    const [room, members] = await Promise.all([
+      this.findRoom(roomCode),
+      this.members(roomCode)
+    ]);
     if (!room) {
       return;
     }
-    const members = await this.members(roomCode);
-    await Promise.all(members.map(async (member) => {
-      const recipientRoom = await this.roomForMember(roomCode, member.id);
+    const roomsByMember = await this.roomResponsesForMembers(room, members);
+    for (const member of members) {
+      const recipientRoom = roomsByMember.get(member.id);
+      if (!recipientRoom) {
+        continue;
+      }
       const event = { type: 'message', room: recipientRoom, message };
       this.realtimeHub.sendToUser(member.email, '/queue/chat-events', event);
       if (notifyMobile && member.id !== message.senderId && !message.silent) {
@@ -680,12 +900,23 @@ class ChatService {
           console.error('[AVA] Failed to create mobile push event.', error);
         });
       }
-    }));
+    }
   }
 
   async publishRoomState(roomResponseValue) {
-    for (const member of roomResponseValue.members || []) {
-      const recipientRoom = await this.roomForMember(roomResponseValue.code, member.id);
+    const room = await this.findRoom(roomResponseValue.code);
+    if (!room) {
+      return;
+    }
+    const members = roomResponseValue.members && roomResponseValue.members.length > 0
+      ? roomResponseValue.members
+      : await this.members(roomResponseValue.code);
+    const roomsByMember = await this.roomResponsesForMembers(room, members);
+    for (const member of members) {
+      const recipientRoom = roomsByMember.get(member.id);
+      if (!recipientRoom) {
+        continue;
+      }
       this.realtimeHub.sendToUser(member.email, '/queue/chat-events', {
         type: 'room',
         room: recipientRoom,
@@ -765,27 +996,35 @@ class ChatService {
   }
 
   async markRead(roomCode, principal) {
-    await this.assertMember(roomCode, principal);
+    const membership = await this.assertMember(roomCode, principal);
     const unread = await query(
       `
         SELECT msg.id, msg.room_code
         FROM chat_message_records msg
         WHERE msg.room_code = $1
+          AND ($3::timestamptz IS NULL OR msg.sent_at >= $3::timestamptz)
           AND NOT EXISTS (
             SELECT 1 FROM chat_message_read_receipts rr
             WHERE rr.message_id = msg.id AND rr.account_id = $2
           )
       `,
-      [roomCode, principal.userId]
+      [roomCode, principal.userId, membership && membership.joined_at ? membership.joined_at : null]
     );
-    for (const row of unread.rows) {
+    for (let start = 0; start < unread.rows.length; start += 500) {
+      const chunk = unread.rows.slice(start, start + 500);
+      const values = [];
+      const placeholders = chunk.map((row, index) => {
+        const offset = index * 4;
+        values.push(randomUUID(), row.id, row.room_code, principal.userId);
+        return `($${offset + 1}, $${offset + 2}, $${offset + 3}, $${offset + 4}, now())`;
+      });
       await query(
         `
           INSERT INTO chat_message_read_receipts (id, message_id, room_code, account_id, read_at)
-          VALUES ($1, $2, $3, $4, now())
+          VALUES ${placeholders.join(', ')}
           ON CONFLICT (message_id, account_id) DO NOTHING
         `,
-        [randomUUID(), row.id, row.room_code, principal.userId]
+        values
       );
     }
     const result = await query(
@@ -798,13 +1037,12 @@ class ChatService {
       `,
       [roomCode]
     );
-    const messages = [];
-    for (const row of result.rows.reverse()) {
-      messages.push({
-        messageId: String(row.id),
-        unreadCount: await this.messageUnreadCount(row.id, roomCode)
-      });
-    }
+    const rows = result.rows.reverse();
+    const counts = await this.messageUnreadCounts(rows.map((row) => row.id), roomCode);
+    const messages = rows.map((row) => ({
+      messageId: String(row.id),
+      unreadCount: counts.get(String(row.id)) || 0
+    }));
     const response = { roomCode, messages };
     this.realtimeHub.publish(`/topic/rooms/${roomCode}/read-state`, response);
     await this.publishRoomState(await this.roomForMember(roomCode, principal.userId));
@@ -907,14 +1145,15 @@ class ChatService {
       `,
       [principal.userId, limitCount]
     );
-    const responses = [];
-    for (const row of result.rows) {
-      responses.push({
+    const membersByRoom = await this.membersByRoomCodes(result.rows.map((row) => row.room_code));
+    return result.rows.map((row) => {
+      const roomMembers = membersByRoom.get(row.room_code) || [];
+      return {
         id: row.id,
         roomCode: row.room_code,
         roomTitle: row.room_title,
-        participantCount: (await this.members(row.room_code)).length,
-        members: await this.members(row.room_code),
+        participantCount: roomMembers.length,
+        members: roomMembers,
         messageId: row.message_id,
         senderId: row.sender_id,
         senderName: row.sender_name,
@@ -926,9 +1165,8 @@ class ChatService {
         sentAt: row.sent_at,
         checkedAt: row.checked_at,
         checked: Boolean(row.checked_at)
-      });
-    }
-    return responses;
+      };
+    });
   }
 
   async markMentionNotificationChecked(notificationId, principal) {
