@@ -5,6 +5,7 @@ const { query } = require('../db');
 const { asyncHandler, badRequest } = require('../errors');
 const { authenticateBearer, authRequired, login, refresh, logout, verifyPassword, findAccount } = require('../services/authService');
 const { accountByEmail, accountWithProfile, toProfileResponse } = require('../services/profileService');
+const { sendSignupVerificationEmail } = require('../services/mailService');
 
 function maskEmail(email) {
   const [name, domain] = String(email || '').split('@');
@@ -28,17 +29,33 @@ function createAuthRouter(realtimeHub) {
       throw badRequest('Email is required.');
     }
     const code = String(randomInt(100000, 999999));
-    await query(
+    const expiresInSeconds = 300;
+    const inserted = await query(
       `
         INSERT INTO auth_email_verification_codes (
           id, email, code_hash, created_at, expires_at, attempts
         )
-        VALUES ($1, $2, $3, now(), now() + interval '5 minutes', 0)
+        VALUES ($1, $2, $3, now(), now() + ($4::int * interval '1 second'), 0)
+        RETURNING id
       `,
-      [randomUUID(), email, codeHash(email, code)]
+      [randomUUID(), email, codeHash(email, code), expiresInSeconds]
     );
-    console.log(`[AVA] Email verification code for ${email}: ${code}`);
-    res.json({ email, expiresInSeconds: 300 });
+    const verificationId = inserted.rows[0].id;
+    try {
+      await sendSignupVerificationEmail({
+        email,
+        code,
+        expiresInSeconds
+      });
+    } catch (error) {
+      await query(
+        'DELETE FROM auth_email_verification_codes WHERE id = $1',
+        [verificationId]
+      ).catch(() => {});
+      console.error(`[AVA] Failed to send email verification code to ${maskEmail(email)}:`, error.message);
+      throw error;
+    }
+    res.json({ email, expiresInSeconds });
   }));
 
   router.post('/email-verifications/confirm', asyncHandler(async (req, res) => {

@@ -9,6 +9,7 @@
     "dev": "node --watch src/server.js",
     "test:chat": "node scripts/chat_smoke_test.js",
     "test:chat:duplicates": "node scripts/chat_duplicate_delivery_test.js",
+    "test:email-verification": "node scripts/email_verification_mail_test.js",
     "test:push:read-backlog": "node scripts/push_read_backlog_test.js",
     "test:auth": "node scripts/auth_session_regression_test.js"
   },
@@ -19,6 +20,7 @@
     "express": "^4.21.2",
     "mime-types": "^2.1.35",
     "multer": "^2.0.2",
+    "nodemailer": "^6.9.16",
     "pg": "^8.13.1",
     "uuid": "^11.0.5",
     "ws": "^8.18.0"

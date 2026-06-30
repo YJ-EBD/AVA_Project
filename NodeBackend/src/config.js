@@ -32,6 +32,10 @@ function intEnv(name, fallback) {
   return Number.isFinite(value) ? value : fallback;
 }
 
+function mailEnv(name, fallback = '') {
+  return env(`AVA_${name}`, env(`NAVER_${name}`, fallback));
+}
+
 function postgresConnection() {
   const rawUrl = env('AVA_POSTGRES_URL', 'jdbc:postgresql://localhost:5432/ava');
   const connectionString = rawUrl.startsWith('jdbc:') ? rawUrl.slice(5) : rawUrl;
@@ -67,6 +71,26 @@ module.exports = {
   refreshTokenDays: intEnv('AVA_REFRESH_TOKEN_DAYS', 30),
   sessionHours: intEnv('AVA_SESSION_HOURS', 12),
   sessionRememberDays: intEnv('AVA_SESSION_REMEMBER_DAYS', 30),
+  mail: {
+    brandName: env('MAIL_BRAND_NAME', 'ABBA-S'),
+    productName: env('MAIL_PRODUCT_NAME', 'AVA'),
+    smtp: {
+      host: mailEnv('SMTP_HOST'),
+      port: intEnv('AVA_SMTP_PORT', intEnv('NAVER_SMTP_PORT', 465)),
+      secure: boolEnv('AVA_SMTP_SSL_ENABLE', boolEnv('NAVER_SMTP_SSL_ENABLE', true)),
+      starttls: boolEnv('AVA_SMTP_STARTTLS_ENABLE', boolEnv('NAVER_SMTP_STARTTLS_ENABLE', false)),
+      auth: boolEnv('AVA_SMTP_AUTH', boolEnv('NAVER_SMTP_AUTH', true)),
+      user: mailEnv('SMTP_USER'),
+      password: mailEnv('SMTP_PASS', mailEnv('SMTP_PASSWORD')),
+      from: mailEnv('SMTP_FROM'),
+      connectionTimeoutMs: intEnv(
+        'AVA_SMTP_CONNECTION_TIMEOUT_MS',
+        intEnv('NAVER_SMTP_CONNECTION_TIMEOUT_MS', 10000)
+      ),
+      timeoutMs: intEnv('AVA_SMTP_TIMEOUT_MS', intEnv('NAVER_SMTP_TIMEOUT_MS', 10000)),
+      writeTimeoutMs: intEnv('AVA_SMTP_WRITE_TIMEOUT_MS', intEnv('NAVER_SMTP_WRITE_TIMEOUT_MS', 10000))
+    }
+  },
   postgres: postgresConnection(),
   updateDirectory: path.resolve(backendDir, env('AVA_APP_UPDATE_DIR', 'AppUpdates')),
   livekit: {
