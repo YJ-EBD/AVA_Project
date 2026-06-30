@@ -18,6 +18,7 @@ Thumbs.db
 *.local
 *.sha1
 *.sha256
+restart_logs/
 .env
 .env.*
 !.env.example
@@ -37,6 +38,9 @@ Flutter/**/*.iml
 Flutter/.flutter-plugins-dependencies
 Flutter/**/Generated.xcconfig
 Flutter/**/Flutter/ephemeral/
+Flutter/android/.gradle/
+Flutter/android/.kotlin/
+Flutter/windows/flutter/ephemeral/
 
 # Node backend
 NodeBackend/node_modules/

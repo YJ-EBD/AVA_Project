@@ -1,5 +1,4 @@
 const http = require('http');
-const path = require('path');
 const express = require('express');
 const cors = require('cors');
 const config = require('./config');
@@ -58,10 +57,6 @@ async function main() {
   app.use('/api/ai', createAiRouter(chatService));
   app.use('/api/ava-stock', avaStockRouter);
   app.get('/rtc/validate', (req, res) => res.json({ valid: true, runtime: 'node' }));
-
-  app.use('/stock', express.static(path.join(config.rootDir, 'AVA_stock')));
-  app.use('/ava-stock-web', express.static(path.join(config.rootDir, 'AVA_stock')));
-  app.use('/ava-stock-assets', express.static(path.join(config.rootDir, 'AVA_stock')));
 
   app.use(errorHandler);
 
