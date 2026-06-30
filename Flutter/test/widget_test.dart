@@ -889,6 +889,97 @@ void main() {
     },
   );
 
+  test('message cache replaces pending bubbles with confirmed messages', () {
+    final sender = PersonProfile(
+      id: 'current-user',
+      name: 'Current User',
+      color: const Color(0xFF4663CF),
+      email: 'current@ava.local',
+    );
+    final pendingAt = DateTime(2026, 6, 17, 12, 0, 0, 100);
+    final pending = ChatMessage(
+      id: 'pending-room-${pendingAt.microsecondsSinceEpoch}',
+      senderId: 'current-user',
+      sender: sender,
+      text: 'hello once',
+      time: '12:00',
+      isMine: true,
+      sentAt: pendingAt,
+    );
+    final confirmed = ChatMessage(
+      id: 'server-message',
+      senderId: 'current-user',
+      sender: sender,
+      text: 'hello once',
+      time: '12:00',
+      isMine: true,
+      sentAt: DateTime(2026, 6, 17, 12, 0, 0, 180),
+      unreadCount: 1,
+    );
+
+    final deduped = dedupeChatMessagesReplacingPending([pending, confirmed]);
+
+    expect(deduped, hasLength(1));
+    expect(deduped.single.id, 'server-message');
+    expect(deduped.single.unreadCount, 1);
+  });
+
+  test('message cache preserves distinct rapid duplicate sends', () {
+    final sender = PersonProfile(
+      id: 'current-user',
+      name: 'Current User',
+      color: const Color(0xFF4663CF),
+      email: 'current@ava.local',
+    );
+    final firstPendingAt = DateTime(2026, 6, 17, 12, 0, 0, 100);
+    final secondPendingAt = DateTime(2026, 6, 17, 12, 0, 0, 900);
+    final messages = [
+      ChatMessage(
+        id: 'pending-first',
+        senderId: 'current-user',
+        sender: sender,
+        text: 'same body',
+        time: '12:00',
+        isMine: true,
+        sentAt: firstPendingAt,
+      ),
+      ChatMessage(
+        id: 'pending-second',
+        senderId: 'current-user',
+        sender: sender,
+        text: 'same body',
+        time: '12:00',
+        isMine: true,
+        sentAt: secondPendingAt,
+      ),
+      ChatMessage(
+        id: 'server-first',
+        senderId: 'current-user',
+        sender: sender,
+        text: 'same body',
+        time: '12:00',
+        isMine: true,
+        sentAt: DateTime(2026, 6, 17, 12, 0, 0, 120),
+      ),
+      ChatMessage(
+        id: 'server-second',
+        senderId: 'current-user',
+        sender: sender,
+        text: 'same body',
+        time: '12:00',
+        isMine: true,
+        sentAt: DateTime(2026, 6, 17, 12, 0, 0, 880),
+      ),
+    ];
+
+    final deduped = dedupeChatMessagesReplacingPending(messages);
+
+    expect(deduped.map((message) => message.id), [
+      'server-first',
+      'server-second',
+    ]);
+  });
+
   testWidgets(
     'open chat syncs missing message when room activity updates first',
     (WidgetTester tester) async {

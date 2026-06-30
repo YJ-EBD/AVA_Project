@@ -276,25 +276,7 @@ class ChatMessageMemoryCache extends Notifier<Map<String, List<ChatMessage>>> {
     if (messages.isEmpty) {
       return const [];
     }
-    final byKey = <String, ChatMessage>{};
-    for (final message in messages) {
-      byKey[chatMessageCacheKey(message)] = message;
-    }
-    final nextMessages = byKey.values.toList()
-      ..sort((a, b) {
-        final aSentAt = a.sentAt;
-        final bSentAt = b.sentAt;
-        if (aSentAt != null && bSentAt != null) {
-          return aSentAt.compareTo(bSentAt);
-        }
-        if (aSentAt != null) {
-          return -1;
-        }
-        if (bSentAt != null) {
-          return 1;
-        }
-        return 0;
-      });
+    final nextMessages = dedupeChatMessagesReplacingPending(messages);
     if (nextMessages.length <= _maxMessagesPerRoom) {
       return nextMessages;
     }
@@ -559,6 +541,44 @@ String chatMessageCacheKey(ChatMessage message) {
     return message.id!;
   }
   return '${message.senderId ?? message.sender.name}-${message.sentAt?.toIso8601String() ?? message.time}-${message.text}';
+}
+
+List<ChatMessage> dedupeChatMessagesReplacingPending(
+  List<ChatMessage> messages,
+) {
+  if (messages.isEmpty) {
+    return const [];
+  }
+  final byKey = <String, ChatMessage>{};
+  for (final message in messages) {
+    byKey[chatMessageCacheKey(message)] = message;
+  }
+  final confirmedMessages = [
+    for (final message in byKey.values)
+      if (!_isPendingChatMessage(message)) message,
+  ];
+  for (final message in confirmedMessages) {
+    final pendingKey = matchingPendingChatMessageKeyForRemote(message, byKey);
+    if (pendingKey != null) {
+      byKey.remove(pendingKey);
+    }
+  }
+  final nextMessages = byKey.values.toList()
+    ..sort((a, b) {
+      final aSentAt = a.sentAt;
+      final bSentAt = b.sentAt;
+      if (aSentAt != null && bSentAt != null) {
+        return aSentAt.compareTo(bSentAt);
+      }
+      if (aSentAt != null) {
+        return -1;
+      }
+      if (bSentAt != null) {
+        return 1;
+      }
+      return 0;
+    });
+  return nextMessages;
 }
 
 String? matchingPendingChatMessageKeyForRemote(
@@ -1153,7 +1173,7 @@ class _ChatRoomPanelState extends ConsumerState<ChatRoomPanel> {
     for (final message in _messages) {
       byKey[_messageKey(message)] = message;
     }
-    for (final message in remoteMessages) {
+    for (final message in dedupeChatMessagesReplacingPending(remoteMessages)) {
       final pendingKey = _matchingPendingKeyForRemote(message, byKey);
       if (pendingKey != null) {
         byKey.remove(pendingKey);
