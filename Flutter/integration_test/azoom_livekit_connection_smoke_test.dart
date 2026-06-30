@@ -21,11 +21,12 @@ void main() {
   testWidgets('joins AZOOM LiveKit media through backend proxy', (
     tester,
   ) async {
-    if (!Platform.isAndroid) {
+    if (!Platform.isAndroid && !Platform.isWindows) {
       return;
     }
     await tester.pumpWidget(const MaterialApp(home: SizedBox.shrink()));
-    const apiBaseUrl = 'http://10.0.2.2:8080';
+    final loopbackHost = Platform.isAndroid ? '10.0.2.2' : '127.0.0.1';
+    final apiBaseUrl = 'http://$loopbackHost:8080';
     final dio = Dio(BaseOptions(baseUrl: apiBaseUrl));
     final login = await dio.post<Map<String, dynamic>>(
       '/api/auth/login',
@@ -60,7 +61,7 @@ void main() {
     try {
       await room
           .connect(
-            'ws://10.0.2.2:8080',
+            'ws://$loopbackHost:8080',
             liveKit['token'] as String,
             connectOptions: const lk.ConnectOptions(autoSubscribe: true),
           )
