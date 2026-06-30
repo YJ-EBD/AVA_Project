@@ -750,6 +750,7 @@ class MainActivity : FlutterActivity() {
         }
 
         val safeFileName = sanitizeApkFileName(fileName ?: apkFile.name)
+        val saveErrors = mutableListOf<String>()
         try {
             val visibleLocation = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
                 saveApkWithMediaStore(apkFile, safeFileName)
@@ -757,10 +758,18 @@ class MainActivity : FlutterActivity() {
                 saveApkInPublicDownloads(apkFile, safeFileName)
             }
             result.success(visibleLocation)
+            return
         } catch (exception: Exception) {
+            saveErrors += exception.message ?: exception.javaClass.simpleName
+        }
+
+        try {
+            result.success(saveApkInAppExternalDownloads(apkFile, safeFileName))
+        } catch (fallbackException: Exception) {
+            saveErrors += fallbackException.message ?: fallbackException.javaClass.simpleName
             result.error(
                 "DOWNLOAD_SAVE_FAILED",
-                exception.message ?: "Failed to save APK to Downloads.",
+                "APK download completed, but Android could not save the file. ${saveErrors.joinToString(" / ")}",
                 null
             )
         }
@@ -806,12 +815,39 @@ class MainActivity : FlutterActivity() {
         if (!directory.exists()) {
             directory.mkdirs()
         }
-        val target = File(directory, fileName)
+        val target = uniqueFile(directory, fileName)
         FileInputStream(apkFile).use { input ->
             FileOutputStream(target).use { output ->
                 input.copyTo(output)
             }
         }
+        MediaScannerConnection.scanFile(
+            applicationContext,
+            arrayOf(target.absolutePath),
+            arrayOf("application/vnd.android.package-archive"),
+            null
+        )
+        return target.absolutePath
+    }
+
+    private fun saveApkInAppExternalDownloads(apkFile: File, fileName: String): String {
+        val baseDirectory = getExternalFilesDir(Environment.DIRECTORY_DOWNLOADS) ?: cacheDir
+        val directory = File(baseDirectory, "AVA")
+        if (!directory.exists() && !directory.mkdirs()) {
+            throw IllegalStateException("Could not create app update download directory.")
+        }
+        val target = uniqueFile(directory, fileName)
+        FileInputStream(apkFile).use { input ->
+            FileOutputStream(target).use { output ->
+                input.copyTo(output)
+            }
+        }
+        MediaScannerConnection.scanFile(
+            applicationContext,
+            arrayOf(target.absolutePath),
+            arrayOf("application/vnd.android.package-archive"),
+            null
+        )
         return target.absolutePath
     }
 

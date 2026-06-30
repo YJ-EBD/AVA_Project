@@ -2,11 +2,11 @@ AVA update packages live here.
 
 Current Windows/Android release prepared in this workspace:
 
-- Version: `0.1.308+1308`
+- Version: `0.1.309+1309`
 - Windows update ZIP: `ava-windows-0.1.308.zip`
   - SHA256: `d9efde944f7257f253045325630269f52a96218a6bf7050b61f512006308b4fe`
   - Size: `47015175`
-- Android release APK: `ava-android-0.1.308.apk`
+- Android release APK: `ava-android-0.1.309.apk`
   - SHA256: `7fee07209b95069a16ce3e5684c32b2750b76cd844ddb98fc00b0290074c0df0`
   - Size: `144132600`
 - Backend update API verified against previous version `0.1.307`.
