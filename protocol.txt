@@ -1,32 +1,19 @@
-AVA run protocol
+AVA local protocol
 
-1. Docker must not be used for AVA development or verification.
-2. Do not add compose files or container runtime dependencies.
-3. Start required databases and services as local/native Windows services,
-   standalone binaries, or external endpoints.
-4. AZOOM SFU/media:
+1. Start dependencies:
+   postgresql-x64-16
 
-   cd D:\AVA_Project\SpringBoot
-   .\start_azoom_sfu.ps1
+2. Start AVA services:
+   cd D:\AVA_Project
+   .\ava_server_control.ps1 start
 
-   External access requires TCP 7880, TCP 7881, and UDP 50000-50100 forwarded
-   to the server PC.
+3. Backend:
+   cd D:\AVA_Project\NodeBackend
+   npm install
+   npm start
 
-5. Spring Boot:
-
-   cd D:\AVA_Project\SpringBoot
-   .\gradlew.bat test
-   .\start_backend_with_azoom_sfu.ps1
-
-6. Flutter Windows:
-
+4. Flutter:
    cd D:\AVA_Project\Flutter
-   .\run_windows.cmd
-
-7. Seeded system account:
-
-   admin@ava.admin / Ava1234! (SUPERUSER)
-
-8. Main backend URL:
-
-   http://112.166.136.198:8080
+   .\flutter_local.cmd pub get
+   .\flutter_local.cmd analyze
+   .\flutter_local.cmd test

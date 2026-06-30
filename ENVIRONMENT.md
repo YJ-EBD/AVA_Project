@@ -1,54 +1,43 @@
 # AVA Environment
 
-## Backend
+## NodeBackend
 
 ```text
 AVA_BACKEND_HOST=0.0.0.0
 AVA_BACKEND_PORT=8080
-AVA_RUNTIME_ENVIRONMENT=local
-AVA_PRODUCTION_FAIL_FAST=true
 AVA_ALLOWED_ORIGINS=*
 
 AVA_POSTGRES_URL=jdbc:postgresql://localhost:5432/ava
 AVA_POSTGRES_USER=ava
 AVA_POSTGRES_PASSWORD=ava_password
-AVA_FLYWAY_ENABLED=true
-AVA_FLYWAY_BASELINE_ON_MIGRATE=true
-
-AVA_MONGODB_URI=mongodb://ava:ava_password@localhost:27017/ava?authSource=admin
-AVA_REDIS_HOST=localhost
-AVA_REDIS_PORT=6379
 
 AVA_JWT_SECRET=replace-with-long-random-secret
 AVA_ACCESS_TOKEN_MINUTES=30
 AVA_REFRESH_TOKEN_DAYS=30
 AVA_SESSION_HOURS=12
 AVA_SESSION_REMEMBER_DAYS=30
-AVA_AUTH_RATE_LIMIT_PER_MINUTE=60
 
-AVA_LIVEKIT_URL=
-AVA_LIVEKIT_API_KEY=
-AVA_LIVEKIT_API_SECRET=
+AVA_LIVEKIT_URL=ws://112.166.136.198:8080
+AVA_LIVEKIT_API_KEY=ava-azoom
+AVA_LIVEKIT_API_SECRET=replace-with-livekit-secret
 AVA_LIVEKIT_TOKEN_MINUTES=120
-AVA_AZOOM_REQUIRE_LIVEKIT_IN_PRODUCTION=false
+
 AVA_NOTIVA_AI_BASE_URL=http://127.0.0.1:8091
 AVA_NOTIVA_AUDIO_DIR=NotivaAudio
 
 AVA_AI_LLM_BASE_URL=http://127.0.0.1:8088/v1
 AVA_AI_MODEL=ava-qwen3.5-27b-q4km
 AVA_AI_TIMEOUT_SECONDS=180
-AVA_AI_LOCAL_SERVER_AUTO_START=true
-AVA_AI_LOCAL_SERVER_SCRIPT_PATH=../LLM_Server/start_server.ps1
-AVA_AI_WEB_SEARCH_ENABLED=true
-AVA_AI_GOOGLE_SEARCH_API_KEY=
-AVA_AI_GOOGLE_SEARCH_ENGINE_ID=
 
 AVA_APP_UPDATE_DIR=AppUpdates
-AVA_APP_WINDOWS_LATEST_VERSION=0.1.176
-AVA_APP_WINDOWS_FILE_NAME=ava-windows-0.1.176.zip
-AVA_APP_ANDROID_LATEST_VERSION=0.1.176
-AVA_APP_ANDROID_FILE_NAME=ava-android-0.1.176.apk
-AVA_APP_ANDROID_REQUIRED=true
+AVA_APP_WINDOWS_LATEST_VERSION=0.1.306
+AVA_APP_WINDOWS_FILE_NAME=ava-windows-0.1.306.zip
+AVA_APP_ANDROID_LATEST_VERSION=0.1.306
+AVA_APP_ANDROID_FILE_NAME=ava-android-0.1.306.apk
+AVA_APP_MACOS_LATEST_VERSION=0.1.306
+AVA_APP_MACOS_FILE_NAME=AVA_Project_0.1.306_1306_macOS.dmg
+AVA_APP_IOS_LATEST_VERSION=0.1.307
+AVA_APP_IOS_FILE_NAME=ava-ios-0.1.307.ipa
 ```
 
 ## Flutter Build Defines
@@ -61,7 +50,7 @@ AVA_WS_URL=ws://112.166.136.198:8080/ws
 ## Security Notes
 
 - Production must override `AVA_JWT_SECRET`.
-- Production must set `AVA_RUNTIME_ENVIRONMENT=production`, restrict `AVA_ALLOWED_ORIGINS`, and use `spring.jpa.hibernate.ddl-auto=validate` or `none`.
-- Do not expose PostgreSQL, MongoDB, or Redis to the public internet.
+- Restrict `AVA_ALLOWED_ORIGINS` when browser clients are shipped.
+- Do not expose PostgreSQL to the public internet.
 - Keep LiveKit API secret out of git.
-- Keep app update packages under `SpringBoot/AppUpdates`.
+- Keep app update packages under `NodeBackend/AppUpdates`.

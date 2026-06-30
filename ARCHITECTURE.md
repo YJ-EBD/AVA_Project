@@ -5,8 +5,8 @@
 AVA is split into three runtime surfaces:
 
 - Flutter app: desktop and mobile client. It owns local UI state, session persistence, update UX, media controls, and WebSocket subscriptions.
-- Spring Boot API: REST API, JWT auth, WebSocket/STOMP broker, update manifest, admin, notifications, chat, AZOOM, and AI orchestration.
-- Supporting services: PostgreSQL, MongoDB, Redis, LiveKit-compatible AZOOM media, and optional local LLM server.
+- NodeBackend: Express REST API, JWT auth, STOMP/WebSocket broker, update manifests, admin, notifications, chat, calendar, AZOOM, AVA AI gateway, and AVA_stock API.
+- Supporting services: PostgreSQL, LiveKit-compatible AZOOM media, and optional local LLM/Whisper servers.
 
 Docker is intentionally not part of the AVA workflow.
 
@@ -17,54 +17,47 @@ Docker is intentionally not part of the AVA workflow.
 - `lib/src/config`: runtime API, WebSocket, and app version config.
 - `lib/src/features/auth`: login, signup, session store, auth controller, forced logout realtime client.
 - `lib/src/features/messenger`: normal messenger domain, state, chat room UI, friends/profile UI, side nav.
-- `lib/src/features/azoom`: AZOOM text, voice, LiveKit media, screen share source picker, Notiva AI panel, and meeting transcript viewer.
+- `lib/src/features/azoom`: voice, LiveKit media, screen share source picker, Notiva AI panel, and meeting transcript viewer.
 - `lib/src/features/ai`: AVA AI page and API client.
 - `lib/src/features/admin`: admin REST client and admin panel embedded for ADMIN users.
-- `lib/src/features/update`: Windows/macOS update checker and installer launcher.
-- `lib/src/platform`: native window and popup bridge.
+- `lib/src/features/update`: platform update checker and installer launcher.
 
-State management uses Riverpod providers and notifiers. REST calls use Dio. Realtime uses STOMP over `/ws`.
+REST calls use Dio. Realtime uses STOMP over `/ws`.
 
 ## Backend Structure
 
-- `auth`: signup/login/refresh/logout, JWT, persisted sessions, duplicate login.
-- `user`: accounts, profiles, presence, company employee management.
-- `chat`: normal messenger rooms, messages, attachments, read receipts, WebSocket events.
-- `azoom`: persisted AZOOM workspace/channels/members, separate text channels, voice state, LiveKit token flow, Notiva AI transcript storage/API, and Whisper transcription bridge.
-- `ai`: AVA AI conversations, messages, knowledge memory, LLM client, web search.
-- `admin`: operational overview and user management API.
-- `notification`: persisted notifications plus user queue events.
-- `ops`: app settings, audit logs, and sanitized request system logs.
-- `update`: update manifests and update package downloads.
-- `config`: security, CORS, rate limiting, WebSocket config, demo data, compatibility SQL.
-- `common`: standardized API error response.
+- `NodeBackend/src/routes/auth.js`: signup/login/refresh/logout and email verification.
+- `NodeBackend/src/routes/users.js`: accounts, profiles, presence, company employee management.
+- `NodeBackend/src/routes/chat.js`: normal messenger rooms, messages, attachments, read receipts, and realtime events.
+- `NodeBackend/src/routes/azoom.js`: voice channels, LiveKit tokens, effects, Notiva sessions, and transcript events.
+- `NodeBackend/src/routes/ai.js`: AVA AI messages, workspace files, calendar snapshot, and Notion-safe responses.
+- `NodeBackend/src/routes/calendar.js`: event/category CRUD, attendees, reminders, linked files, Notion, chat, and AZOOM links.
+- `NodeBackend/src/routes/admin.js`: operational overview and user/settings/log APIs.
+- `NodeBackend/src/routes/appUpdates.js`: update manifests and package downloads.
+- `NodeBackend/src/realtime/stompHub.js`: STOMP broker for `/topic/**` and `/user/queue/**`.
 
 ## Auth And Authorization
 
-- Passwords are stored with BCrypt.
+- Passwords are stored with BCrypt-compatible hashes.
 - Access and refresh tokens are HMAC JWTs.
-- Session id is embedded in tokens and validated against Redis, database session rows, or in-memory fallback.
-- `ADMIN` and `USER` are the current application roles.
-- Admin APIs use Spring method security with `hasRole('ADMIN')`.
+- Session id is embedded in tokens and validated against persisted session rows.
+- Admin APIs accept `ADMIN` and `SUPERUSER`.
 
 ## Messaging
 
-Normal messenger chat uses `/api/chat/**` and `/topic/rooms/**`.
+Normal messenger chat uses `/api/chat/**`, `/topic/rooms/{roomCode}`, and per-user `/queue/chat-events`.
 
-AZOOM text chat uses `/api/azoom/**` and `/topic/azoom/**`. It is intentionally isolated from normal chat storage and topics. AZOOM workspaces, channels, and members are persisted in PostgreSQL; transient voice participant state is refreshed by heartbeat and LiveKit media state.
+Message send persists the record, marks the sender as read, computes unread counts, publishes the room topic, publishes per-user room snapshots, and creates mobile push backlog events asynchronously so the sender does not wait on push persistence.
 
-Notiva AI is triggered from the AZOOM voice-room speech-bubble control. Spring Boot stores transcript headers and ordered utterances in PostgreSQL, publishes live transcript updates on `/topic/azoom/notiva/{roomName}`, and sends uploaded audio files to the local Whisper large-v3 service under `LLM_Server` for real-time chunk or batch audio transcription.
+AZOOM does not own text chat. AZOOM uses `/api/azoom/**`, `/topic/azoom/voice/{roomName}`, `/topic/azoom/voice-effects/{roomName}`, and `/topic/azoom/notiva/{roomName}` for voice state and meeting transcript events.
 
 ## AI
 
-AVA AI persists both user and assistant messages. The LLM call is isolated in `AvaAiLlmClient`, so OpenAI, local LLM, Whisper, STT, and TTS can be added behind the service boundary without changing the controller.
+AVA AI stores user/assistant message history in PostgreSQL and exposes workspace file operations under `NodeBackend/AiWorkspace`. LLM, Whisper, STT, and TTS can be connected behind this gateway without changing the Flutter client contract.
 
 ## Operations
 
-- Auth POST endpoints are rate limited per client and path.
-- API errors return a stable shape with `timestamp`, `status`, `code`, `message`, `path`, and `details`.
+- API errors return `timestamp`, `status`, `code`, `message`, `path`, and `details`.
 - Admin changes write audit logs.
-- User-facing admin changes create notifications.
-- `/api/readiness` reports production-readiness blockers when `AVA_RUNTIME_ENVIRONMENT=production`.
-- Production startup can fail fast if default secrets, wildcard CORS, unsafe database DDL, or missing update packages are detected.
-- Sanitized request logs are persisted to `system_logs` and exposed to ADMIN users.
+- Notifications and mobile push backlog events are delivered through user queues.
+- `ava_server_control.ps1` starts/stops NodeBackend, native LiveKit, Notiva AI, and the local LLM service.

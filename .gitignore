@@ -38,30 +38,21 @@ Flutter/.flutter-plugins-dependencies
 Flutter/**/Generated.xcconfig
 Flutter/**/Flutter/ephemeral/
 
-# Spring Boot / Gradle
-SpringBoot/.gradle/
-SpringBoot/build/
-SpringBoot/logs/
-SpringBoot/out/
-SpringBoot/bin/
-SpringBoot/.classpath
-SpringBoot/.project
-SpringBoot/.settings/
-!SpringBoot/gradle/wrapper/gradle-wrapper.jar
-
-# AVA runtime storage
-SpringBoot/ChatBackUp/
-SpringBoot/ChatUploads/
-SpringBoot/LiveKit/
-SpringBoot/Backups/
-SpringBoot/AppUpdates/*.zip
-SpringBoot/AppUpdates/*.apk
-SpringBoot/AppUpdates/*.dmg
-SpringBoot/AppUpdates/*.ipa
-!SpringBoot/AppUpdates/README.md
-SpringBoot/NotivaAudio/
-SpringBoot/ava-backend*.log
-SpringBoot/bootRun*.log
+# Node backend
+NodeBackend/node_modules/
+NodeBackend/logs/
+NodeBackend/Backups/
+NodeBackend/ChatBackUp/
+NodeBackend/ChatUploads/
+NodeBackend/AiWorkspace/
+NodeBackend/AiWorkspaceUploads/
+NodeBackend/LiveKit/
+NodeBackend/NotivaAudio/
+NodeBackend/AppUpdates/*.zip
+NodeBackend/AppUpdates/*.apk
+NodeBackend/AppUpdates/*.dmg
+NodeBackend/AppUpdates/*.ipa
+!NodeBackend/AppUpdates/README.md
 
 # Local LLM runtime and model artifacts
 LLM_Server/bin/

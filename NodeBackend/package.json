@@ -1,0 +1,23 @@
+{
+  "name": "ava-node-backend",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Node.js backend for AVA services.",
+  "main": "src/server.js",
+  "scripts": {
+    "start": "node src/server.js",
+    "dev": "node --watch src/server.js",
+    "test:chat": "node scripts/chat_smoke_test.js"
+  },
+  "dependencies": {
+    "bcryptjs": "^2.4.3",
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.7",
+    "express": "^4.21.2",
+    "mime-types": "^2.1.35",
+    "multer": "^2.0.2",
+    "pg": "^8.13.1",
+    "uuid": "^11.0.5",
+    "ws": "^8.18.0"
+  }
+}

@@ -3,7 +3,7 @@ set -euo pipefail
 
 script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 flutter_dir="$(cd "$script_dir/.." && pwd)"
-backend_dir="${BACKEND_DIR:-$(cd "$flutter_dir/../SpringBoot" && pwd)}"
+backend_dir="${BACKEND_DIR:-$(cd "$flutter_dir/../NodeBackend" && pwd)}"
 api_base_url="${AVA_API_BASE_URL:-http://112.166.136.198:8080}"
 ws_url="${AVA_WS_URL:-ws://112.166.136.198:8080/ws}"
 

@@ -230,7 +230,7 @@ String authErrorMessage(Object error) {
     }
     if (error.type == DioExceptionType.connectionTimeout ||
         error.type == DioExceptionType.connectionError) {
-      return 'Spring Boot 서버에 연결할 수 없습니다.';
+      return 'NodeBackend 서버에 연결할 수 없습니다.';
     }
   }
 

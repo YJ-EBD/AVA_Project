@@ -1,6 +1,6 @@
 param(
     [string]$Version = "",
-    [string]$BackendDir = "..\SpringBoot",
+    [string]$BackendDir = "..\NodeBackend",
     [string]$ApiBaseUrl = "",
     [string]$WebsocketUrl = ""
 )

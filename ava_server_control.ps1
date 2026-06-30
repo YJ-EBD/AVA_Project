@@ -9,11 +9,11 @@ param(
 $ErrorActionPreference = 'Stop'
 
 $Root = $PSScriptRoot
-$SpringBootDir = Join-Path $Root 'SpringBoot'
-$LiveKitDir = Join-Path $SpringBootDir 'LiveKit'
+$NodeBackendDir = Join-Path $Root 'NodeBackend'
+$LiveKitDir = Join-Path $NodeBackendDir 'LiveKit'
 $LlmDir = Join-Path $Root 'LLM_Server'
 $LlmLogDir = Join-Path $LlmDir 'logs'
-$BackendLogDir = Join-Path $SpringBootDir 'logs'
+$BackendLogDir = Join-Path $NodeBackendDir 'logs'
 
 $DependencyServices = @('postgresql-x64-16', 'Redis', 'MongoDB')
 
@@ -66,23 +66,28 @@ function Test-BackendEnvSettingPresent {
 	if (-not [string]::IsNullOrWhiteSpace($value)) {
 		return $true
 	}
-	$localEnvPath = Join-Path $SpringBootDir '.env.local'
-	if (-not (Test-Path -LiteralPath $localEnvPath)) {
-		return $false
-	}
-	foreach ($line in Get-Content -LiteralPath $localEnvPath -ErrorAction SilentlyContinue) {
-		$trimmed = $line.Trim()
-		if ($trimmed.Length -eq 0 -or $trimmed.StartsWith('#')) {
+	$envPaths = @(
+		(Join-Path $Root '.env.local'),
+		(Join-Path $NodeBackendDir '.env.local')
+	)
+	foreach ($localEnvPath in $envPaths) {
+		if (-not (Test-Path -LiteralPath $localEnvPath)) {
 			continue
 		}
-		$index = $trimmed.IndexOf('=')
-		if ($index -le 0) {
-			continue
-		}
-		$key = $trimmed.Substring(0, $index).Trim()
-		$value = $trimmed.Substring($index + 1).Trim()
-		if ($key -eq $Name -and -not [string]::IsNullOrWhiteSpace($value)) {
-			return $true
+		foreach ($line in Get-Content -LiteralPath $localEnvPath -ErrorAction SilentlyContinue) {
+			$trimmed = $line.Trim()
+			if ($trimmed.Length -eq 0 -or $trimmed.StartsWith('#')) {
+				continue
+			}
+			$index = $trimmed.IndexOf('=')
+			if ($index -le 0) {
+				continue
+			}
+			$key = $trimmed.Substring(0, $index).Trim()
+			$value = $trimmed.Substring($index + 1).Trim()
+			if ($key -eq $Name -and -not [string]::IsNullOrWhiteSpace($value)) {
+				return $true
+			}
 		}
 	}
 	return $false
@@ -225,7 +230,7 @@ function Test-BackendProcess {
 	param($Info, $Process)
 	$name = [string]$Process.ProcessName
 	$commandLine = if ($null -ne $Info) { [string]$Info.CommandLine } else { '' }
-	return $name -match 'java|gradle' -or $commandLine -match 'bootRun|ava-backend|AvaBackendApplication|com\.ava\.backend'
+	return $name -match 'node' -or $commandLine -match 'NodeBackend|src[\\/]server\.js'
 }
 
 function Test-LiveKitProcess {
@@ -300,8 +305,8 @@ function Start-DependencyServices {
 }
 
 function Stop-AppServers {
-	Stop-PidFileProcess -PidFile (Join-Path $BackendLogDir 'bootRun-azoom.pid') -Name 'Spring Boot backend'
-	Stop-PortProcesses -Ports @(8080) -Name 'Spring Boot backend' -Matcher ${function:Test-BackendProcess}
+	Stop-PidFileProcess -PidFile (Join-Path $BackendLogDir 'node-backend.pid') -Name 'Node backend'
+	Stop-PortProcesses -Ports @(8080) -Name 'AVA backend' -Matcher ${function:Test-BackendProcess}
 
 	Stop-PidFileProcess -PidFile (Join-Path $LlmLogDir 'notiva-ai.pid') -Name 'Notiva AI'
 	Stop-PortProcesses -Ports @(8091) -Name 'Notiva AI' -Matcher ${function:Test-NotivaProcess}
@@ -318,7 +323,7 @@ function Start-LiveKit {
 		Write-Ava 'AZOOM SFU is already listening on port 7880.'
 		return
 	}
-	$script = Join-Path $SpringBootDir 'start_azoom_sfu.ps1'
+	$script = Join-Path $NodeBackendDir 'start_azoom_sfu.ps1'
 	Write-Ava 'Starting AZOOM SFU.'
 	& powershell.exe -NoProfile -ExecutionPolicy Bypass -File $script -ProxyPort 8080
 	Wait-Port -Name 'AZOOM SFU' -Port 7880 -TimeoutSeconds 60
@@ -326,14 +331,46 @@ function Start-LiveKit {
 
 function Start-Backend {
 	if (Test-PortListening -Port 8080) {
-		Write-Ava 'Spring Boot backend is already listening on port 8080.'
+		Write-Ava 'Node backend is already listening on port 8080.'
 		return
 	}
 	Warn-MissingBackendIntegrations
-	$script = Join-Path $SpringBootDir 'start_backend_with_azoom_sfu.ps1'
-	Write-Ava 'Starting Spring Boot backend.'
-	& powershell.exe -NoProfile -ExecutionPolicy Bypass -File $script -NoRestart
-	Wait-Port -Name 'Spring Boot backend' -Port 8080 -TimeoutSeconds 120
+	if (-not (Test-Path -LiteralPath $NodeBackendDir)) {
+		throw "NodeBackend directory is missing: $NodeBackendDir"
+	}
+	$nodeCommand = Get-Command node -ErrorAction SilentlyContinue
+	$nodeExe = if ($nodeCommand) { $nodeCommand.Source } else { 'C:\Program Files\nodejs\node.exe' }
+	if (-not (Test-Path -LiteralPath $nodeExe)) {
+		throw "Node.js executable was not found. Install Node.js or add node.exe to PATH."
+	}
+	if (-not (Test-Path -LiteralPath (Join-Path $NodeBackendDir 'node_modules'))) {
+		$npmCommand = Get-Command npm -ErrorAction SilentlyContinue
+		$npmExe = if ($npmCommand) { $npmCommand.Source } else { 'C:\Program Files\nodejs\npm.cmd' }
+		if (-not (Test-Path -LiteralPath $npmExe)) {
+			throw "npm was not found. Install Node.js or add npm to PATH."
+		}
+		Write-Ava 'Installing NodeBackend dependencies.'
+		Push-Location $NodeBackendDir
+		try {
+			& $npmExe install --no-audit --no-fund
+		} finally {
+			Pop-Location
+		}
+	}
+	New-Item -ItemType Directory -Force -Path $BackendLogDir | Out-Null
+	$stdout = Join-Path $BackendLogDir 'node-backend.out.log'
+	$stderr = Join-Path $BackendLogDir 'node-backend.err.log'
+	$pidFile = Join-Path $BackendLogDir 'node-backend.pid'
+	Write-Ava 'Starting Node backend.'
+	$process = Start-Process -FilePath $nodeExe `
+		-ArgumentList @('src/server.js') `
+		-WorkingDirectory $NodeBackendDir `
+		-RedirectStandardOutput $stdout `
+		-RedirectStandardError $stderr `
+		-WindowStyle Hidden `
+		-PassThru
+	Set-Content -LiteralPath $pidFile -Value $process.Id -Encoding ASCII
+	Wait-Port -Name 'Node backend' -Port 8080 -TimeoutSeconds 120
 }
 
 function Start-Notiva {
@@ -387,7 +424,7 @@ function Start-AppServers {
 	Wait-HttpReady -Name 'LiveKit' -Url 'http://127.0.0.1:7880' -TimeoutSeconds 30
 	Wait-HttpReady -Name 'Notiva AI' -Url 'http://127.0.0.1:8091/docs' -TimeoutSeconds 120
 	Wait-HttpReady -Name 'LLM server' -Url 'http://127.0.0.1:8088/v1/models' -TimeoutSeconds 300 -RejectPattern 'Loading model|unavailable_error'
-	Wait-HttpReady -Name 'Spring Boot backend' -Url 'http://127.0.0.1:8080/api/app-updates/android/latest?currentVersion=0.0.0' -TimeoutSeconds 180
+	Wait-HttpReady -Name 'Node backend' -Url 'http://127.0.0.1:8080/api/app-updates/android/latest?currentVersion=0.0.0' -TimeoutSeconds 180
 }
 
 function Show-Status {
