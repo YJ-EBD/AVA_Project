@@ -20,6 +20,7 @@ const { createAiRouter } = require('./routes/ai');
 const avaStockRouter = require('./routes/avaStock');
 const { closePool } = require('./db');
 const { createPagesRouter } = require('../pages/main');
+const { attachLiveKitSignalProxy, createLiveKitHttpProxy } = require('./livekitSignalProxy');
 
 async function main() {
   await ensureCoreSchema();
@@ -30,6 +31,7 @@ async function main() {
   const chatService = new ChatService(realtimeHub);
   realtimeHub.setChatService(chatService);
   realtimeHub.attach(server);
+  attachLiveKitSignalProxy(server);
 
   app.disable('x-powered-by');
   app.use(cors({
@@ -57,7 +59,7 @@ async function main() {
   app.use('/api/azoom', createAzoomRouter(realtimeHub));
   app.use('/api/ai', createAiRouter(chatService));
   app.use('/api/ava-stock', avaStockRouter);
-  app.get('/rtc/validate', (req, res) => res.json({ valid: true, runtime: 'node' }));
+  app.use('/rtc', createLiveKitHttpProxy());
   app.use('/', createPagesRouter());
 
   app.use(errorHandler);

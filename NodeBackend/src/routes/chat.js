@@ -7,6 +7,7 @@ const mime = require('mime-types');
 const config = require('../config');
 const { asyncHandler, notFound } = require('../errors');
 const { authRequired } = require('../services/authService');
+const { uploadFileName } = require('../utils/uploadNames');
 
 function createChatRouter(chatService) {
   const router = express.Router();
@@ -70,7 +71,7 @@ function createChatRouter(chatService) {
   }));
 
   router.post('/rooms/:roomCode/attachments', upload.single('file'), asyncHandler(async (req, res) => {
-    const fileName = req.file ? req.file.originalname : 'attachment';
+    const fileName = req.file ? uploadFileName(req.file) : 'attachment';
     const attachmentId = randomUUID();
     res.json(await chatService.sendMessage(req.params.roomCode, {
       content: fileName,

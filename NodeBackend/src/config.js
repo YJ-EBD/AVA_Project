@@ -97,7 +97,12 @@ module.exports = {
     url: env('AVA_LIVEKIT_URL', 'ws://112.166.136.198:8080'),
     apiKey: env('AVA_LIVEKIT_API_KEY', 'ava-azoom'),
     apiSecret: env('AVA_LIVEKIT_API_SECRET', 'ava-local-livekit-secret'),
-    tokenMinutes: intEnv('AVA_LIVEKIT_TOKEN_MINUTES', 120)
+    tokenMinutes: intEnv('AVA_LIVEKIT_TOKEN_MINUTES', 120),
+    signalProxyEnabled: boolEnv('AVA_LIVEKIT_SIGNAL_PROXY_ENABLED', true),
+    signalProxyUpstreamUrl: env('AVA_LIVEKIT_SIGNAL_PROXY_UPSTREAM_URL', 'ws://127.0.0.1:7880')
+  },
+  azoom: {
+    voiceParticipantTtlSeconds: intEnv('AVA_AZOOM_VOICE_PARTICIPANT_TTL_SECONDS', 45)
   },
   updates: {
     windows: updateConfig('windows', '0.1.308', 'ava-windows-0.1.308.zip', 'AVA Windows update'),

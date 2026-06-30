@@ -7,6 +7,7 @@ const {
   normalizeCompany,
   toProfileResponse
 } = require('./profileService');
+const { repairLatin1Utf8FileName } = require('../utils/uploadNames');
 
 function trim(value) {
   return value == null ? '' : String(value).trim();
@@ -44,7 +45,7 @@ function attachmentFromMessage(row) {
   }
   return {
     id: row.attachment_id,
-    fileName: row.attachment_file_name,
+    fileName: repairLatin1Utf8FileName(row.attachment_file_name),
     contentType: row.attachment_content_type,
     size: Number(row.attachment_size || 0),
     downloadUrl: `/api/chat/rooms/${row.room_code}/attachments/${row.attachment_id}`,
@@ -53,6 +54,7 @@ function attachmentFromMessage(row) {
 }
 
 function messageResponse(row, unreadCount = 0, senderProfile = null) {
+  const attachment = attachmentFromMessage(row);
   return {
     id: String(row.id),
     roomCode: row.room_code,
@@ -61,14 +63,14 @@ function messageResponse(row, unreadCount = 0, senderProfile = null) {
     senderNickname: senderProfile ? senderProfile.nickname || '' : row.sender_nickname || '',
     senderAvatarColor: senderProfile ? senderProfile.avatarColor || '#7AA06A' : row.sender_avatar_color || '#7AA06A',
     senderAvatarImageUrl: senderProfile ? senderProfile.avatarImageUrl || '' : row.sender_avatar_image_url || '',
-    content: row.content,
+    content: attachment ? attachment.fileName : row.content,
     sentAt: row.sent_at,
     unreadCount,
     systemMessage: Boolean(row.system_message),
     silent: Boolean(row.silent_message),
     spoiler: Boolean(row.spoiler_message),
     deletedForEveryone: Boolean(row.deleted_for_everyone),
-    attachment: attachmentFromMessage(row),
+    attachment,
     mentions: row.deleted_for_everyone ? [] : mentionsFromMessage(row)
   };
 }
@@ -872,7 +874,7 @@ class ChatService {
     }
     return {
       filePath: row.attachment_stored_path,
-      fileName: row.attachment_file_name || 'attachment',
+      fileName: repairLatin1Utf8FileName(row.attachment_file_name || 'attachment'),
       contentType: row.attachment_content_type || 'application/octet-stream',
       size: Number(row.attachment_size || 0)
     };

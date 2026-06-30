@@ -53,7 +53,21 @@ class StompHub {
   }
 
   attach(httpServer) {
-    this.wss = new WebSocketServer({ server: httpServer, path: '/ws' });
+    this.wss = new WebSocketServer({ noServer: true });
+    httpServer.on('upgrade', (request, socket, head) => {
+      let pathname = '';
+      try {
+        pathname = new URL(request.url || '/', 'http://localhost').pathname;
+      } catch {
+        pathname = '';
+      }
+      if (pathname !== '/ws') {
+        return;
+      }
+      this.wss.handleUpgrade(request, socket, head, (ws) => {
+        this.wss.emit('connection', ws, request);
+      });
+    });
     this.wss.on('connection', (socket) => this.handleConnection(socket));
   }
 

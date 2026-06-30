@@ -7,6 +7,7 @@ const config = require('../config');
 const { query, tx } = require('../db');
 const { asyncHandler, badRequest, notFound } = require('../errors');
 const { authRequired } = require('../services/authService');
+const { uploadFileName } = require('../utils/uploadNames');
 const {
   accountWithProfile,
   effectiveCompany,
@@ -116,6 +117,7 @@ function participantResponse(row) {
 }
 
 async function participants(channelId) {
+  await cleanupStaleVoiceParticipants(channelId);
   const result = await query(
     `
       SELECT p.*, a.email, a.display_name, up.nickname, up.status, up.avatar_color, up.avatar_image_url
@@ -130,17 +132,58 @@ async function participants(channelId) {
   return result.rows.map(participantResponse);
 }
 
+async function clearInactiveStartedAt(channelIds) {
+  const ids = Array.from(new Set((channelIds || []).filter(Boolean)));
+  if (ids.length === 0) {
+    return;
+  }
+  await query(
+    `
+      UPDATE azoom_voice_channels c
+      SET started_at = NULL, updated_at = now()
+      WHERE c.id = ANY($1::uuid[])
+        AND NOT EXISTS (
+          SELECT 1
+          FROM azoom_voice_participants p
+          WHERE p.channel_id = c.id
+        )
+    `,
+    [ids]
+  );
+}
+
+async function cleanupStaleVoiceParticipants(channelId = null) {
+  const ttlSeconds = Math.max(15, Number(config.azoom.voiceParticipantTtlSeconds || 45));
+  const params = [ttlSeconds];
+  const scope = channelId ? 'AND channel_id = $2' : '';
+  if (channelId) {
+    params.push(channelId);
+  }
+  const removed = await query(
+    `
+      DELETE FROM azoom_voice_participants
+      WHERE updated_at < now() - ($1::int * interval '1 second')
+      ${scope}
+      RETURNING channel_id
+    `,
+    params
+  );
+  await clearInactiveStartedAt(removed.rows.map((row) => row.channel_id));
+}
+
 async function channelResponse(row) {
+  await cleanupStaleVoiceParticipants(row.id);
+  const activeParticipants = await participants(row.id);
   return {
     id: row.id,
     name: row.name,
     roomName: row.room_name,
-    startedAt: row.started_at || null,
+    startedAt: activeParticipants.length > 0 ? row.started_at || null : null,
     serverNow: new Date().toISOString(),
     accessMode: row.access_mode || 'ALL',
     allowedDepartments: parseJsonList(row.allowed_departments_json),
     canJoin: true,
-    participants: await participants(row.id)
+    participants: activeParticipants
   };
 }
 
@@ -189,6 +232,7 @@ async function channelById(channelId, principal, req) {
 async function allChannelResponses(principal, req) {
   const companyName = await effectiveCompany(principal, req);
   await ensureDefaultChannel(companyName);
+  await cleanupStaleVoiceParticipants();
   const result = await query(
     `
       SELECT *
@@ -528,7 +572,9 @@ function createAzoomRouter(realtimeHub) {
       'DELETE FROM azoom_voice_participants WHERE channel_id = $1 AND account_id = $2',
       [channel.id, req.principal.userId]
     );
-    const response = await channelResponse(channel);
+    await clearInactiveStartedAt([channel.id]);
+    const refreshed = await channelById(req.params.channelId, req.principal, req);
+    const response = await channelResponse(refreshed);
     await publishVoiceStates(realtimeHub, req.principal, req);
     res.json(response);
   }));
@@ -658,7 +704,8 @@ function createAzoomRouter(realtimeHub) {
       throw badRequest('Audio file is required.');
     }
     const transcript = await activeTranscript(channel, req.principal, req);
-    const content = `${type === 'batch' ? 'Batch' : 'Realtime'} audio uploaded: ${req.file.originalname || req.file.filename}`;
+    const sourceFileName = uploadFileName(req.file, req.file.filename);
+    const content = `${type === 'batch' ? 'Batch' : 'Realtime'} audio uploaded: ${sourceFileName}`;
     const response = await appendUtterance(transcript.id, {
       content,
       speakerUserId: req.body.speakerUserId,
@@ -674,7 +721,7 @@ function createAzoomRouter(realtimeHub) {
       roomName: channel.room_name,
       transcript: response
     });
-    res.json({ sourceFileName: req.file.originalname || req.file.filename, transcript: response });
+    res.json({ sourceFileName, transcript: response });
   }
 
   router.post('/voice-channels/:channelId/notiva/realtime-audio', upload.single('file'), asyncHandler((req, res) => handleAudio(req, res, 'realtime')));

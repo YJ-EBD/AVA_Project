@@ -6,6 +6,15 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
 import 'package:livekit_client/livekit_client.dart' as lk;
 
+const _testEmail = String.fromEnvironment(
+  'AVA_AZOOM_TEST_EMAIL',
+  defaultValue: 'azoom-proxy-live@ava.local',
+);
+const _testPassword = String.fromEnvironment(
+  'AVA_AZOOM_TEST_PASSWORD',
+  defaultValue: 'ava-azoom-proxy-live-1234!',
+);
+
 void main() {
   IntegrationTestWidgetsFlutterBinding.ensureInitialized();
 
@@ -21,8 +30,8 @@ void main() {
     final login = await dio.post<Map<String, dynamic>>(
       '/api/auth/login',
       data: {
-        'email': 'admin@ava.admin',
-        'password': 'Ava1234!',
+        'email': _testEmail,
+        'password': _testPassword,
         'rememberMe': true,
         'autoLogin': true,
         'forceLogin': true,
