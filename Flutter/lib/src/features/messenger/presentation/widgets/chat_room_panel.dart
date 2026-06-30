@@ -7,7 +7,6 @@ import 'dart:ui' as ui;
 import 'package:desktop_drop/desktop_drop.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter/rendering.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter/services.dart';
 import 'package:image_picker/image_picker.dart';
@@ -6093,7 +6092,7 @@ class _ChatMessagesViewState extends State<_ChatMessagesView> {
         key: const ValueKey('chat-messages-list'),
         controller: _controller,
         primary: false,
-        scrollCacheExtent: const ScrollCacheExtent.pixels(1600),
+        cacheExtent: 1600,
         keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
         padding: const EdgeInsets.fromLTRB(18, 12, 18, 14),
         itemCount: entries.isEmpty
