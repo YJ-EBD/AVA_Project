@@ -162,16 +162,24 @@ class AuthApi {
 
 bool _isDuplicateLogin(DioException error) {
   final data = error.response?.data;
-  return error.response?.statusCode == 409 &&
-      data is Map &&
-      data['code'] == 'DUPLICATE_LOGIN';
+  if (error.response?.statusCode != 409 || data is! Map) {
+    return false;
+  }
+  final details = data['details'];
+  return data['code'] == 'DUPLICATE_LOGIN' ||
+      (details is Map && details['duplicateLogin'] == true) ||
+      data['message'] == 'Another active login session exists.';
 }
 
 bool _isPendingApproval(DioException error) {
   final data = error.response?.data;
-  return error.response?.statusCode == 403 &&
-      data is Map &&
-      data['code'] == 'PENDING_APPROVAL';
+  if (error.response?.statusCode != 403 || data is! Map) {
+    return false;
+  }
+  final details = data['details'];
+  return data['code'] == 'PENDING_APPROVAL' ||
+      (details is Map && details['pendingApproval'] == true) ||
+      data['message'] == 'Account is pending approval.';
 }
 
 String? _messageFromResponse(DioException error) {

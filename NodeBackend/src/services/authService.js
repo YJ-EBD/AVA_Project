@@ -2,7 +2,7 @@ const bcrypt = require('bcryptjs');
 const { randomUUID } = require('crypto');
 const config = require('../config');
 const { one, query, tx } = require('../db');
-const { badRequest, conflict, forbidden, unauthorized } = require('../errors');
+const { badRequest, duplicateLogin, pendingApproval, unauthorized } = require('../errors');
 const { issueTokens, parseToken } = require('../jwt');
 const { accountByEmail, accountWithProfile, toProfileResponse, OFFLINE } = require('./profileService');
 
@@ -85,7 +85,7 @@ async function login(request, realtimeHub = null) {
     throw unauthorized('Invalid email or password.');
   }
   if (!account.enabled) {
-    throw forbidden('Account is pending approval.');
+    throw pendingApproval('Account is pending approval.');
   }
 
   const remember = Boolean(request.rememberMe || request.autoLogin);
@@ -100,7 +100,7 @@ async function login(request, realtimeHub = null) {
     [account.id]
   );
   if (activeSession && !request.forceLogin) {
-    throw conflict('Another active login session exists.', { duplicateLogin: true });
+    throw duplicateLogin('Another active login session exists.');
   }
 
   const sessionId = randomUUID();

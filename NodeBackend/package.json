@@ -7,7 +7,8 @@
   "scripts": {
     "start": "node src/server.js",
     "dev": "node --watch src/server.js",
-    "test:chat": "node scripts/chat_smoke_test.js"
+    "test:chat": "node scripts/chat_smoke_test.js",
+    "test:auth": "node scripts/auth_session_regression_test.js"
   },
   "dependencies": {
     "bcryptjs": "^2.4.3",

@@ -20,12 +20,20 @@ function forbidden(message = 'Access is denied.') {
   return new HttpError(403, 'FORBIDDEN', message);
 }
 
+function pendingApproval(message = 'Account is pending approval.') {
+  return new HttpError(403, 'PENDING_APPROVAL', message, { pendingApproval: true });
+}
+
 function notFound(message = 'Resource not found.') {
   return new HttpError(404, 'NOT_FOUND', message);
 }
 
 function conflict(message, details = null) {
   return new HttpError(409, 'CONFLICT', message, details);
+}
+
+function duplicateLogin(message = 'Another active login session exists.') {
+  return new HttpError(409, 'DUPLICATE_LOGIN', message, { duplicateLogin: true });
 }
 
 function asyncHandler(handler) {
@@ -57,8 +65,10 @@ module.exports = {
   badRequest,
   unauthorized,
   forbidden,
+  pendingApproval,
   notFound,
   conflict,
+  duplicateLogin,
   asyncHandler,
   errorHandler
 };
