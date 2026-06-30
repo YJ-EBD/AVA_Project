@@ -924,6 +924,52 @@ void main() {
     expect(deduped.single.unreadCount, 1);
   });
 
+  test('message cache reader repairs stale pending bubbles on room reopen', () {
+    final container = ProviderContainer();
+    addTearDown(container.dispose);
+    final sender = PersonProfile(
+      id: 'current-user',
+      name: 'Current User',
+      color: const Color(0xFF4663CF),
+      email: 'current@ava.local',
+    );
+    final pendingAt = DateTime(2026, 6, 17, 12, 0, 0, 100);
+    final pending = ChatMessage(
+      id: 'pending-room-${pendingAt.microsecondsSinceEpoch}',
+      senderId: 'current-user',
+      sender: sender,
+      text: 'reopen once',
+      time: '12:00',
+      isMine: true,
+      sentAt: pendingAt,
+    );
+    final confirmed = ChatMessage(
+      id: 'server-reopen-message',
+      senderId: 'current-user',
+      sender: sender,
+      text: 'reopen once',
+      time: '12:00',
+      isMine: true,
+      sentAt: DateTime(2026, 6, 17, 12, 0, 0, 180),
+      unreadCount: 1,
+    );
+
+    container.read(chatMessageMemoryCacheProvider.notifier).put('room-reopen', [
+      pending,
+    ], persist: false);
+    container.read(chatMessageMemoryCacheProvider.notifier).put('room-reopen', [
+      confirmed,
+    ], persist: false);
+
+    final messages = container
+        .read(chatMessageMemoryCacheProvider.notifier)
+        .messagesFor('room-reopen');
+
+    expect(messages, hasLength(1));
+    expect(messages.single.id, 'server-reopen-message');
+    expect(messages.single.text, 'reopen once');
+  });
+
   test('message cache preserves distinct rapid duplicate sends', () {
     final sender = PersonProfile(
       id: 'current-user',

@@ -24,6 +24,22 @@ String mobilePushEventRoomIdForTest(MobilePushEventDto event) {
 }
 
 @visibleForTesting
+String normalizeMobilePushEventTypeForTest(String type) {
+  return _normalizeMobilePushEventType(type);
+}
+
+@visibleForTesting
+bool shouldDisplayBacklogPushForTest({
+  required MobilePushEventDto event,
+  required AppLifecycleState? lifecycleState,
+}) {
+  return _shouldDisplayBacklogPushEvent(
+    event: event,
+    lifecycleState: lifecycleState,
+  );
+}
+
+@visibleForTesting
 bool shouldSuppressActiveChatRoomPushForTest({
   required MobilePushEventDto event,
   required String activeChatRoomId,
@@ -50,7 +66,7 @@ bool _shouldSuppressActiveChatRoomPushEvent({
   required String activeChatRoomId,
   required AppLifecycleState? lifecycleState,
 }) {
-  if (event.type != 'chat_message' || activeChatRoomId.isEmpty) {
+  if (!_isChatMessagePushEvent(event) || activeChatRoomId.isEmpty) {
     return false;
   }
   if (lifecycleState != null && lifecycleState != AppLifecycleState.resumed) {
@@ -58,6 +74,29 @@ bool _shouldSuppressActiveChatRoomPushEvent({
   }
   final roomId = _mobilePushEventRoomId(event);
   return roomId.isNotEmpty && roomId == activeChatRoomId;
+}
+
+String _normalizeMobilePushEventType(String type) {
+  return type.trim().toLowerCase().replaceAll(RegExp(r'[-.]'), '_');
+}
+
+bool _isChatMessagePushEvent(MobilePushEventDto event) {
+  return _normalizeMobilePushEventType(event.type) == 'chat_message';
+}
+
+bool _isDisplayablePushEvent(MobilePushEventDto event) {
+  final type = _normalizeMobilePushEventType(event.type);
+  return type == 'chat_message' || type == 'notification' || type == 'azoom';
+}
+
+bool _shouldDisplayBacklogPushEvent({
+  required MobilePushEventDto event,
+  required AppLifecycleState? lifecycleState,
+}) {
+  if (!_isDisplayablePushEvent(event)) {
+    return false;
+  }
+  return lifecycleState != AppLifecycleState.resumed;
 }
 
 final mobilePushControllerProvider = Provider<MobilePushController>((ref) {
@@ -252,6 +291,13 @@ class MobilePushController {
           .read(pushApiProvider)
           .events(accessToken: session.accessToken, after: after, limit: 30);
       for (final event in events) {
+        if (!_shouldDisplayBacklogPushEvent(
+          event: event,
+          lifecycleState: WidgetsBinding.instance.lifecycleState,
+        )) {
+          await _rememberEvent(event);
+          continue;
+        }
         await _showEvent(event);
       }
     } on Object {
@@ -264,8 +310,8 @@ class MobilePushController {
       await _rememberEvent(event);
       return;
     }
+    await _rememberEvent(event);
     if (_shouldSuppressActiveChatRoom(event)) {
-      await _rememberEvent(event);
       return;
     }
     final roomId = _mobilePushEventRoomId(event);
@@ -277,13 +323,10 @@ class MobilePushController {
       avatarColor: event.avatarColor ?? '#0B63CE',
       body: event.body,
     );
-    await _rememberEvent(event);
   }
 
   bool _isDisplayable(MobilePushEventDto event) {
-    return event.type == 'chat_message' ||
-        event.type == 'notification' ||
-        event.type == 'azoom';
+    return _isDisplayablePushEvent(event);
   }
 
   bool _shouldSuppressActiveChatRoom(MobilePushEventDto event) {
@@ -301,10 +344,12 @@ class MobilePushController {
       return;
     }
     final prefs = await SharedPreferences.getInstance();
-    await prefs.setString(
-      _lastEventAtKey(userId),
-      createdAt.toUtc().toIso8601String(),
-    );
+    final key = _lastEventAtKey(userId);
+    final previous = DateTime.tryParse(prefs.getString(key) ?? '');
+    if (previous != null && createdAt.toUtc().isBefore(previous.toUtc())) {
+      return;
+    }
+    await prefs.setString(key, createdAt.toUtc().toIso8601String());
   }
 
   Future<String> _deviceId() async {

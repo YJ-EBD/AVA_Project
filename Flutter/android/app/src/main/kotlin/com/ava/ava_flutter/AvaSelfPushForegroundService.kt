@@ -254,7 +254,7 @@ class AvaSelfPushForegroundService : Service() {
 
     private fun showPush(event: JSONObject) {
         lastEventAtMillis = System.currentTimeMillis()
-        val type = event.optString("type")
+        val type = normalizedPushType(event)
         if (type != "chat_message" && type != "notification" && type != "azoom") {
             rememberEvent(event)
             return
@@ -305,7 +305,7 @@ class AvaSelfPushForegroundService : Service() {
     }
 
     private fun shouldSuppressActiveChatRoomPush(event: JSONObject): Boolean {
-        if (event.optString("type") != "chat_message" || !appInForeground) {
+        if (normalizedPushType(event) != "chat_message" || !appInForeground) {
             return false
         }
         val activeRoom = activeChatRoomId.trim()
@@ -314,6 +314,14 @@ class AvaSelfPushForegroundService : Service() {
         }
         val roomId = pushRoomId(event)
         return roomId.isNotBlank() && roomId == activeRoom
+    }
+
+    private fun normalizedPushType(event: JSONObject): String {
+        return event.optString("type", "")
+            .trim()
+            .lowercase()
+            .replace('.', '_')
+            .replace('-', '_')
     }
 
     private fun pushRoomId(event: JSONObject): String {

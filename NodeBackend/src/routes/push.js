@@ -10,9 +10,10 @@ function mobilePushResponse(row) {
   } catch {
     data = {};
   }
+  const type = String(row.type || '').trim().toLowerCase().replace(/[.-]/g, '_');
   return {
     id: row.id,
-    type: row.type,
+    type,
     title: row.title,
     body: row.body,
     roomId: row.room_id,
@@ -35,11 +36,21 @@ router.get('/events', asyncHandler(async (req, res) => {
   const after = req.query.after ? new Date(req.query.after) : null;
   const result = await query(
     `
-      SELECT *
-      FROM mobile_push_events
-      WHERE account_id = $1
-        AND ($2::timestamptz IS NULL OR created_at > $2::timestamptz)
-      ORDER BY created_at DESC
+      SELECT e.*
+      FROM mobile_push_events e
+      WHERE e.account_id = $1
+        AND ($2::timestamptz IS NULL OR e.created_at > $2::timestamptz)
+        AND (
+          replace(replace(lower(e.type), '.', '_'), '-', '_') <> 'chat_message'
+          OR e.source_id IS NULL
+          OR NOT EXISTS (
+            SELECT 1
+            FROM chat_message_read_receipts rr
+            WHERE rr.account_id = e.account_id
+              AND rr.message_id::text = e.source_id
+          )
+        )
+      ORDER BY e.created_at DESC
       LIMIT $3
     `,
     [req.principal.userId, after, limit]

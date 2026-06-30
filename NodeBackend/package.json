@@ -9,6 +9,7 @@
     "dev": "node --watch src/server.js",
     "test:chat": "node scripts/chat_smoke_test.js",
     "test:chat:duplicates": "node scripts/chat_duplicate_delivery_test.js",
+    "test:push:read-backlog": "node scripts/push_read_backlog_test.js",
     "test:auth": "node scripts/auth_session_regression_test.js"
   },
   "dependencies": {

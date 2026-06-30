@@ -35,6 +35,31 @@ void main() {
     );
   });
 
+  test('normalizes legacy chat push event types', () {
+    expect(normalizeMobilePushEventTypeForTest('chat.message'), 'chat_message');
+    expect(normalizeMobilePushEventTypeForTest('chat-message'), 'chat_message');
+    expect(normalizeMobilePushEventTypeForTest('chat_message'), 'chat_message');
+  });
+
+  test('does not replay backlog notifications while app is foreground', () {
+    final event = chatEvent(data: {'roomCode': 'company-all-staff'});
+
+    expect(
+      shouldDisplayBacklogPushForTest(
+        event: event,
+        lifecycleState: AppLifecycleState.resumed,
+      ),
+      isFalse,
+    );
+    expect(
+      shouldDisplayBacklogPushForTest(
+        event: event,
+        lifecycleState: AppLifecycleState.paused,
+      ),
+      isTrue,
+    );
+  });
+
   test('does not suppress other rooms or background chat pushes', () {
     final event = chatEvent(data: {'roomCode': 'company-all-staff'});
 

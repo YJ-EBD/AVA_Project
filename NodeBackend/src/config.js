@@ -76,8 +76,8 @@ module.exports = {
     tokenMinutes: intEnv('AVA_LIVEKIT_TOKEN_MINUTES', 120)
   },
   updates: {
-    windows: updateConfig('windows', '0.1.306', 'ava-windows-0.1.306.zip', 'AVA Windows update'),
-    android: updateConfig('android', '0.1.306', 'ava-android-0.1.306.apk', 'AVA Android update'),
+    windows: updateConfig('windows', '0.1.308', 'ava-windows-0.1.308.zip', 'AVA Windows update'),
+    android: updateConfig('android', '0.1.308', 'ava-android-0.1.308.apk', 'AVA Android update'),
     macos: updateConfig('macos', '0.1.306', 'AVA_Project_0.1.306_1306_macOS.dmg', 'AVA macOS update'),
     ios: updateConfig('ios', '0.1.307', 'ava-ios-0.1.307.ipa', 'AVA iOS update')
   }

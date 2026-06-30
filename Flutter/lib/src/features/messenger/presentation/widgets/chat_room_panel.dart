@@ -90,7 +90,10 @@ class ChatMessageMemoryCache extends Notifier<Map<String, List<ChatMessage>>> {
   @override
   Map<String, List<ChatMessage>> build() => const {};
 
-  List<ChatMessage> messagesFor(String roomId) => state[roomId] ?? const [];
+  List<ChatMessage> messagesFor(String roomId) {
+    final messages = state[roomId] ?? const <ChatMessage>[];
+    return _dedupeAndTrim(messages);
+  }
 
   void configureScope(String scope) {
     final normalizedScope = scope.trim();
@@ -1167,7 +1170,7 @@ class _ChatRoomPanelState extends ConsumerState<ChatRoomPanel> {
 
   List<ChatMessage> _mergeRemoteMessages(List<ChatMessage> remoteMessages) {
     if (_messages.isEmpty) {
-      return remoteMessages;
+      return dedupeChatMessagesReplacingPending(remoteMessages);
     }
     final byKey = <String, ChatMessage>{};
     for (final message in _messages) {

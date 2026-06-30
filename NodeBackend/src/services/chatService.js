@@ -939,7 +939,7 @@ class ChatService {
           id, account_id, type, title, body, room_id, room_title, sender_name,
           sender_nickname, avatar_color, source_type, source_id, data_json, created_at
         )
-        VALUES ($1, $2, 'chat.message', $3, $4, $5, $6, $7, $8, $9, 'chat', $10, $11, now())
+        VALUES ($1, $2, 'chat_message', $3, $4, $5, $6, $7, $8, $9, 'chat', $10, $11, now())
         RETURNING *
       `,
       [
@@ -967,9 +967,10 @@ class ChatService {
     } catch {
       data = {};
     }
+    const type = String(row.type || '').trim().toLowerCase().replace(/[.-]/g, '_');
     return {
       id: row.id,
-      type: row.type,
+      type,
       title: row.title,
       body: row.body,
       roomId: row.room_id,
