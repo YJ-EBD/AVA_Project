@@ -19,6 +19,7 @@ const { createAzoomRouter } = require('./routes/azoom');
 const { createAiRouter } = require('./routes/ai');
 const avaStockRouter = require('./routes/avaStock');
 const { closePool } = require('./db');
+const { createPagesRouter } = require('../pages/main');
 
 async function main() {
   await ensureCoreSchema();
@@ -57,6 +58,7 @@ async function main() {
   app.use('/api/ai', createAiRouter(chatService));
   app.use('/api/ava-stock', avaStockRouter);
   app.get('/rtc/validate', (req, res) => res.json({ valid: true, runtime: 'node' }));
+  app.use('/', createPagesRouter());
 
   app.use(errorHandler);
 
